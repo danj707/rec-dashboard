@@ -642,7 +642,7 @@ function TemplateChooser({ onSelect }) {
     <div className="template-overlay">
       <div className="template-container">
         <div className="template-heading">Build Your Dashboard</div>
-        <div className="template-sub">Pick a starting point \u2014 you can add, remove, and rearrange widgets anytime.</div>
+        <div className="template-sub">Pick a starting point — you can add, remove, and rearrange widgets anytime.</div>
         <div className="template-grid">
           {Object.entries(DASHBOARD_TEMPLATES).map(([key, tmpl]) => (
             <div key={key} className="template-card" onClick={() => onSelect(key)}>
@@ -843,7 +843,7 @@ function DashboardApp() {
           <span className="cache-dot" style={{ background: loading ? 'var(--amber)' : 'var(--green)' }} />
           {loading ? 'Loading data...' : lastRefresh ? `Last refreshed ${lastRefresh.toLocaleTimeString()}` : 'Ready'}
         </div>
-        <div>{widgetIds.length} widgets \u00B7 cache {config.cacheTTL || 15}m</div>
+        <div>{widgetIds.length} widgets · cache {config.cacheTTL || 15}m</div>
       </div>
 
       {/* Widget Grid */}
