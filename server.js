@@ -16,22 +16,27 @@ const METABASE_URL = process.env.METABASE_URL || 'https://rec.metabaseapp.com';
 const ORGS = {
   watertown: {
     name: 'Watertown Recreation',
-    orgId: '7d22bf62',
+    orgId: 'd781690b-c5a0-43c5-8443-9ae43899528c',
     token: '7qNNXDFo4HGpOh5B',
-    logoUrl: 'https://rec.us/assets/images/organizations/watertown.png',
+    logoUrl: 'https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-d781690b-c5a0-43c5-8443-9ae43899528c%2FfullLogo.png%3F1750270261391&w=1920&q=75',
     reports: {
-      facility: '4b64af10',
-      gl: 'e0043550',
-      programs: 'd3a3554f'
+      facility: '4b64af10-d57f-41af-aad8-b16d12a8f7b8',
+      programs: 'd3a3554f-1232-4803-9cc7-5b0f611360b0'
     }
   }
 };
 
-// Reports available to ALL orgs via shared Metabase cards
+// Reports available to ALL orgs via shared Metabase cards (need org_id param)
 const SHARED_UUIDS = {
-  gl: '4374b344',
-  fasttrack: '9d38ab95',
-  'program-demographics': '67b77142'
+  facility: 'f6787f45-3a36-4501-8a5f-b0f647451a85',
+  programs: 'e35f2b47-87c9-40e3-8507-3d9b56f9ce62',
+  gl: '4374b344-06a7-42c5-996c-e1845bda3ff1',
+  fasttrack: '9d38ab95-8562-42ca-b6c2-2582b7452457',
+  'program-demographics': '67b77142-19ab-49bd-9d4b-1db8223a3616',
+  users: '0aa0f55d-738f-4df7-837a-eb21f3ee1793',
+  memberships: 'f4496307-d965-4637-b048-ecc703f2d37f',
+  'court-utilization': '7b0fca20-8fe0-4720-9653-7e15c30176b2',
+  retention: '3cfc9cfa-b1db-41e9-83fd-01fb90a5b0c8'
 };
 
 // Reports that don't accept date parameters
@@ -124,10 +129,16 @@ function buildMetabaseParams(reportType, query) {
 
 async function fetchMetabaseData(orgSlug, reportType, query) {
   const org = ORGS[orgSlug];
+  // Per-org UUID takes priority; fall back to shared
+  const isShared = !org.reports?.[reportType];
   const uuid = org.reports?.[reportType] || SHARED_UUIDS[reportType];
   if (!uuid) return null;
 
   const params = buildMetabaseParams(reportType, query);
+  // Shared UUIDs need org_id to filter data
+  if (isShared && org.orgId) {
+    params.push({ type: 'category', target: ['variable', ['template-tag', 'org_id']], value: org.orgId });
+  }
   const cacheKey = `${orgSlug}:${reportType}:${JSON.stringify(params)}`;
   
   // Check org-specific cache TTL
