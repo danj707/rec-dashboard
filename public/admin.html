@@ -218,7 +218,7 @@ function toggleSection(id) {
             <!-- Widget Engine -->
             <rect x="333" y="145" width="175" height="80" rx="8" fill="#1a1a1a" stroke="#262626" stroke-width="1"/>
             <text x="349" y="164" font-family="DM Sans,sans-serif" font-size="11" fill="#aaa" font-weight="600">Widget Engine</text>
-            <text x="349" y="182" font-family="Inter,sans-serif" font-size="10" fill="#666">20+ widgets in registry</text>
+            <text x="349" y="182" font-family="Inter,sans-serif" font-size="10" fill="#666">69 widgets in registry</text>
             <text x="349" y="196" font-family="Inter,sans-serif" font-size="10" fill="#666">Section-based layout</text>
             <text x="349" y="210" font-family="Inter,sans-serif" font-size="10" fill="#666">Chart.js + React CDN</text>
 
@@ -303,7 +303,23 @@ function toggleSection(id) {
           </div>
           <div class="arch-block">
             <h4>Adding a New Org</h4>
-            <p>Add 5 lines to the <code>ORGS</code> map in server.js: slug, orgId, token, logoUrl, and optional per-org report UUIDs. All 9 shared report types light up automatically. Push to GitHub, Railway auto-deploys in ~60 seconds. The org's admin hits their URL, picks a template, and their dashboard is live. Total onboarding time: under 2 minutes.</p>
+            <p>Add 5 lines to the <code>ORGS</code> map in server.js: slug, orgId, token, logoUrl, and optional per-org report UUIDs. All shared report types light up automatically. Push to GitHub, Railway auto-deploys in ~60 seconds. The org's admin hits their URL, picks a template, and their dashboard is live. Total onboarding time: under 2 minutes.</p>
+          </div>
+          <div class="arch-block">
+            <h4>Caching Layer</h4>
+            <p>Every Metabase response is cached in-memory with a configurable TTL (5 min to 4 hours, per-org). Cache key is <code>org:reportType:dateParams</code> — same org, same report, same date range = instant response from cache. Multiple users on the same org share the cache. <strong>Metabase is only queried on: first load after restart, TTL expiry, date range change, or manual refresh.</strong> Page navigation, theme toggles, and widget editing never touch Metabase.</p>
+          </div>
+          <div class="arch-block">
+            <h4>Performance vs Old Dashboards</h4>
+            <p>The old Metabase iframe dashboard fires <strong>20+ independent queries</strong> every time someone opens the page — no caching, no batching, every card is a live hit. Our dashboard fires <strong>5 queries max</strong> (one per report type), caches the results, and serves all 20 widgets from those 5 responses. After the first load, subsequent views are <strong>zero Metabase queries</strong> until the TTL expires. Estimated <strong>75%+ reduction</strong> in Metabase load per org. Multiply by 59 orgs and the savings are massive.</p>
+          </div>
+          <div class="arch-block">
+            <h4>Widget Limits</h4>
+            <p>To prevent runaway query load, dashboards enforce a <strong>max 8 widgets per section</strong> and <strong>max 20 widgets per dashboard</strong>. The edit modal shows live counts and disables add buttons when limits are reached. Since each report type is fetched once regardless of widget count, the real constraint is rendering performance, not Metabase load — but the limits keep dashboards focused and fast.</p>
+          </div>
+          <div class="arch-block">
+            <h4>Roadmap</h4>
+            <p><strong>PDF Export:</strong> Puppeteer iframe capture for downloadable dashboard snapshots. <strong>Email Summaries:</strong> Resend integration for daily/weekly dashboard emails to org admins. <strong>Rec Insights:</strong> AI-powered analysis widgets per section — click to generate Claude-powered insights from the section's data. <strong>Schema Health Check:</strong> Automated column validation against expected schemas, flagging broken widgets after DB migrations. <strong>Goal Targets:</strong> Admin-editable targets on metric widgets with pace calculations and progress rings.</p>
           </div>
         </div>
 
