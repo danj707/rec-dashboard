@@ -208,8 +208,8 @@ body { font-family: var(--font-body); background: var(--bg-page); color: var(--t
 /* Heatmap widget */
 .heatmap-grid { display: grid; gap: 2px; font-size: 10px; }
 .heatmap-cell { border-radius: 3px; display: flex; align-items: center; justify-content: center;
-  font-size: 9px; font-weight: 600; color: transparent; transition: all 0.15s; min-height: 24px; }
-.heatmap-cell:hover { color: var(--text-primary); transform: scale(1.1); z-index: 2; }
+  font-size: 9px; font-weight: 600; color: var(--text-muted); transition: all 0.15s; min-height: 24px; }
+.heatmap-cell:hover { color: var(--text-primary); transform: scale(1.08); z-index: 2; box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
 .heatmap-label { font-size: 10px; color: var(--text-muted); display: flex; align-items: center; justify-content: flex-end; padding-right: 6px; }
 .heatmap-col-label { font-size: 9px; color: var(--text-muted); text-align: center; }
 </style>
@@ -930,7 +930,7 @@ async function geocode(query) {
     const resp = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(fullQuery)}&format=json&limit=1&countrycodes=us`);
     const data = await resp.json();
     if (data.length) { geoCache[fullQuery] = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) }; return geoCache[fullQuery]; }
-  } catch(e) {}
+  } catch(e) { console.warn('[GEO] Error:', fullQuery, e); }
   return null;
 }
 
@@ -965,7 +965,7 @@ function MapWidget({ data }) {
           }).bindTooltip('<strong>' + pt.label + '</strong><br>' + pt.count.toLocaleString() + ' ' + (data.unit || 'users')).addTo(map);
           bounds.push([geo.lat, geo.lng]);
         }
-        if (i < data.points.length - 1) await new Promise(r => setTimeout(r, 200));
+        if (i < data.points.length - 1) await new Promise(r => setTimeout(r, 1100));
       }
       if (bounds.length > 1) map.fitBounds(bounds, { padding: [30, 30] });
       else if (bounds.length === 1) map.setView(bounds[0], 10);
@@ -1099,11 +1099,12 @@ function SectionBlock({ sectionId, widgetIds, reportData, loading, targets, onTa
         <span className="section-label">{sec.label}</span>
         <div className="section-line" />
         <button onClick={insightOpen ? () => setInsightOpen(false) : generateInsight}
-          style={{background:'none',border:'1px solid var(--border)',borderRadius:6,padding:'4px 10px',cursor:'pointer',
-            fontSize:12,color:insightOpen?'var(--amber)':'var(--text-secondary)',display:'flex',alignItems:'center',gap:4,
-            fontFamily:'var(--font-body)',transition:'all 0.15s'}}
-          onMouseOver={e=>e.currentTarget.style.borderColor='var(--amber)'}
-          onMouseOut={e=>e.currentTarget.style.borderColor='var(--border)'}>
+          style={{background:insightOpen?'linear-gradient(135deg,#7c3aed,#6d28d9)':'linear-gradient(135deg,rgba(124,58,237,0.12),rgba(245,158,11,0.08))',
+            border:insightOpen?'1px solid #7c3aed':'1px solid rgba(124,58,237,0.3)',borderRadius:8,padding:'5px 14px',cursor:'pointer',
+            fontSize:12,fontWeight:600,color:insightOpen?'#fff':'var(--purple)',display:'flex',alignItems:'center',gap:5,
+            fontFamily:'var(--font-body)',transition:'all 0.2s',boxShadow:insightOpen?'0 2px 12px rgba(124,58,237,0.3)':'none'}}
+          onMouseOver={e=>{if(!insightOpen){e.currentTarget.style.background='linear-gradient(135deg,rgba(124,58,237,0.2),rgba(245,158,11,0.12))';e.currentTarget.style.borderColor='rgba(124,58,237,0.5)';}}}
+          onMouseOut={e=>{if(!insightOpen){e.currentTarget.style.background='linear-gradient(135deg,rgba(124,58,237,0.12),rgba(245,158,11,0.08))';e.currentTarget.style.borderColor='rgba(124,58,237,0.3)';}}}>
           {'\u2728'} {insightLoading ? 'Analyzing...' : insightOpen ? 'Hide Insights' : 'Rec Insights'}
         </button>
         <span className="section-badge">{widgetIds.length} widgets</span>

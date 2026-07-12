@@ -121,7 +121,7 @@ function toggleSection(id) {
   try { const er = await fetch('/admin/api/events/summary'); evtData = await er.json(); } catch(e) {}
 
   document.getElementById('header-meta').textContent =
-    orgs.length + ' org' + (orgs.length !== 1 ? 's' : '') + ' \u00B7 ' + sharedReports.length + ' shared reports \u00B7 ' + evtData.total + ' events tracked';
+    orgs.length + ' org' + (orgs.length !== 1 ? 's' : '') + ' \u00B7 ' + sharedReports.length + ' shared reports \u00B7 ' + evtData.total + ' events \u00B7 ' + (evtData.byType['insight_generated'] || 0) + ' AI insights';
 
   const BASE = window.location.origin;
 
@@ -150,6 +150,9 @@ function toggleSection(id) {
                 <div class="org-stat"><div class="org-stat-label">Sections</div><div class="org-stat-value">${o.sectionCount}</div></div>
                 <div class="org-stat"><div class="org-stat-label">Widgets</div><div class="org-stat-value">${o.widgetCount}</div></div>
                 <div class="org-stat"><div class="org-stat-label">Events</div><div class="org-stat-value">${evtData.byOrg[o.slug] || 0}</div></div>
+                <div class="org-stat"><div class="org-stat-label">AI Insights</div><div class="org-stat-value">${(evtData.byType['insight_generated'] || 0)}</div></div>
+                <div class="org-stat"><div class="org-stat-label">Dash Views</div><div class="org-stat-value">${(evtData.byType['dashboard_view'] || 0)}</div></div>
+                <div class="org-stat"><div class="org-stat-label">Layout Saves</div><div class="org-stat-value">${(evtData.byType['layout_saved'] || 0)}</div></div>
               </div>
               <div class="org-badges">
                 <span class="badge ${o.configured ? 'badge-green' : 'badge-gray'}">${o.configured ? 'Configured' : 'Not configured'}</span>
@@ -157,6 +160,7 @@ function toggleSection(id) {
                 <span class="badge badge-blue">${o.theme || 'dark'} mode</span>
                 <span class="badge badge-gray">cache ${o.cacheTTL}m</span>
                 <span class="badge badge-gray">${o.reportCount} reports</span>
+                <span class="badge" style="background:rgba(124,58,237,0.15);color:#7c3aed">\u2728 AI Insights</span>
                 ${o.perOrgReports.length ? '<span class="badge badge-amber">custom: ' + o.perOrgReports.join(', ') + '</span>' : ''}
               </div>
               <a href="${BASE}/${o.slug}?token=${o.token}" class="org-link" target="_blank">\u2192 Open Dashboard</a>
