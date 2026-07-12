@@ -199,14 +199,17 @@ app.get('/:org/api/config', authMiddleware, (req, res) => {
 });
 
 app.post('/:org/api/config', authMiddleware, (req, res) => {
-  const { template, widgets, cacheTTL, datePreset } = req.body;
   dashboardConfigs[req.orgSlug] = {
-    template: template || 'general',
-    widgets: widgets || [],
-    cacheTTL: cacheTTL || 15,
-    datePreset: datePreset || 'thisMonth',
+    ...req.body,
     updatedAt: new Date().toISOString()
   };
+  saveAllConfigs(dashboardConfigs);
+  res.json({ ok: true });
+});
+
+// --- Reset dashboard ---
+app.delete('/:org/api/config', authMiddleware, (req, res) => {
+  delete dashboardConfigs[req.orgSlug];
   saveAllConfigs(dashboardConfigs);
   res.json({ ok: true });
 });
@@ -218,6 +221,49 @@ app.post('/:org/api/cache/clear', authMiddleware, (req, res) => {
     if (key.startsWith(req.orgSlug + ':')) { cache.delete(key); cleared++; }
   }
   res.json({ cleared });
+});
+
+// ═══════════════════════════════════════════
+//  EVENT TRACKING
+// ═══════════════════════════════════════════
+const EVENTS_FILE = path.join(DATA_DIR, 'events.jsonl');
+
+app.post('/:org/api/events', authMiddleware, (req, res) => {
+  const events = Array.isArray(req.body) ? req.body : [req.body];
+  const lines = events.map(evt => JSON.stringify({
+    ...evt,
+    org: req.orgSlug,
+    ts: new Date().toISOString(),
+    ua: req.headers['user-agent'] || ''
+  })).join('\n') + '\n';
+  
+  ensureDataDir();
+  fs.appendFileSync(EVENTS_FILE, lines);
+  res.json({ ok: true, count: events.length });
+});
+
+// --- Event stats (for internal use) ---
+app.get('/:org/api/events/stats', authMiddleware, (req, res) => {
+  try {
+    if (!fs.existsSync(EVENTS_FILE)) return res.json({ total: 0, byType: {} });
+    const lines = fs.readFileSync(EVENTS_FILE, 'utf8').trim().split('\n').filter(Boolean);
+    const allEvents = lines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+    const orgEvents = req.query.all ? allEvents : allEvents.filter(e => e.org === req.orgSlug);
+    const byType = {};
+    orgEvents.forEach(e => { byType[e.event] = (byType[e.event] || 0) + 1; });
+    // Last 7 days daily activity
+    const now = Date.now();
+    const dailyActivity = {};
+    orgEvents.forEach(e => {
+      const day = e.ts?.split('T')[0];
+      if (day && (now - new Date(e.ts).getTime()) < 7 * 86400000) {
+        dailyActivity[day] = (dailyActivity[day] || 0) + 1;
+      }
+    });
+    res.json({ total: orgEvents.length, byType, dailyActivity });
+  } catch (e) {
+    res.json({ total: 0, byType: {}, error: e.message });
+  }
 });
 
 // ═══════════════════════════════════════════

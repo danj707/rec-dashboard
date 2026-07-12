@@ -343,6 +343,32 @@ async function fetchReportData(rt, dr) {
 function clearDataStore() { Object.keys(dataStore).forEach(k => delete dataStore[k]); }
 
 // ═══════════════════════════════════════════════════════
+//  EVENT TRACKING
+// ═══════════════════════════════════════════════════════
+const eventQueue = [];
+let flushTimer = null;
+
+function track(event, props = {}) {
+  eventQueue.push({ event, ...props, clientTs: new Date().toISOString() });
+  if (!flushTimer) {
+    flushTimer = setTimeout(flushEvents, 2000); // batch every 2s
+  }
+}
+
+function flushEvents() {
+  flushTimer = null;
+  if (!eventQueue.length) return;
+  const batch = eventQueue.splice(0);
+  fetch(`/${ORG_SLUG}/api/events?token=${TOKEN}`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(batch)
+  }).catch(() => {}); // fire and forget
+}
+
+// Flush on page unload
+window.addEventListener('beforeunload', flushEvents);
+
+// ═══════════════════════════════════════════════════════
 //  CHART DEFAULTS
 // ═══════════════════════════════════════════════════════
 Chart.defaults.color = '#888'; Chart.defaults.borderColor = '#262626';
@@ -582,7 +608,7 @@ function TemplateChooser({ onSelect }) {
 // ═══════════════════════════════════════════════════════
 //  SETTINGS
 // ═══════════════════════════════════════════════════════
-function SettingsPopover({ cacheTTL, onCacheTTLChange, onClearCache }) {
+function SettingsPopover({ cacheTTL, onCacheTTLChange, onClearCache, onReset }) {
   return (
     <div style={{ position:'absolute',top:'100%',right:0,marginTop:6,background:'var(--bg-modal)',border:'1px solid var(--border)',
       borderRadius:10,padding:16,width:260,zIndex:60,boxShadow:'0 12px 32px rgba(0,0,0,0.5)' }} onClick={e=>e.stopPropagation()}>
@@ -592,7 +618,12 @@ function SettingsPopover({ cacheTTL, onCacheTTLChange, onClearCache }) {
         style={{width:'100%',padding:'6px 8px',borderRadius:6,border:'1px solid var(--border)',background:'var(--bg-surface)',color:'var(--text-primary)',fontSize:13,marginBottom:12}}>
         <option value={5}>5 minutes</option><option value={15}>15 minutes</option><option value={30}>30 minutes</option><option value={60}>1 hour</option><option value={240}>4 hours</option>
       </select>
-      <button className="btn" style={{width:'100%',fontSize:12}} onClick={onClearCache}>Clear Cache Now</button>
+      <button className="btn" style={{width:'100%',fontSize:12,marginBottom:8}} onClick={onClearCache}>Clear Cache Now</button>
+      <div style={{borderTop:'1px solid var(--border)',paddingTop:10,marginTop:4}}>
+        <button className="btn" style={{width:'100%',fontSize:12,color:'var(--red)',borderColor:'#3a1515'}} onClick={() => {
+          if (confirm('Reset dashboard? This will clear your layout and return to the template chooser.')) onReset();
+        }}>Reset Dashboard</button>
+      </div>
     </div>
   );
 }
@@ -637,6 +668,7 @@ function DashboardApp() {
       .then(results => {
         const rd = {}; results.forEach(([rt, rows]) => { rd[rt] = rows; });
         setReportData(rd); setLoading(false); setLastRefresh(new Date());
+        track('dashboard_view', { sections: config.sections.length, widgets: allWidgetIds.length, reportTypes: rts, dateRange });
       });
   }, [config, dateRange]);
 
@@ -646,6 +678,7 @@ function DashboardApp() {
     else if (p==='lastMonth') setDateRange(getMonthRange(-1));
     else if (p==='last3') { const r=getMonthRange(-2); r.end=getMonthRange(0).end; setDateRange(r); }
     else if (p==='ytd') { const now=new Date(); setDateRange({start:`${now.getFullYear()}-01-01`,end:now.toISOString().split('T')[0]}); }
+    track('date_preset_changed', { preset: p });
   }
 
   async function saveConfig(cfg) {
@@ -656,19 +689,33 @@ function DashboardApp() {
     const t = TEMPLATES[key];
     const cfg = { template: key, sections: t.sections.map(s=>({...s, widgets:[...s.widgets]})), cacheTTL: 15, datePreset: 'thisMonth' };
     setConfig(cfg); await saveConfig(cfg);
+    track('template_selected', { template: key, sections: t.sections.length });
   }
 
   async function handleSaveSections(sections) {
+    const oldIds = config.sections.map(s=>s.id);
+    const newIds = sections.map(s=>s.id);
+    const added = newIds.filter(id => !oldIds.includes(id));
+    const removed = oldIds.filter(id => !newIds.includes(id));
     const cfg = { ...config, sections }; setConfig(cfg); setEditOpen(false); await saveConfig(cfg);
+    track('layout_saved', { sections: sections.length, widgets: sections.reduce((s,sec)=>s+sec.widgets.length,0), sectionsAdded: added, sectionsRemoved: removed });
   }
 
   async function handleClearCache() {
     try { await fetch(`/${ORG_SLUG}/api/cache/clear?token=${TOKEN}`, {method:'POST'}); } catch(e) {}
     clearDataStore(); setDateRange({...dateRange}); setSettingsOpen(false);
+    track('cache_cleared');
+  }
+
+  async function handleReset() {
+    try { await fetch(`/${ORG_SLUG}/api/config?token=${TOKEN}`, {method:'DELETE'}); } catch(e) {}
+    track('dashboard_reset');
+    flushEvents();
+    setConfig('new'); setSettingsOpen(false);
   }
 
   async function handleCacheTTLChange(ttl) { const cfg={...config,cacheTTL:ttl}; setConfig(cfg); await saveConfig(cfg); }
-  function handleRefresh() { clearDataStore(); setDateRange({...dateRange}); }
+  function handleRefresh() { clearDataStore(); setDateRange({...dateRange}); track('refresh_clicked'); }
 
   if (config === 'new') return <TemplateChooser onSelect={handleSelectTemplate} />;
   if (!config) return <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',color:'var(--text-secondary)'}}>Loading...</div>;
@@ -693,10 +740,10 @@ function DashboardApp() {
         </div>
         <div className="dash-header-right">
           <button className="btn" onClick={handleRefresh}>{'\u21BB'} Refresh</button>
-          <button className="btn" onClick={()=>setEditOpen(true)}>{'\u270E'} Edit Dashboard</button>
+          <button className="btn" onClick={()=>{setEditOpen(true);track('edit_opened');}}>{'\u270E'} Edit Dashboard</button>
           <div style={{position:'relative'}}>
             <button className="btn" onClick={()=>setSettingsOpen(!settingsOpen)}>{'\u2699'}</button>
-            {settingsOpen && <SettingsPopover cacheTTL={config.cacheTTL||15} onCacheTTLChange={handleCacheTTLChange} onClearCache={handleClearCache} />}
+            {settingsOpen && <SettingsPopover cacheTTL={config.cacheTTL||15} onCacheTTLChange={handleCacheTTLChange} onClearCache={handleClearCache} onReset={handleReset} />}
           </div>
         </div>
       </div>
