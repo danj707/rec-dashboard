@@ -137,7 +137,7 @@ async function fetchMetabaseData(orgSlug, reportType, query) {
   const params = buildMetabaseParams(reportType, query);
   // Shared UUIDs need org_id to filter data
   if (isShared && org.orgId) {
-    params.push({ type: 'category', target: ['variable', ['template-tag', 'org_id']], value: org.orgId });
+    params.push({ type: 'string/=', target: ['variable', ['template-tag', 'org_id']], value: org.orgId });
   }
   const cacheKey = `${orgSlug}:${reportType}:${JSON.stringify(params)}`;
   
@@ -151,11 +151,12 @@ async function fetchMetabaseData(orgSlug, reportType, query) {
   const paramStr = params.length ? `?parameters=${encodeURIComponent(JSON.stringify(params))}` : '';
   const url = `${METABASE_URL}/api/public/card/${uuid}/query/json${paramStr}`;
 
-  console.log(`[FETCH] ${orgSlug}/${reportType} → ${uuid}`);
+  console.log(`[FETCH] ${orgSlug}/${reportType} → ${uuid} (shared=${isShared})`);
   const resp = await fetch(url);
   if (!resp.ok) throw new Error(`Metabase ${resp.status}: ${resp.statusText}`);
   
   const rows = await resp.json();
+  console.log(`[DATA] ${orgSlug}/${reportType}: ${rows.length} rows${rows.length > 0 ? ', cols: ' + Object.keys(rows[0]).join(', ') : ''}`);
   setCache(cacheKey, rows, ttl);
   return rows;
 }
