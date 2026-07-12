@@ -20,8 +20,7 @@ const ORGS = {
     token: '7qNNXDFo4HGpOh5B',
     logoUrl: 'https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/organization-d781690b-c5a0-43c5-8443-9ae43899528c/fullLogo.png',
     reports: {
-      facility: '4b64af10-d57f-41af-aad8-b16d12a8f7b8',
-      programs: 'd3a3554f-1232-4803-9cc7-5b0f611360b0'
+      facility: '4b64af10-d57f-41af-aad8-b16d12a8f7b8'
     }
   }
 };
