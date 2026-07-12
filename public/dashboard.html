@@ -451,7 +451,7 @@ const W = {
   'user-by-zip': { label: 'Users by Zip', description: 'Top zip codes', section: 'users',
     reportType: 'users', size: 'md', icon: '\uD83D\uDCEC', component: 'bar',
     transform: rows => {
-      const g={}; rows.forEach(r=>{const k=r['zip']||r['Zip']||r['zip_code']||''; if(k&&k!=='null')g[k]=(g[k]||0)+1;});
+      const g={}; rows.forEach(r=>{const k=r['Zip Code']||r['zip']||r['Zip']||''; if(k&&k!=='null')g[k]=(g[k]||0)+1;});
       const s=Object.entries(g).sort((a,b)=>b[1]-a[1]).slice(0,10);
       return { labels:s.map(e=>e[0]), values:s.map(e=>e[1]) };
     }},
@@ -476,7 +476,7 @@ const W = {
   'mem-type-donut': { label: 'Membership Types', description: 'Breakdown by membership type', section: 'memberships',
     reportType: 'memberships', size: 'md', icon: '\uD83C\uDFAB', component: 'donut',
     transform: rows => {
-      const g={}; rows.forEach(r=>{const k=r['membership_name']||r['Membership Name']||r['type']||r['Type']||'Unknown'; g[k]=(g[k]||0)+1;});
+      const g={}; rows.forEach(r=>{const k=r['Membership Type']||r['Group / Plan']||r['membership_name']||r['Type']||'Unknown'; g[k]=(g[k]||0)+1;});
       const s=Object.entries(g).sort((a,b)=>b[1]-a[1]).slice(0,8);
       return { labels:s.map(e=>e[0]), values:s.map(e=>e[1]) };
     }},
@@ -490,9 +490,9 @@ const W = {
   'tbl-memberships': { label: 'Membership Summary', description: 'Types with active count and revenue', section: 'memberships',
     reportType: 'memberships', size: 'lg', icon: '\uD83D\uDCCB', component: 'table',
     transform: rows => {
-      const g={}; rows.forEach(r=>{const k=r['membership_name']||r['Membership Name']||r['type']||r['Type']||'Unknown';
+      const g={}; rows.forEach(r=>{const k=r['Membership Type']||r['Group / Plan']||r['membership_name']||r['Type']||'Unknown';
         if(!g[k])g[k]={active:0,canceled:0,revenue:0}; const st=(r['status']||r['Status']||'').toLowerCase();
-        if(st==='active')g[k].active++; else if(st==='canceled')g[k].canceled++; g[k].revenue+=pf(r['paid']||r['Paid']||r['net']||r['Net']);});
+        if(st==='active')g[k].active++; else if(st==='canceled')g[k].canceled++; g[k].revenue+=pf(r['Paid']||r['paid']||r['Net Collected']);});
       const s=Object.entries(g).sort((a,b)=>b[1].active-a[1].active).slice(0,12);
       return { columns:['Type','Active','Canceled','Revenue'],
         data:s.map(([k,v])=>[k,v.active,v.canceled,'$'+Math.round(v.revenue).toLocaleString()]) };
@@ -510,11 +510,11 @@ const W = {
     transform: rows => ({ value: rows.reduce((s,r)=>s+pf(r['Refunds ($)']||r['Refunds']||r['refunds']),0), format:'currency', colorClass:'metric-red' }) },
   'prod-units': { label: 'Units Sold', description: 'Total quantity', section: 'products',
     reportType: 'products', size: 'sm', icon: '\uD83D\uDCE6', component: 'metric',
-    transform: rows => ({ value: rows.reduce((s,r)=>s+(parseInt(r['Qty']||r['qty']||r['Quantity'])||0),0), format:'number' }) },
+    transform: rows => ({ value: rows.reduce((s,r)=>s+(parseInt(r['Qty Sold']||r['Qty']||r['qty'])||0),0), format:'number' }) },
   'prod-by-product': { label: 'Revenue by Product', description: 'Top products by revenue', section: 'products',
     reportType: 'products', size: 'md', icon: '\uD83D\uDECD\uFE0F', component: 'bar',
     transform: rows => {
-      const g={}; rows.forEach(r=>{const k=r['Product']||r['product']||'Unknown'; g[k]=(g[k]||0)+pf(r['Revenue ($)']||r['Revenue']||r['revenue']);});
+      const g={}; rows.forEach(r=>{const k=r['Product Name']||r['Product']||r['product']||'Unknown'; g[k]=(g[k]||0)+pf(r['Revenue ($)']||r['Revenue']||r['revenue']);});
       const s=Object.entries(g).sort((a,b)=>b[1]-a[1]).slice(0,10);
       return { labels:s.map(e=>e[0]), values:s.map(e=>e[1]), format:'currency' };
     }},
@@ -583,11 +583,11 @@ const W = {
       const s=Object.entries(g).sort((a,b)=>b[1]-a[1]).slice(0,10);
       return { labels:s.map(e=>e[0]), values:s.map(e=>e[1]) };
     }},
-  'demo-race': { label: 'Race/Ethnicity', description: 'Participant breakdown', section: 'demographics',
-    reportType: 'program-demographics', size: 'md', icon: '\uD83C\uDF0D', component: 'donut',
+  'demo-race': { label: 'Participants by Zip', description: 'Top zip codes', section: 'demographics',
+    reportType: 'program-demographics', size: 'md', icon: '\uD83D\uDCEC', component: 'bar',
     transform: rows => {
-      const g={}; rows.forEach(r=>{const k=r['race']||r['Race']||r['ethnicity']||r['Ethnicity']||'Unknown'; g[k]=(g[k]||0)+1;});
-      const s=Object.entries(g).sort((a,b)=>b[1]-a[1]).slice(0,8);
+      const g={}; rows.forEach(r=>{const k=r['Zip Code']||r['zip']||''; if(k&&k!=='null'&&k!=='')g[k]=(g[k]||0)+1;});
+      const s=Object.entries(g).sort((a,b)=>b[1]-a[1]).slice(0,10);
       return { labels:s.map(e=>e[0]), values:s.map(e=>e[1]) };
     }},
 
@@ -831,7 +831,7 @@ function SectionBlock({ sectionId, widgetIds, reportData, loading }) {
 //  EDIT MODAL
 // ═══════════════════════════════════════════════════════
 const MAX_PER_SECTION = 8;
-const MAX_TOTAL = 20;
+const MAX_TOTAL = 30;
 
 function EditModal({ sections, onSave, onClose, availableReports }) {
   const [draft, setDraft] = useState(sections.map(s => ({ ...s, widgets: [...s.widgets] })));
