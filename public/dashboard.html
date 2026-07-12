@@ -985,16 +985,71 @@ function WidgetCard({ widgetId, reportData, loading, target, onTargetChange }) {
 // ═══════════════════════════════════════════════════════
 //  SECTION BLOCK
 // ═══════════════════════════════════════════════════════
-function SectionBlock({ sectionId, widgetIds, reportData, loading, targets, onTargetChange }) {
+function SectionBlock({ sectionId, widgetIds, reportData, loading, targets, onTargetChange, dateRange }) {
   const sec = SECTIONS[sectionId]; if (!sec) return null;
+  const [insight, setInsight] = useState(null);
+  const [insightLoading, setInsightLoading] = useState(false);
+  const [insightOpen, setInsightOpen] = useState(false);
+
+  async function generateInsight() {
+    setInsightLoading(true); setInsightOpen(true);
+    // Build summary from widget transforms
+    const lines = [];
+    widgetIds.forEach(id => {
+      const def = W[id]; if (!def || def.component === 'table' || def.component === 'map') return;
+      const raw = reportData[def.reportType];
+      if (!raw) return;
+      const data = def.transform(raw);
+      if (def.component === 'metric' && data?.value != null) {
+        lines.push(`${def.label}: ${fmt(data.value, data.format)}`);
+      } else if (data?.labels && data?.values) {
+        const top3 = data.labels.slice(0, 3).map((l, i) => `${l}: ${data.format === 'currency' ? fmt(data.values[i], 'currency') : data.values[i]}`);
+        lines.push(`${def.label} (top 3): ${top3.join(', ')}`);
+      }
+    });
+    const summary = lines.join('\n');
+    const dr = dateRange ? `${dateRange.start} to ${dateRange.end}` : 'current month';
+    try {
+      const resp = await fetch(`/${ORG_SLUG}/api/insights/${sectionId}?token=${TOKEN}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ summary, dateRange: dr })
+      });
+      const json = await resp.json();
+      setInsight(json.insight || json.error || 'No insights generated.');
+    } catch (e) { setInsight('Failed to generate insights.'); }
+    setInsightLoading(false);
+    track('insight_requested', { section: sectionId });
+  }
+
   return (
     <div className="dashboard-section">
       <div className="section-header">
         <span className="section-icon">{sec.icon}</span>
         <span className="section-label">{sec.label}</span>
         <div className="section-line" />
+        <button onClick={insightOpen ? () => setInsightOpen(false) : generateInsight}
+          style={{background:'none',border:'1px solid var(--border)',borderRadius:6,padding:'4px 10px',cursor:'pointer',
+            fontSize:12,color:insightOpen?'var(--amber)':'var(--text-secondary)',display:'flex',alignItems:'center',gap:4,
+            fontFamily:'var(--font-body)',transition:'all 0.15s'}}
+          onMouseOver={e=>e.currentTarget.style.borderColor='var(--amber)'}
+          onMouseOut={e=>e.currentTarget.style.borderColor='var(--border)'}>
+          {'\u2728'} {insightLoading ? 'Analyzing...' : insightOpen ? 'Hide Insights' : 'Rec Insights'}
+        </button>
         <span className="section-badge">{widgetIds.length} widgets</span>
       </div>
+      {insightOpen && (
+        <div style={{background:'var(--bg-card)',border:'1px solid var(--border)',borderRadius:10,padding:'16px 20px',
+          marginBottom:14,borderLeft:'3px solid var(--amber)'}}>
+          <div style={{fontSize:12,fontWeight:600,color:'var(--amber)',marginBottom:8,display:'flex',alignItems:'center',gap:6}}>
+            {'\u2728'} Rec Insights
+          </div>
+          {insightLoading ? (
+            <div style={{color:'var(--text-muted)',fontSize:13}}>Analyzing {sec.label.toLowerCase()} data...</div>
+          ) : (
+            <div style={{fontSize:13,color:'var(--text-secondary)',lineHeight:1.7,whiteSpace:'pre-wrap'}}>{insight}</div>
+          )}
+        </div>
+      )}
       <div className="widget-grid">
         {widgetIds.map(id => <WidgetCard key={id} widgetId={id} reportData={reportData} loading={loading}
           target={targets?.[id]} onTargetChange={onTargetChange} />)}
@@ -1328,7 +1383,7 @@ function DashboardApp() {
       <div className={loading && lastRefresh ? 'sections-loading' : ''}>
         {config.sections.map((sec, i) => (
           <SectionBlock key={sec.id+i+theme} sectionId={sec.id} widgetIds={sec.widgets} reportData={reportData} loading={loading}
-            targets={targets} onTargetChange={handleTargetChange} />
+            targets={targets} onTargetChange={handleTargetChange} dateRange={dateRange} />
         ))}
       </div>
 

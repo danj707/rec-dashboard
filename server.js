@@ -381,9 +381,95 @@ app.get('/:org/api/events/stats', authMiddleware, (req, res) => {
 });
 
 // ═══════════════════════════════════════════
+//  AI INSIGHTS
+// ═══════════════════════════════════════════
+const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
+
+const INSIGHT_PROMPTS = {
+  revenue: 'Analyze these revenue/GL metrics. Focus on: revenue health, refund rates, payment method trends, and any GL codes that stand out.',
+  facility: 'Analyze these facility rental metrics. Focus on: booking volume trends, top/underperforming locations, revenue per booking, and headcount patterns.',
+  programs: 'Analyze these program enrollment metrics. Focus on: enrollment vs capacity (fill rates), top programs, revenue per enrollment, and cancellation rates.',
+  courts: 'Analyze these court utilization metrics. Focus on: instant vs managed booking mix, busiest courts, utilization patterns, and growth opportunities.',
+  fasttrack: 'Analyze these Fast Track pre-registration metrics. Focus on: conversion rates, pending signups that need follow-up, demand vs capacity, and which programs generate the most interest.',
+  'users-demographics': 'Analyze these user and demographic metrics. Focus on: user growth trends, geographic concentration, age/gender distribution, and community reach.',
+  memberships: 'Analyze these membership metrics. Focus on: active vs canceled ratio, revenue per member, renewal patterns, and retention opportunities.',
+  products: 'Analyze these product/POS sales metrics. Focus on: top sellers, revenue trends, refund rates, and sales volume patterns.',
+  instructors: 'Analyze these instructor payout metrics. Focus on: revenue per instructor, section coverage, top performers, and refund exposure.',
+};
+
+app.post('/:org/api/insights/:sectionId', authMiddleware, async (req, res) => {
+  if (!ANTHROPIC_API_KEY) return res.status(503).json({ error: 'AI insights not configured (missing ANTHROPIC_API_KEY)' });
+  const { sectionId } = req.params;
+  const { summary, dateRange } = req.body;
+
+  const sectionPrompt = INSIGHT_PROMPTS[sectionId] || 'Analyze these metrics and provide actionable insights.';
+  const prompt = `You are a parks and recreation analytics advisor helping ${req.org.name}. The date range is ${dateRange || 'current month'}.
+
+${sectionPrompt}
+
+Here are the metrics:
+${summary}
+
+Provide 3-5 brief, specific, actionable insights. Use the actual numbers. Be direct — no filler. Use bullet points. If something looks concerning, flag it. If something looks great, celebrate it. Keep each insight to 1-2 sentences max.`;
+
+  try {
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 600,
+        messages: [{ role: 'user', content: prompt }] })
+    });
+    const data = await resp.json();
+    const insight = data.content?.[0]?.text || 'No insights generated.';
+    track_server(req.orgSlug, 'insight_generated', { section: sectionId });
+    res.json({ insight });
+  } catch (e) {
+    console.error('[AI] Insight error:', e.message);
+    res.status(500).json({ error: 'Failed to generate insights' });
+  }
+});
+
+function track_server(org, event, props = {}) {
+  try {
+    ensureDataDir();
+    const line = JSON.stringify({ event, org, ...props, ts: new Date().toISOString() }) + '\n';
+    fs.appendFileSync(EVENTS_FILE, line);
+  } catch(e) {}
+}
+
+// ═══════════════════════════════════════════
+//  PRE-WARM CACHE
+// ═══════════════════════════════════════════
+async function warmCache() {
+  const now = new Date();
+  const start = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
+  const end = new Date(now.getFullYear(), now.getMonth()+1, 0).toISOString().split('T')[0];
+
+  for (const [slug, org] of Object.entries(ORGS)) {
+    console.log(`[WARM] Pre-warming cache for ${slug} (${start} to ${end})`);
+    // Collect all available report types for this org
+    const reportTypes = new Set([...Object.keys(org.reports || {}), ...Object.keys(SHARED_UUIDS)]);
+
+    for (const rt of reportTypes) {
+      try {
+        await fetchMetabaseData(slug, rt, { start, end });
+        console.log(`[WARM] ${slug}/${rt} \u2713`);
+      } catch (e) {
+        console.log(`[WARM] ${slug}/${rt} \u2717 ${e.message}`);
+      }
+      // 2s between requests to be nice to Metabase
+      await new Promise(r => setTimeout(r, 2000));
+    }
+    console.log(`[WARM] ${slug} complete — ${reportTypes.size} reports cached`);
+  }
+}
+
+// ═══════════════════════════════════════════
 //  START
 // ═══════════════════════════════════════════
 app.listen(PORT, () => {
   console.log(`rec.us Dashboard running on port ${PORT}`);
   console.log(`Orgs: ${Object.keys(ORGS).join(', ')}`);
+  // Pre-warm cache 5s after startup
+  setTimeout(warmCache, 5000);
 });
