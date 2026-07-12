@@ -799,7 +799,8 @@ function applyChartTheme(theme) {
   Chart.defaults.plugins.tooltip.titleColor = isDark ? '#eee' : '#111';
   Chart.defaults.plugins.tooltip.bodyColor = isDark ? '#ccc' : '#333';
 }
-applyChartTheme('dark');
+applyChartTheme('light');
+document.documentElement.setAttribute('data-theme', 'light');
 Chart.defaults.font.family = "'Inter', sans-serif";
 Chart.defaults.plugins.legend.display = false;
 Chart.defaults.plugins.tooltip.borderWidth = 1;
@@ -1320,7 +1321,7 @@ function DashboardApp() {
   const [editOpen, setEditOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [lastRefresh, setLastRefresh] = useState(null);
-  const [theme, setTheme] = useState('dark');
+  const [theme, setTheme] = useState('light');
   const [targets, setTargets] = useState({});
 
   function applyTheme(t) {
