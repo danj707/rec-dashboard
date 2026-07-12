@@ -824,9 +824,8 @@ function SectionBlock({ sectionId, widgetIds, reportData, loading }) {
 // ═══════════════════════════════════════════════════════
 //  EDIT MODAL
 // ═══════════════════════════════════════════════════════
-const IS_ADMIN = params.get('admin') === '1';
-const MAX_PER_SECTION = IS_ADMIN ? 999 : 8;
-const MAX_TOTAL = IS_ADMIN ? 999 : 30;
+const MAX_PER_SECTION = 999;
+const MAX_TOTAL = 999;
 
 function EditModal({ sections, onSave, onClose, availableReports }) {
   const [draft, setDraft] = useState(sections.map(s => ({ ...s, widgets: [...s.widgets] })));
