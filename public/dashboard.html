@@ -177,7 +177,7 @@ const SECTIONS = {
     defaultWidgets: ['rental-count','rental-revenue','rental-headcount','rental-locations','rental-by-location','rental-daily-trend','rental-day-of-week'] },
   programs: { id: 'programs', label: 'Programs & Enrollment', icon: '\uD83D\uDCDA', color: '#3b82f6',
     description: 'Enrollment, capacity, and program revenue',
-    defaultWidgets: ['program-enrollments','program-revenue','program-cancellations','program-top'] },
+    defaultWidgets: ['program-enrollments','program-revenue','program-cancellations','program-fill-rate','program-top'] },
 };
 
 // ═══════════════════════════════════════════════════════
@@ -281,24 +281,32 @@ const W = {
   // ── Programs ──
   'program-enrollments': { label: 'Total Enrollments', description: 'Sum of program enrollments', section: 'programs',
     reportType: 'programs', size: 'sm', icon: '\uD83C\uDF93', component: 'metric',
-    transform: rows => ({ value: rows.reduce((s,r) => s + (parseInt(r['Enrollments'] || r['Enrolled'])||0), 0), format: 'number' }) },
+    transform: rows => ({ value: rows.reduce((s,r) => s + (parseInt(r['enrolled'])||0), 0), format: 'number' }) },
   'program-revenue': { label: 'Program Revenue', description: 'Net revenue from programs', section: 'programs',
     reportType: 'programs', size: 'sm', icon: '\uD83D\uDCB0', component: 'metric',
-    transform: rows => ({ value: rows.reduce((s,r) => s + pf(r['Net Revenue'] || r['Net Total'] || r['Charged']), 0), format: 'currency', colorClass: 'metric-green' }) },
-  'program-cancellations': { label: 'Cancellations', description: 'Total cancelled enrollments', section: 'programs',
-    reportType: 'programs', size: 'sm', icon: '\u274C', component: 'metric',
-    transform: rows => ({ value: rows.reduce((s,r) => s + (parseInt(r['Cancellations'])||0), 0), format: 'number', colorClass: 'metric-red' }) },
+    transform: rows => ({ value: rows.reduce((s,r) => s + pf(r['net_total'] || r['charged']), 0), format: 'currency', colorClass: 'metric-green' }) },
+  'program-cancellations': { label: 'Program Refunds', description: 'Total refund amount from programs', section: 'programs',
+    reportType: 'programs', size: 'sm', icon: '\uD83D\uDD04', component: 'metric',
+    transform: rows => ({ value: rows.reduce((s,r) => s + pf(r['refunds']), 0), format: 'currency', colorClass: 'metric-red' }) },
+  'program-fill-rate': { label: 'Avg Fill Rate', description: 'Average program capacity utilization', section: 'programs',
+    reportType: 'programs', size: 'sm', icon: '\uD83D\uDCCA', component: 'metric',
+    transform: rows => {
+      const valid = rows.filter(r => pf(r['capacity']) > 0);
+      if (!valid.length) return { value: 0, format: 'percent' };
+      const avg = valid.reduce((s,r) => s + (pf(r['enrolled']) / pf(r['capacity'])) * 100, 0) / valid.length;
+      return { value: avg, format: 'percent' };
+    }},
   'program-top': { label: 'Top Programs', description: 'Programs ranked by enrollment', section: 'programs',
     reportType: 'programs', size: 'md', icon: '\uD83C\uDFC6', component: 'bar',
     transform: rows => {
-      const g = {}; rows.forEach(r => { const k = r['Program']||r['program']||'Unknown'; g[k]=(g[k]||0)+(parseInt(r['Enrollments']||r['Enrolled'])||0); });
+      const g = {}; rows.forEach(r => { const k = r['program']||'Unknown'; g[k]=(g[k]||0)+(parseInt(r['enrolled'])||0); });
       const s = Object.entries(g).sort((a,b)=>b[1]-a[1]).slice(0,10);
       return { labels: s.map(e=>e[0]), values: s.map(e=>e[1]) };
     }},
   'program-revenue-by-prog': { label: 'Revenue by Program', description: 'Programs ranked by revenue', section: 'programs',
     reportType: 'programs', size: 'md', icon: '\uD83D\uDCCA', component: 'bar',
     transform: rows => {
-      const g = {}; rows.forEach(r => { const k = r['Program']||'Unknown'; g[k]=(g[k]||0)+pf(r['Net Revenue']||r['Net Total']||r['Charged']); });
+      const g = {}; rows.forEach(r => { const k = r['program']||'Unknown'; g[k]=(g[k]||0)+pf(r['net_total']||r['charged']); });
       const s = Object.entries(g).filter(e=>e[1]>0).sort((a,b)=>b[1]-a[1]).slice(0,10);
       return { labels: s.map(e=>e[0]), values: s.map(e=>e[1]), format: 'currency' };
     }},
@@ -312,7 +320,7 @@ const TEMPLATES = {
     sections: [
       { id: 'revenue', widgets: ['gl-total-revenue','gl-total-refunds','gl-net-revenue','gl-transactions','gl-by-code','gl-by-payment-method'] },
       { id: 'facility', widgets: ['rental-count','rental-revenue','rental-headcount','rental-locations','rental-by-location','rental-daily-trend'] },
-      { id: 'programs', widgets: ['program-enrollments','program-revenue','program-cancellations','program-top'] },
+      { id: 'programs', widgets: ['program-enrollments','program-revenue','program-cancellations','program-fill-rate','program-top'] },
     ]},
   financial: { label: 'Revenue Focus', icon: '\uD83D\uDCB0', description: 'Deep dive into revenue metrics and trends',
     sections: [
@@ -322,7 +330,7 @@ const TEMPLATES = {
   operations: { label: 'Operations', icon: '\u2699\uFE0F', description: 'Bookings, utilization, and activity patterns',
     sections: [
       { id: 'facility', widgets: ['rental-count','rental-locations','rental-headcount','rental-avg-value','rental-day-of-week','rental-daily-trend','rental-headcount-by-loc'] },
-      { id: 'programs', widgets: ['program-enrollments','program-cancellations','program-top','program-revenue-by-prog'] },
+      { id: 'programs', widgets: ['program-enrollments','program-fill-rate','program-cancellations','program-top','program-revenue-by-prog'] },
     ]},
 };
 
