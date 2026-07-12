@@ -403,31 +403,33 @@ const W = {
       return { labels:['Instant','Leagues/Managed'], values:[instant,managed] };
     }},
 
-  // ── Fast Track ──
+  // ── Fast Track (filter Row Type !== 'user') ──
   'ft-signups': { label: 'FT Signups', description: 'Total Fast Track signups', section: 'fasttrack',
     reportType: 'fasttrack', size: 'sm', icon: '\uD83D\uDE80', component: 'metric',
-    transform: rows => ({ value: rows.reduce((s,r)=>s+(parseInt(r['FT Signups']||r['ft_signups'])||0),0), format:'number' }) },
+    transform: rows => { const sec=rows.filter(r=>r['Row Type']!=='user'); return { value: sec.reduce((s,r)=>s+(parseInt(r['FT Signups'])||0),0), format:'number' }; } },
   'ft-converted': { label: 'Converted', description: 'FT signups that enrolled', section: 'fasttrack',
     reportType: 'fasttrack', size: 'sm', icon: '\u2705', component: 'metric',
-    transform: rows => ({ value: rows.reduce((s,r)=>s+(parseInt(r['FT Converted']||r['ft_converted'])||0),0), format:'number', colorClass:'metric-green' }) },
+    transform: rows => { const sec=rows.filter(r=>r['Row Type']!=='user'); return { value: sec.reduce((s,r)=>s+(parseInt(r['FT Converted'])||0),0), format:'number', colorClass:'metric-green' }; } },
   'ft-pending': { label: 'Pending', description: 'Not yet converted', section: 'fasttrack',
     reportType: 'fasttrack', size: 'sm', icon: '\u23F3', component: 'metric',
-    transform: rows => ({ value: rows.reduce((s,r)=>s+(parseInt(r['FT Pending']||r['ft_pending'])||0),0), format:'number', colorClass:'metric-red' }) },
+    transform: rows => { const sec=rows.filter(r=>r['Row Type']!=='user'); return { value: sec.reduce((s,r)=>s+(parseInt(r['FT Pending'])||0),0), format:'number', colorClass:'metric-red' }; } },
   'ft-conv-rate': { label: 'Conversion %', description: 'Signup to enrollment rate', section: 'fasttrack',
     reportType: 'fasttrack', size: 'sm', icon: '\uD83D\uDCC8', component: 'metric',
     transform: rows => {
-      const sig=rows.reduce((s,r)=>s+(parseInt(r['FT Signups']||r['ft_signups'])||0),0);
-      const conv=rows.reduce((s,r)=>s+(parseInt(r['FT Converted']||r['ft_converted'])||0),0);
+      const sec=rows.filter(r=>r['Row Type']!=='user');
+      const sig=sec.reduce((s,r)=>s+(parseInt(r['FT Signups'])||0),0);
+      const conv=sec.reduce((s,r)=>s+(parseInt(r['FT Converted'])||0),0);
       return { value: sig>0?Math.round(conv/sig*1000)/10:0, format:'percent', colorClass:'metric-green' };
     }},
-  'ft-wishlists': { label: 'Wishlists', description: 'Active wishlist entries', section: 'fasttrack',
+  'ft-wishlists': { label: 'Waitlisted', description: 'Active waitlist entries', section: 'fasttrack',
     reportType: 'fasttrack', size: 'sm', icon: '\uD83D\uDCDD', component: 'metric',
-    transform: rows => ({ value: rows.reduce((s,r)=>s+(parseInt(r['Wishlists']||r['wishlists'])||0),0), format:'number' }) },
+    transform: rows => { const sec=rows.filter(r=>r['Row Type']!=='user'); return { value: sec.reduce((s,r)=>s+(parseInt(r['Waitlisted'])||0),0), format:'number' }; } },
   'ft-top-programs': { label: 'Top FT Programs', description: 'Programs by FT signup volume', section: 'fasttrack',
     reportType: 'fasttrack', size: 'md', icon: '\uD83C\uDFC6', component: 'bar',
     transform: rows => {
-      const g={}; rows.forEach(r=>{const k=r['Program']||r['program']||'Unknown'; g[k]=(g[k]||0)+(parseInt(r['FT Signups']||r['ft_signups'])||0);});
-      const s=Object.entries(g).sort((a,b)=>b[1]-a[1]).slice(0,10);
+      const sec=rows.filter(r=>r['Row Type']!=='user');
+      const g={};sec.forEach(r=>{const k=r['Program']||'Unknown'; g[k]=(g[k]||0)+(parseInt(r['FT Signups'])||0);});
+      const s=Object.entries(g).filter(e=>e[1]>0).sort((a,b)=>b[1]-a[1]).slice(0,10);
       return { labels:s.map(e=>e[0]), values:s.map(e=>e[1]) };
     }},
 
@@ -830,8 +832,9 @@ function SectionBlock({ sectionId, widgetIds, reportData, loading }) {
 // ═══════════════════════════════════════════════════════
 //  EDIT MODAL
 // ═══════════════════════════════════════════════════════
-const MAX_PER_SECTION = 8;
-const MAX_TOTAL = 30;
+const IS_ADMIN = params.get('admin') === '1';
+const MAX_PER_SECTION = IS_ADMIN ? 999 : 8;
+const MAX_TOTAL = IS_ADMIN ? 999 : 30;
 
 function EditModal({ sections, onSave, onClose, availableReports }) {
   const [draft, setDraft] = useState(sections.map(s => ({ ...s, widgets: [...s.widgets] })));

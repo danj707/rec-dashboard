@@ -43,7 +43,8 @@ const SHARED_UUIDS = {
 
 // Reports that don't accept date parameters
 const NO_DATE_REPORTS = new Set([
-  'program-demographics', 'memberships', 'users', 'retention', 'checkins'
+  'program-demographics', 'memberships', 'users', 'retention', 'checkins',
+  'fasttrack', 'instructor-payout'
 ]);
 
 // ═══════════════════════════════════════════
