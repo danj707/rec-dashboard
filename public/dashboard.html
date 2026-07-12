@@ -227,26 +227,26 @@ const SECTIONS = {
 // ═══════════════════════════════════════════════════════
 const W = {
   // ── Revenue / GL ──
-  'gl-total-revenue': { label: 'Total Revenue', description: 'Sum of all payments across GL codes', section: 'revenue',
+  'gl-total-revenue': { label: 'Total Revenue', description: 'Sum of all payments across GL codes', note: 'All payments received across all GL codes', section: 'revenue',
     reportType: 'gl', size: 'sm', icon: '\uD83D\uDCB0', component: 'metric',
     transform: rows => ({ value: rows.reduce((s,r) => s + pf(r['Total Payments']), 0), format: 'currency', colorClass: 'metric-green' }) },
-  'gl-total-refunds': { label: 'Total Refunds', description: 'Sum of all refunds', section: 'revenue',
+  'gl-total-refunds': { label: 'Total Refunds', description: 'Sum of all refunds', note: 'All refunds issued, all payment methods', section: 'revenue',
     reportType: 'gl', size: 'sm', icon: '\uD83D\uDD04', component: 'metric',
     transform: rows => ({ value: rows.reduce((s,r) => s + pf(r['Total Refunds']), 0), format: 'currency', colorClass: 'metric-red' }) },
-  'gl-net-revenue': { label: 'Net Revenue', description: 'Total payments minus refunds', section: 'revenue',
+  'gl-net-revenue': { label: 'Net Revenue', description: 'Total payments minus refunds', note: 'Payments minus refunds across all GL codes', section: 'revenue',
     reportType: 'gl', size: 'sm', icon: '\uD83D\uDCC8', component: 'metric',
     transform: rows => ({ value: rows.reduce((s,r) => s + pf(r['Net Amount']), 0), format: 'currency', colorClass: 'metric-green' }) },
-  'gl-transactions': { label: 'Transactions', description: 'Number of payment transactions', section: 'revenue',
+  'gl-transactions': { label: 'Transactions', description: 'Number of payment transactions', note: 'Total number of payment transactions processed', section: 'revenue',
     reportType: 'gl', size: 'sm', icon: '\uD83D\uDCCB', component: 'metric',
     transform: rows => ({ value: rows.reduce((s,r) => s + pf(r['Number of Payments']), 0), format: 'number' }) },
-  'gl-by-code': { label: 'Revenue by GL Code', description: 'Net revenue broken out by GL code', section: 'revenue',
+  'gl-by-code': { label: 'Revenue by GL Code', description: 'Net revenue broken out by GL code', note: 'Net revenue broken out by general ledger account', section: 'revenue',
     reportType: 'gl', size: 'md', icon: '\uD83D\uDCCA', component: 'bar',
     transform: rows => {
       const g = {}; rows.forEach(r => { const k = r['GL Code'] || r['Account Name'] || 'Unknown'; g[k] = (g[k]||0) + pf(r['Net Amount']); });
       const s = Object.entries(g).filter(e => e[1] > 0).sort((a,b) => b[1]-a[1]).slice(0,10);
       return { labels: s.map(e=>e[0]), values: s.map(e=>e[1]), format: 'currency' };
     }},
-  'gl-by-payment-method': { label: 'Revenue by Payment Method', description: 'Breakdown by how people paid', section: 'revenue',
+  'gl-by-payment-method': { label: 'Revenue by Payment Method', description: 'Breakdown by how people paid', note: 'Credit card, cash, check, org credit, etc.', section: 'revenue',
     reportType: 'gl', size: 'md', icon: '\uD83D\uDCB3', component: 'donut',
     transform: rows => {
       const methods = { 'Credit Card': 0, 'Cash': 0, 'Check': 0, 'Org Credit': 0, 'Free': 0, 'Gift Card': 0, 'Other': 0 };
@@ -261,43 +261,43 @@ const W = {
     }},
 
   // ── Facility Rentals ──
-  'rental-count': { label: 'Total Bookings', description: 'Number of facility reservations', section: 'facility',
+  'rental-count': { label: 'Total Bookings', description: 'Number of facility reservations', note: 'Total facility reservations in date range', section: 'facility',
     reportType: 'facility', size: 'sm', icon: '\uD83D\uDCC5', component: 'metric',
     transform: rows => ({ value: rows.length, format: 'number' }) },
-  'rental-revenue': { label: 'Rental Revenue', description: 'Sum of facility booking revenue', section: 'facility',
+  'rental-revenue': { label: 'Rental Revenue', description: 'Sum of facility booking revenue', note: 'Sum of booking totals for facility rentals', section: 'facility',
     reportType: 'facility', size: 'sm', icon: '\uD83D\uDCB5', component: 'metric',
     transform: rows => ({ value: rows.reduce((s,r) => s + pf(r['Total']), 0), format: 'currency', colorClass: 'metric-green' }) },
-  'rental-headcount': { label: 'Total Headcount', description: 'Sum of all attendees', section: 'facility',
+  'rental-headcount': { label: 'Total Headcount', description: 'Sum of all attendees', note: 'Reported attendees across all bookings', section: 'facility',
     reportType: 'facility', size: 'sm', icon: '\uD83D\uDC65', component: 'metric',
     transform: rows => ({ value: rows.reduce((s,r) => s + (parseInt(r['Head Cnt'])||0), 0), format: 'number' }) },
-  'rental-locations': { label: 'Active Locations', description: 'Locations with bookings', section: 'facility',
+  'rental-locations': { label: 'Active Locations', description: 'Locations with bookings', note: 'Distinct locations with at least one booking', section: 'facility',
     reportType: 'facility', size: 'sm', icon: '\uD83D\uDCCD', component: 'metric',
     transform: rows => ({ value: new Set(rows.map(r => r['Location']).filter(Boolean)).size, format: 'number' }) },
-  'rental-avg-value': { label: 'Avg Booking Value', description: 'Revenue per booking', section: 'facility',
+  'rental-avg-value': { label: 'Avg Booking Value', description: 'Revenue per booking', note: 'Total rental revenue divided by booking count', section: 'facility',
     reportType: 'facility', size: 'sm', icon: '\uD83D\uDCCA', component: 'metric',
     transform: rows => { const t = rows.reduce((s,r)=>s+pf(r['Total']),0); return { value: rows.length ? t/rows.length : 0, format: 'currency2' }; } },
-  'rental-by-location': { label: 'Revenue by Location', description: 'Top locations by revenue', section: 'facility',
+  'rental-by-location': { label: 'Revenue by Location', description: 'Top locations by revenue', note: 'Locations ranked by total booking revenue', section: 'facility',
     reportType: 'facility', size: 'md', icon: '\uD83C\uDFE2', component: 'bar',
     transform: rows => {
       const g = {}; rows.forEach(r => { const k = r['Location']||'Unknown'; g[k]=(g[k]||0)+pf(r['Total']); });
       const s = Object.entries(g).sort((a,b)=>b[1]-a[1]).slice(0,10);
       return { labels: s.map(e=>e[0]), values: s.map(e=>e[1]), format: 'currency' };
     }},
-  'rental-daily-trend': { label: 'Daily Bookings', description: 'Booking count over time', section: 'facility',
+  'rental-daily-trend': { label: 'Daily Bookings', description: 'Booking count over time', note: 'Number of bookings per day over time', section: 'facility',
     reportType: 'facility', size: 'md', icon: '\uD83D\uDCC8', component: 'line',
     transform: rows => {
       const g = {}; rows.forEach(r => { const d = r['Date']; if(d) g[d]=(g[d]||0)+1; });
       const s = Object.entries(g).sort((a,b)=>a[0].localeCompare(b[0]));
       return { labels: s.map(e=>shortDate(e[0])), values: s.map(e=>e[1]) };
     }},
-  'rental-revenue-trend': { label: 'Revenue Trend', description: 'Daily revenue over time', section: 'facility',
+  'rental-revenue-trend': { label: 'Revenue Trend', description: 'Daily revenue over time', note: 'Booking revenue per day over time', section: 'facility',
     reportType: 'facility', size: 'md', icon: '\uD83D\uDCB9', component: 'line',
     transform: rows => {
       const g = {}; rows.forEach(r => { const d = r['Date']; if(d) g[d]=(g[d]||0)+pf(r['Total']); });
       const s = Object.entries(g).sort((a,b)=>a[0].localeCompare(b[0]));
       return { labels: s.map(e=>shortDate(e[0])), values: s.map(e=>e[1]), format: 'currency' };
     }},
-  'rental-day-of-week': { label: 'Bookings by Day of Week', description: 'Which days are busiest', section: 'facility',
+  'rental-day-of-week': { label: 'Bookings by Day of Week', description: 'Which days are busiest', note: 'Which days see the most booking activity', section: 'facility',
     reportType: 'facility', size: 'md', icon: '\uD83D\uDCC6', component: 'bar',
     transform: rows => {
       const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
@@ -305,14 +305,14 @@ const W = {
       rows.forEach(r => { const d=(r['Day']||'').trim(); if(d in c) c[d]++; });
       return { labels: days.map(d=>d.slice(0,3)), values: days.map(d=>c[d]) };
     }},
-  'rental-by-site-type': { label: 'Revenue by Site Type', description: 'Revenue split by facility type', section: 'facility',
+  'rental-by-site-type': { label: 'Revenue by Site Type', description: 'Revenue split by facility type', note: 'Revenue split by facility type (field, room, court, etc.)', section: 'facility',
     reportType: 'facility', size: 'md', icon: '\uD83C\uDFD7\uFE0F', component: 'donut',
     transform: rows => {
       const g = {}; rows.forEach(r => { const k = r['Site Type']||'Unknown'; g[k]=(g[k]||0)+pf(r['Total']); });
       const s = Object.entries(g).sort((a,b)=>b[1]-a[1]).slice(0,8);
       return { labels: s.map(e=>e[0]), values: s.map(e=>e[1]), format: 'currency' };
     }},
-  'rental-headcount-by-loc': { label: 'Headcount by Location', description: 'Attendees per location', section: 'facility',
+  'rental-headcount-by-loc': { label: 'Headcount by Location', description: 'Attendees per location', note: 'Total reported attendees at each location', section: 'facility',
     reportType: 'facility', size: 'md', icon: '\uD83C\uDFDF\uFE0F', component: 'bar',
     transform: rows => {
       const g = {}; rows.forEach(r => { const k = r['Location']||'Unknown'; g[k]=(g[k]||0)+(parseInt(r['Head Cnt'])||0); });
@@ -321,16 +321,16 @@ const W = {
     }},
 
   // ── Programs ──
-  'program-enrollments': { label: 'Total Enrollments', description: 'Sum of program enrollments', section: 'programs',
+  'program-enrollments': { label: 'Total Enrollments', description: 'Sum of program enrollments', note: 'Total enrolled participants across all sections', section: 'programs',
     reportType: 'programs', size: 'sm', icon: '\uD83C\uDF93', component: 'metric',
     transform: rows => ({ value: rows.reduce((s,r) => s + (parseInt(r['enrolled'])||0), 0), format: 'number' }) },
-  'program-revenue': { label: 'Program Revenue', description: 'Net revenue from programs (all-time)', section: 'programs',
+  'program-revenue': { label: 'Program Revenue', description: 'Net revenue from programs (all-time)', note: 'Lifetime net revenue for sections active in date range', section: 'programs',
     reportType: 'programs', size: 'sm', icon: '\uD83D\uDCB0', component: 'metric',
     transform: rows => ({ value: rows.reduce((s,r) => s + pf(r['net_total'] || r['charged']), 0), format: 'currency', colorClass: 'metric-green', sub: 'All-time' }) },
-  'program-cancellations': { label: 'Program Refunds', description: 'Total refund amount from programs (all-time)', section: 'programs',
+  'program-cancellations': { label: 'Program Refunds', description: 'Total refund amount from programs (all-time)', note: 'Lifetime refund total for sections in date range', section: 'programs',
     reportType: 'programs', size: 'sm', icon: '\uD83D\uDD04', component: 'metric',
     transform: rows => ({ value: rows.reduce((s,r) => s + pf(r['refunds']), 0), format: 'currency', colorClass: 'metric-red', sub: 'All-time' }) },
-  'program-fill-rate': { label: 'Avg Fill Rate', description: 'Average program capacity utilization', section: 'programs',
+  'program-fill-rate': { label: 'Avg Fill Rate', description: 'Average program capacity utilization', note: 'Average enrolled / capacity across sections', section: 'programs',
     reportType: 'programs', size: 'sm', icon: '\uD83D\uDCCA', component: 'metric',
     transform: rows => {
       const valid = rows.filter(r => pf(r['capacity']) > 0);
@@ -338,21 +338,21 @@ const W = {
       const avg = valid.reduce((s,r) => s + (pf(r['enrolled']) / pf(r['capacity'])) * 100, 0) / valid.length;
       return { value: avg, format: 'percent' };
     }},
-  'program-top': { label: 'Top Programs', description: 'Programs ranked by enrollment', section: 'programs',
+  'program-top': { label: 'Top Programs', description: 'Programs ranked by enrollment', note: 'Programs ranked by total enrollment count', section: 'programs',
     reportType: 'programs', size: 'md', icon: '\uD83C\uDFC6', component: 'bar',
     transform: rows => {
       const g = {}; rows.forEach(r => { const k = r['program']||'Unknown'; g[k]=(g[k]||0)+(parseInt(r['enrolled'])||0); });
       const s = Object.entries(g).sort((a,b)=>b[1]-a[1]).slice(0,10);
       return { labels: s.map(e=>e[0]), values: s.map(e=>e[1]) };
     }},
-  'program-revenue-by-prog': { label: 'Revenue by Program', description: 'Programs ranked by revenue', section: 'programs',
+  'program-revenue-by-prog': { label: 'Revenue by Program', description: 'Programs ranked by revenue', note: 'Programs ranked by net revenue', section: 'programs',
     reportType: 'programs', size: 'md', icon: '\uD83D\uDCCA', component: 'bar',
     transform: rows => {
       const g = {}; rows.forEach(r => { const k = r['program']||'Unknown'; g[k]=(g[k]||0)+pf(r['net_total']||r['charged']); });
       const s = Object.entries(g).filter(e=>e[1]>0).sort((a,b)=>b[1]-a[1]).slice(0,10);
       return { labels: s.map(e=>e[0]), values: s.map(e=>e[1]), format: 'currency' };
     }},
-  'tbl-program-rev': { label: 'Program Revenue Table', description: 'Program detail with enrollment and revenue', section: 'programs',
+  'tbl-program-rev': { label: 'Program Revenue Table', description: 'Program detail with enrollment and revenue', note: 'Program detail with enrollment, capacity, and revenue', section: 'programs',
     reportType: 'programs', size: 'lg', icon: '\uD83D\uDCCB', component: 'table',
     transform: rows => {
       const g = {}; rows.forEach(r => { const k=r['program']||'Unknown'; if(!g[k]) g[k]={enrolled:0,capacity:0,revenue:0,refunds:0};
@@ -363,40 +363,40 @@ const W = {
     }},
 
   // ── Courts ──
-  'court-total': { label: 'Total Reservations', description: 'All court bookings', section: 'courts',
+  'court-total': { label: 'Total Reservations', description: 'All court bookings', note: 'All court reservations (instant + managed)', section: 'courts',
     reportType: 'court-utilization', size: 'sm', icon: '\uD83C\uDFBE', component: 'metric',
     transform: rows => ({ value: rows.length, format: 'number' }) },
-  'court-instant': { label: 'Instant Bookings', description: 'Customer self-booked', section: 'courts',
+  'court-instant': { label: 'Instant Bookings', description: 'Customer self-booked', note: 'Self-service bookings made by customers online', section: 'courts',
     reportType: 'court-utilization', size: 'sm', icon: '\u26A1', component: 'metric',
     transform: rows => ({ value: rows.filter(r=>(r['booking_source']||r['Booking Source']||'').toLowerCase()==='instant').length, format:'number' }) },
-  'court-managed': { label: 'Leagues / Managed', description: 'Staff-managed bookings', section: 'courts',
+  'court-managed': { label: 'Leagues / Managed', description: 'Staff-managed bookings', note: 'Bookings created by staff for leagues and programs', section: 'courts',
     reportType: 'court-utilization', size: 'sm', icon: '\uD83D\uDCCB', component: 'metric',
     transform: rows => ({ value: rows.filter(r=>(r['booking_source']||r['Booking Source']||'').toLowerCase()!=='instant').length, format:'number' }) },
-  'court-hours': { label: 'Hours Reserved', description: 'Total hours booked', section: 'courts',
+  'court-hours': { label: 'Hours Reserved', description: 'Total hours booked', note: 'Total booked hours across all courts', section: 'courts',
     reportType: 'court-utilization', size: 'sm', icon: '\u23F1\uFE0F', component: 'metric',
     transform: rows => ({ value: rows.reduce((s,r)=>s+pf(r['duration_hours']||r['Duration Hours']||r['hours']||1),0), format:'number' }) },
-  'court-util-pct': { label: 'Avg Hours/Court', description: 'Average booked hours per court', section: 'courts',
+  'court-util-pct': { label: 'Avg Hours/Court', description: 'Average booked hours per court', note: 'Average booked hours per court in the period', section: 'courts',
     reportType: 'court-utilization', size: 'sm', icon: '\uD83D\uDCCA', component: 'metric',
     transform: rows => {
       const byC={}; rows.forEach(r=>{const c=r['court_name']||r['Court Name']||'?'; if(!byC[c])byC[c]={used:0}; byC[c].used+=pf(r['duration_hours']||r['hours']||1);});
       const courts=Object.values(byC); if(!courts.length)return{value:0,format:'number'};
       return { value: Math.round(courts.reduce((s,c)=>s+c.used,0)/courts.length*10)/10, format:'number' };
     }},
-  'court-by-court': { label: 'Bookings by Court', description: 'Reservations per court', section: 'courts',
+  'court-by-court': { label: 'Bookings by Court', description: 'Reservations per court', note: 'Individual courts ranked by reservation count', section: 'courts',
     reportType: 'court-utilization', size: 'md', icon: '\uD83C\uDFBE', component: 'bar',
     transform: rows => {
       const g={}; rows.forEach(r=>{const k=r['court_name']||r['Court Name']||'Unknown'; g[k]=(g[k]||0)+1;});
       const s=Object.entries(g).sort((a,b)=>b[1]-a[1]).slice(0,12);
       return { labels:s.map(e=>e[0]), values:s.map(e=>e[1]) };
     }},
-  'court-by-location': { label: 'Bookings by Location', description: 'Court bookings per location', section: 'courts',
+  'court-by-location': { label: 'Bookings by Location', description: 'Court bookings per location', note: 'Locations ranked by total court bookings', section: 'courts',
     reportType: 'court-utilization', size: 'md', icon: '\uD83D\uDCCD', component: 'bar',
     transform: rows => {
       const g={}; rows.forEach(r=>{const k=r['location_name']||r['Location Name']||'Unknown'; g[k]=(g[k]||0)+1;});
       const s=Object.entries(g).sort((a,b)=>b[1]-a[1]).slice(0,10);
       return { labels:s.map(e=>e[0]), values:s.map(e=>e[1]) };
     }},
-  'court-mix': { label: 'Booking Mix', description: 'Instant vs managed breakdown', section: 'courts',
+  'court-mix': { label: 'Booking Mix', description: 'Instant vs managed breakdown', note: 'Proportion of instant vs league/managed bookings', section: 'courts',
     reportType: 'court-utilization', size: 'md', icon: '\uD83C\uDFAF', component: 'donut',
     transform: rows => {
       let instant=0,managed=0; rows.forEach(r=>{const s=(r['booking_source']||r['Booking Source']||'').toLowerCase(); s==='instant'?instant++:managed++;});
@@ -404,16 +404,16 @@ const W = {
     }},
 
   // ── Fast Track (filter Row Type !== 'user') ──
-  'ft-signups': { label: 'FT Signups', description: 'Total Fast Track signups', section: 'fasttrack',
+  'ft-signups': { label: 'FT Signups', description: 'Total Fast Track signups', note: 'Users who signed up via Fast Track pre-registration', section: 'fasttrack',
     reportType: 'fasttrack', size: 'sm', icon: '\uD83D\uDE80', component: 'metric',
     transform: rows => { const sec=rows.filter(r=>r['Row Type']!=='user'); return { value: sec.reduce((s,r)=>s+(parseInt(r['FT Signups'])||0),0), format:'number' }; } },
-  'ft-converted': { label: 'Converted', description: 'FT signups that enrolled', section: 'fasttrack',
+  'ft-converted': { label: 'Converted', description: 'FT signups that enrolled', note: 'FT signups that completed enrollment', section: 'fasttrack',
     reportType: 'fasttrack', size: 'sm', icon: '\u2705', component: 'metric',
     transform: rows => { const sec=rows.filter(r=>r['Row Type']!=='user'); return { value: sec.reduce((s,r)=>s+(parseInt(r['FT Converted'])||0),0), format:'number', colorClass:'metric-green' }; } },
-  'ft-pending': { label: 'Pending', description: 'Not yet converted', section: 'fasttrack',
+  'ft-pending': { label: 'Pending', description: 'Not yet converted', note: 'FT signups not yet converted to enrollment', section: 'fasttrack',
     reportType: 'fasttrack', size: 'sm', icon: '\u23F3', component: 'metric',
     transform: rows => { const sec=rows.filter(r=>r['Row Type']!=='user'); return { value: sec.reduce((s,r)=>s+(parseInt(r['FT Pending'])||0),0), format:'number', colorClass:'metric-red' }; } },
-  'ft-conv-rate': { label: 'Conversion %', description: 'Signup to enrollment rate', section: 'fasttrack',
+  'ft-conv-rate': { label: 'Conversion %', description: 'Signup to enrollment rate', note: 'Percentage of FT signups that enrolled', section: 'fasttrack',
     reportType: 'fasttrack', size: 'sm', icon: '\uD83D\uDCC8', component: 'metric',
     transform: rows => {
       const sec=rows.filter(r=>r['Row Type']!=='user');
@@ -421,10 +421,10 @@ const W = {
       const conv=sec.reduce((s,r)=>s+(parseInt(r['FT Converted'])||0),0);
       return { value: sig>0?Math.round(conv/sig*1000)/10:0, format:'percent', colorClass:'metric-green' };
     }},
-  'ft-wishlists': { label: 'Waitlisted', description: 'Active waitlist entries', section: 'fasttrack',
+  'ft-wishlists': { label: 'Waitlisted', description: 'Active waitlist entries', note: 'Users on a waitlist for full sections', section: 'fasttrack',
     reportType: 'fasttrack', size: 'sm', icon: '\uD83D\uDCDD', component: 'metric',
     transform: rows => { const sec=rows.filter(r=>r['Row Type']!=='user'); return { value: sec.reduce((s,r)=>s+(parseInt(r['Waitlisted'])||0),0), format:'number' }; } },
-  'ft-top-programs': { label: 'Top FT Programs', description: 'Programs by FT signup volume', section: 'fasttrack',
+  'ft-top-programs': { label: 'Top FT Programs', description: 'Programs by FT signup volume', note: 'Programs with the most Fast Track interest', section: 'fasttrack',
     reportType: 'fasttrack', size: 'md', icon: '\uD83C\uDFC6', component: 'bar',
     transform: rows => {
       const sec=rows.filter(r=>r['Row Type']!=='user');
@@ -459,37 +459,37 @@ const W = {
     }},
 
   // ── Memberships ──
-  'mem-active': { label: 'Active Members', description: 'Currently active memberships', section: 'memberships',
+  'mem-active': { label: 'Active Members', description: 'Currently active memberships', note: 'Memberships with active status', section: 'memberships',
     reportType: 'memberships', size: 'sm', icon: '\u2705', component: 'metric',
     transform: rows => ({ value: rows.filter(r=>(r['status']||r['Status']||'').toLowerCase()==='active').length, format:'number', colorClass:'metric-green' }) },
-  'mem-canceled': { label: 'Canceled', description: 'Canceled memberships', section: 'memberships',
+  'mem-canceled': { label: 'Canceled', description: 'Canceled memberships', note: 'Memberships that have been canceled', section: 'memberships',
     reportType: 'memberships', size: 'sm', icon: '\u274C', component: 'metric',
     transform: rows => ({ value: rows.filter(r=>(r['status']||r['Status']||'').toLowerCase()==='canceled').length, format:'number', colorClass:'metric-red' }) },
-  'mem-revenue': { label: 'Membership Revenue', description: 'Total paid', section: 'memberships',
+  'mem-revenue': { label: 'Membership Revenue', description: 'Total paid', note: 'Total amount paid across all memberships', section: 'memberships',
     reportType: 'memberships', size: 'sm', icon: '\uD83D\uDCB0', component: 'metric',
     transform: rows => ({ value: rows.reduce((s,r)=>s+pf(r['paid']||r['Paid']||r['price']||r['Price']),0), format:'currency', colorClass:'metric-green' }) },
-  'mem-net': { label: 'Net Members', description: 'Active minus canceled', section: 'memberships',
+  'mem-net': { label: 'Net Members', description: 'Active minus canceled', note: 'Active members minus canceled members', section: 'memberships',
     reportType: 'memberships', size: 'sm', icon: '\uD83D\uDCCA', component: 'metric',
     transform: rows => {
       const a=rows.filter(r=>(r['status']||r['Status']||'').toLowerCase()==='active').length;
       const c=rows.filter(r=>(r['status']||r['Status']||'').toLowerCase()==='canceled').length;
       return { value: a-c, format:'number' };
     }},
-  'mem-type-donut': { label: 'Membership Types', description: 'Breakdown by membership type', section: 'memberships',
+  'mem-type-donut': { label: 'Membership Types', description: 'Breakdown by membership type', note: 'Distribution across membership plan types', section: 'memberships',
     reportType: 'memberships', size: 'md', icon: '\uD83C\uDFAB', component: 'donut',
     transform: rows => {
       const g={}; rows.forEach(r=>{const k=r['Membership Type']||r['Group / Plan']||r['membership_name']||r['Type']||'Unknown'; g[k]=(g[k]||0)+1;});
       const s=Object.entries(g).sort((a,b)=>b[1]-a[1]).slice(0,8);
       return { labels:s.map(e=>e[0]), values:s.map(e=>e[1]) };
     }},
-  'mem-renewal-donut': { label: 'Renewal Types', description: 'Auto vs one-time renewals', section: 'memberships',
+  'mem-renewal-donut': { label: 'Renewal Types', description: 'Auto vs one-time renewals', note: 'Auto-renewing vs one-time memberships', section: 'memberships',
     reportType: 'memberships', size: 'md', icon: '\uD83D\uDD04', component: 'donut',
     transform: rows => {
       const g={}; rows.forEach(r=>{const k=r['renewal_type']||r['Renewal Type']||'Unknown'; g[k]=(g[k]||0)+1;});
       const s=Object.entries(g).sort((a,b)=>b[1]-a[1]);
       return { labels:s.map(e=>e[0]), values:s.map(e=>e[1]) };
     }},
-  'tbl-memberships': { label: 'Membership Summary', description: 'Types with active count and revenue', section: 'memberships',
+  'tbl-memberships': { label: 'Membership Summary', description: 'Types with active count and revenue', note: 'Membership types with active count and revenue', section: 'memberships',
     reportType: 'memberships', size: 'lg', icon: '\uD83D\uDCCB', component: 'table',
     transform: rows => {
       const g={}; rows.forEach(r=>{const k=r['Membership Type']||r['Group / Plan']||r['membership_name']||r['Type']||'Unknown';
@@ -501,26 +501,26 @@ const W = {
     }},
 
   // ── Products ──
-  'prod-gross': { label: 'Gross Revenue', description: 'Total product sales', section: 'products',
+  'prod-gross': { label: 'Gross Revenue', description: 'Total product sales', note: 'Total product and POS sales before refunds', section: 'products',
     reportType: 'products', size: 'sm', icon: '\uD83D\uDCB5', component: 'metric',
     transform: rows => ({ value: rows.reduce((s,r)=>s+pf(r['Revenue ($)']||r['Revenue']||r['revenue']),0), format:'currency', colorClass:'metric-green' }) },
-  'prod-net': { label: 'Net Revenue', description: 'Gross minus refunds', section: 'products',
+  'prod-net': { label: 'Net Revenue', description: 'Gross minus refunds', note: 'Product sales minus refunds', section: 'products',
     reportType: 'products', size: 'sm', icon: '\uD83D\uDCB0', component: 'metric',
     transform: rows => ({ value: rows.reduce((s,r)=>s+pf(r['Net Revenue ($)']||r['Net Revenue']||r['Net']||r['net']),0), format:'currency', colorClass:'metric-green' }) },
-  'prod-refunds': { label: 'Refunds', description: 'Product refund total', section: 'products',
+  'prod-refunds': { label: 'Refunds', description: 'Product refund total', note: 'Total refunded on product purchases', section: 'products',
     reportType: 'products', size: 'sm', icon: '\uD83D\uDD04', component: 'metric',
     transform: rows => ({ value: rows.reduce((s,r)=>s+pf(r['Refunds ($)']||r['Refunds']||r['refunds']),0), format:'currency', colorClass:'metric-red' }) },
-  'prod-units': { label: 'Units Sold', description: 'Total quantity', section: 'products',
+  'prod-units': { label: 'Units Sold', description: 'Total quantity', note: 'Total quantity of items sold', section: 'products',
     reportType: 'products', size: 'sm', icon: '\uD83D\uDCE6', component: 'metric',
     transform: rows => ({ value: rows.reduce((s,r)=>s+(parseInt(r['Qty Sold']||r['Qty']||r['qty'])||0),0), format:'number' }) },
-  'prod-by-product': { label: 'Revenue by Product', description: 'Top products by revenue', section: 'products',
+  'prod-by-product': { label: 'Revenue by Product', description: 'Top products by revenue', note: 'Products ranked by gross revenue', section: 'products',
     reportType: 'products', size: 'md', icon: '\uD83D\uDECD\uFE0F', component: 'bar',
     transform: rows => {
       const g={}; rows.forEach(r=>{const k=r['Product Name']||r['Product']||r['product']||'Unknown'; g[k]=(g[k]||0)+pf(r['Revenue ($)']||r['Revenue']||r['revenue']);});
       const s=Object.entries(g).sort((a,b)=>b[1]-a[1]).slice(0,10);
       return { labels:s.map(e=>e[0]), values:s.map(e=>e[1]), format:'currency' };
     }},
-  'prod-trend': { label: 'Sales Trend', description: 'Revenue over time', section: 'products',
+  'prod-trend': { label: 'Sales Trend', description: 'Revenue over time', note: 'Product revenue per day over time', section: 'products',
     reportType: 'products', size: 'md', icon: '\uD83D\uDCC8', component: 'line',
     transform: rows => {
       const g={}; rows.forEach(r=>{const d=r['Date']||r['date']||''; if(d){const iso=d.split('T')[0]; g[iso]=(g[iso]||0)+pf(r['Revenue ($)']||r['Revenue']||r['revenue']);}});
@@ -529,26 +529,26 @@ const W = {
     }},
 
   // ── Instructor Payout ──
-  'instr-net': { label: 'Net Revenue', description: 'Total collected minus refunds', section: 'instructors',
+  'instr-net': { label: 'Net Revenue', description: 'Total collected minus refunds', note: 'Amount collected minus refunds for instructor sections', section: 'instructors',
     reportType: 'instructor-payout', size: 'sm', icon: '\uD83D\uDCB0', component: 'metric',
     transform: rows => ({ value: rows.reduce((s,r)=>s+pf(r['amount_paid'])-pf(r['amount_refunded']),0), format:'currency', colorClass:'metric-green' }) },
-  'instr-payout': { label: 'Total Collected', description: 'Gross amount paid by participants', section: 'instructors',
+  'instr-payout': { label: 'Total Collected', description: 'Gross amount paid by participants', note: 'Total gross collected from participants', section: 'instructors',
     reportType: 'instructor-payout', size: 'sm', icon: '\uD83C\uDF93', component: 'metric',
     transform: rows => ({ value: rows.reduce((s,r)=>s+pf(r['amount_paid']),0), format:'currency' }) },
-  'instr-org-ret': { label: 'Total Refunded', description: 'Refunds issued', section: 'instructors',
+  'instr-org-ret': { label: 'Total Refunded', description: 'Refunds issued', note: 'Total refunds issued on instructor sections', section: 'instructors',
     reportType: 'instructor-payout', size: 'sm', icon: '\uD83D\uDD04', component: 'metric',
     transform: rows => ({ value: rows.reduce((s,r)=>s+pf(r['amount_refunded']),0), format:'currency', colorClass:'metric-red' }) },
-  'instr-fill': { label: 'Sections', description: 'Unique sections with instructors', section: 'instructors',
+  'instr-fill': { label: 'Sections', description: 'Unique sections with instructors', note: 'Distinct sections that have assigned instructors', section: 'instructors',
     reportType: 'instructor-payout', size: 'sm', icon: '\uD83D\uDCCB', component: 'metric',
     transform: rows => ({ value: new Set(rows.map(r=>r['section_id']).filter(Boolean)).size, format:'number' }) },
-  'instr-top': { label: 'Top Instructors', description: 'Ranked by net revenue', section: 'instructors',
+  'instr-top': { label: 'Top Instructors', description: 'Ranked by net revenue', note: 'Instructors ranked by net revenue generated', section: 'instructors',
     reportType: 'instructor-payout', size: 'md', icon: '\uD83C\uDFC6', component: 'bar',
     transform: rows => {
       const g={}; rows.forEach(r=>{const k=r['instructor']||'Unknown'; g[k]=(g[k]||0)+pf(r['amount_paid'])-pf(r['amount_refunded']);});
       const s=Object.entries(g).filter(e=>e[1]>0).sort((a,b)=>b[1]-a[1]).slice(0,10);
       return { labels:s.map(e=>e[0]), values:s.map(e=>e[1]), format:'currency' };
     }},
-  'tbl-instructors': { label: 'Instructor Table', description: 'Sections, participants, and revenue', section: 'instructors',
+  'tbl-instructors': { label: 'Instructor Table', description: 'Sections, participants, and revenue', note: 'Instructor detail with sections, participants, and revenue', section: 'instructors',
     reportType: 'instructor-payout', size: 'lg', icon: '\uD83D\uDCCB', component: 'table',
     transform: rows => {
       const g={}; rows.forEach(r=>{const k=r['instructor']||'Unknown';
@@ -576,21 +576,21 @@ const W = {
     }},
 
   // ── Facility Extras ──
-  'fac-resident': { label: 'Resident vs Non-Resident', description: 'Booking residency split', section: 'facility',
+  'fac-resident': { label: 'Resident vs Non-Resident', description: 'Booking residency split', note: 'Resident vs non-resident booking split', section: 'facility',
     reportType: 'facility', size: 'md', icon: '\uD83C\uDFE0', component: 'donut',
     transform: rows => {
       const g={}; rows.forEach(r=>{const k=r['Resident?']||r['resident']||'Unknown'; g[k]=(g[k]||0)+1;});
       const s=Object.entries(g).sort((a,b)=>b[1]-a[1]);
       return { labels:s.map(e=>e[0]||'Unknown'), values:s.map(e=>e[1]) };
     }},
-  'fac-booking-type': { label: 'Booking Type Split', description: 'Breakdown by booking type', section: 'facility',
+  'fac-booking-type': { label: 'Booking Type Split', description: 'Breakdown by booking type', note: 'Breakdown by how bookings were created', section: 'facility',
     reportType: 'facility', size: 'md', icon: '\uD83D\uDCCB', component: 'donut',
     transform: rows => {
       const g={}; rows.forEach(r=>{const k=r['Booking Type']||r['booking_type']||'Unknown'; g[k]=(g[k]||0)+1;});
       const s=Object.entries(g).sort((a,b)=>b[1]-a[1]);
       return { labels:s.map(e=>e[0]||'Unknown'), values:s.map(e=>e[1]) };
     }},
-  'tbl-facility': { label: 'Bookings Table', description: 'Recent bookings detail', section: 'facility',
+  'tbl-facility': { label: 'Bookings Table', description: 'Recent bookings detail', note: 'Recent bookings with date, location, and revenue', section: 'facility',
     reportType: 'facility', size: 'lg', icon: '\uD83D\uDCCB', component: 'table',
     transform: rows => {
       const sorted=rows.slice().sort((a,b)=>(b['Date']||'').localeCompare(a['Date']||'')).slice(0,20);
@@ -599,7 +599,7 @@ const W = {
     }},
 
   // ── GL Table ──
-  'tbl-gl': { label: 'GL Code Table', description: 'Revenue breakdown by GL code', section: 'revenue',
+  'tbl-gl': { label: 'GL Code Table', description: 'Revenue breakdown by GL code', note: 'Full GL breakdown with payments, refunds, and net', section: 'revenue',
     reportType: 'gl', size: 'lg', icon: '\uD83D\uDCCB', component: 'table',
     transform: rows => {
       return { columns:['GL Code','Account Name','Payments','Refunds','Net'],
