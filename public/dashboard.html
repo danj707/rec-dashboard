@@ -1035,14 +1035,9 @@ function WidgetCard({ widgetId, reportData, loading, target, onTargetChange, dat
       <div className="widget-header">
         <div>
           <span className="widget-label">{def.label}</span>
-          <div style={{fontSize:10,color:'var(--text-muted)',marginTop:2,fontWeight:400,display:'flex',alignItems:'center',gap:4,flexWrap:'wrap'}}>
-            {ALL_TIME_REPORTS.has(def.reportType)
-              ? <span style={{background:'#eff6ff',color:'#2563eb',padding:'1px 6px',borderRadius:3,fontWeight:600,fontSize:9,whiteSpace:'nowrap'}}>All time</span>
-              : dateRange
-                ? <span style={{background:'#fffbeb',color:'#d97706',padding:'1px 6px',borderRadius:3,fontWeight:600,fontSize:9,whiteSpace:'nowrap'}}>{(() => { const f = d => { const p = d.split('-'); return new Date(p[0],p[1]-1,p[2]).toLocaleDateString('en-US',{month:'short',day:'numeric'}); }; return f(dateRange.start) + ' – ' + f(dateRange.end); })()}</span>
-                : null
-            }
-            {def.note && <span>{def.note}</span>}
+          <div style={{fontSize:10,color:'var(--text-muted)',marginTop:2,fontWeight:400}}>
+            <span style={{background: ALL_TIME_REPORTS.has(def.reportType) ? '#eff6ff' : '#fffbeb', color: ALL_TIME_REPORTS.has(def.reportType) ? '#2563eb' : '#d97706', padding:'1px 5px',borderRadius:3,fontWeight:600,fontSize:9,marginRight:4}}>{ALL_TIME_REPORTS.has(def.reportType) ? 'All time' : dateRange ? (() => { const f = d => { const p = d.split('-'); return new Date(p[0],p[1]-1,p[2]).toLocaleDateString('en-US',{month:'short',day:'numeric'}); }; return f(dateRange.start) + ' – ' + f(dateRange.end); })() : ''}</span>
+            {def.note}
           </div>
         </div>
         <div style={{display:'flex',alignItems:'center',gap:4}}>
