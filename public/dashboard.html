@@ -877,7 +877,7 @@ function EditModal({ sections, onSave, onClose, availableReports }) {
                 <div className="edit-section-header" onClick={() => setExpanded(isOpen ? '' : sec.id)}>
                   <span style={{fontSize:18}}>{secDef.icon}</span>
                   <span className="edit-section-title">{secDef.label}</span>
-                  <span style={{fontSize:11,color:sec.widgets.length>=MAX_PER_SECTION?'var(--red)':'var(--text-muted)'}}>{sec.widgets.length}/{MAX_PER_SECTION}</span>
+                  <span style={{fontSize:11,color:sec.widgets.length>=MAX_PER_SECTION?'var(--red)':'var(--text-muted)'}}>{sec.widgets.length}{MAX_PER_SECTION < 100 ? '/'+MAX_PER_SECTION : ''}</span>
                   <div style={{display:'flex',gap:3}}>
                     <button className="btn btn-sm" onClick={e=>{e.stopPropagation();moveSection(si,-1);}} disabled={si===0}>{'\u25B2'}</button>
                     <button className="btn btn-sm" onClick={e=>{e.stopPropagation();moveSection(si,1);}} disabled={si===draft.length-1}>{'\u25BC'}</button>
@@ -928,7 +928,7 @@ function EditModal({ sections, onSave, onClose, availableReports }) {
           </>}
         </div>
         <div className="modal-footer">
-          <span style={{fontSize:11,color:atLimit?'var(--red)':'var(--text-muted)',flex:1}}>{totalWidgets}/{MAX_TOTAL} widgets{atLimit?' (limit reached)':''}</span>
+          <span style={{fontSize:11,color:atLimit?'var(--red)':'var(--text-muted)',flex:1}}>{totalWidgets} widgets{MAX_TOTAL < 100 ? ' / '+MAX_TOTAL+(atLimit?' (limit reached)':'') : ''}</span>
           <button className="btn" onClick={onClose}>Cancel</button>
           <button className="btn btn-amber" onClick={() => onSave(draft)}>Save Layout</button>
         </div>
