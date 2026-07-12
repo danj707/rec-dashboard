@@ -204,6 +204,14 @@ body { font-family: var(--font-body); background: var(--bg-page); color: var(--t
 /* Map widget */
 .map-container { height: 280px; border-radius: 8px; overflow: hidden; z-index: 1; position: relative; }
 .map-container .leaflet-control-attribution { font-size: 9px; }
+
+/* Heatmap widget */
+.heatmap-grid { display: grid; gap: 2px; font-size: 10px; }
+.heatmap-cell { border-radius: 3px; display: flex; align-items: center; justify-content: center;
+  font-size: 9px; font-weight: 600; color: transparent; transition: all 0.15s; min-height: 24px; }
+.heatmap-cell:hover { color: var(--text-primary); transform: scale(1.1); z-index: 2; }
+.heatmap-label { font-size: 10px; color: var(--text-muted); display: flex; align-items: center; justify-content: flex-end; padding-right: 6px; }
+.heatmap-col-label { font-size: 9px; color: var(--text-muted); text-align: center; }
 </style>
 </head>
 <body>
@@ -240,7 +248,7 @@ const SECTIONS = {
     defaultWidgets: ['gl-total-revenue','gl-total-refunds','gl-net-revenue','gl-transactions','gl-by-code','gl-by-payment-method'] },
   facility: { id: 'facility', label: 'Facility Rentals', icon: '\uD83C\uDFE2', color: '#f59e0b',
     description: 'Booking counts, revenue, and trends',
-    defaultWidgets: ['rental-count','rental-revenue','rental-headcount','rental-locations','rental-by-location','rental-daily-trend','rental-day-of-week'] },
+    defaultWidgets: ['rental-count','rental-revenue','rental-locations','rental-by-location','rental-daily-trend','rental-day-of-week'] },
   programs: { id: 'programs', label: 'Programs & Enrollment', icon: '\uD83D\uDCDA', color: '#3b82f6',
     description: 'Enrollment, capacity, and program revenue',
     defaultWidgets: ['program-enrollments','program-revenue','program-cancellations','program-fill-rate','program-top'] },
@@ -310,22 +318,6 @@ const W = {
   'rental-revenue': { label: 'Rental Revenue', description: 'Sum of facility booking revenue', note: 'Sum of booking totals for facility rentals', section: 'facility',
     reportType: 'facility', size: 'sm', icon: '\uD83D\uDCB5', component: 'metric',
     transform: rows => ({ value: rows.reduce((s,r) => s + pf(r['Total']), 0), format: 'currency', colorClass: 'metric-green' }) },
-  'rental-headcount': { label: 'Total Headcount', description: 'Sum of all attendees', note: 'Reported attendees across all bookings', section: 'facility',
-    reportType: 'facility', size: 'sm', icon: '\uD83D\uDC65', component: 'metric',
-    transform: rows => ({ value: rows.reduce((s,r) => s + (parseInt(r['Head Cnt'])||0), 0), format: 'number' }) },
-  'rental-locations': { label: 'Active Locations', description: 'Locations with bookings', note: 'Distinct locations with at least one booking', section: 'facility',
-    reportType: 'facility', size: 'sm', icon: '\uD83D\uDCCD', component: 'metric',
-    transform: rows => ({ value: new Set(rows.map(r => r['Location']).filter(Boolean)).size, format: 'number' }) },
-  'rental-avg-value': { label: 'Avg Booking Value', description: 'Revenue per booking', note: 'Total rental revenue divided by booking count', section: 'facility',
-    reportType: 'facility', size: 'sm', icon: '\uD83D\uDCCA', component: 'metric',
-    transform: rows => { const t = rows.reduce((s,r)=>s+pf(r['Total']),0); return { value: rows.length ? t/rows.length : 0, format: 'currency2' }; } },
-  'rental-by-location': { label: 'Revenue by Location', description: 'Top locations by revenue', note: 'Locations ranked by total booking revenue', section: 'facility',
-    reportType: 'facility', size: 'md', icon: '\uD83C\uDFE2', component: 'bar',
-    transform: rows => {
-      const g = {}; rows.forEach(r => { const k = r['Location']||'Unknown'; g[k]=(g[k]||0)+pf(r['Total']); });
-      const s = Object.entries(g).sort((a,b)=>b[1]-a[1]).slice(0,10);
-      return { labels: s.map(e=>e[0]), values: s.map(e=>e[1]), format: 'currency' };
-    }},
   'rental-daily-trend': { label: 'Daily Bookings', description: 'Booking count over time', note: 'Number of bookings per day over time', section: 'facility',
     reportType: 'facility', size: 'md', icon: '\uD83D\uDCC8', component: 'line',
     transform: rows => {
@@ -354,13 +346,6 @@ const W = {
       const g = {}; rows.forEach(r => { const k = r['Site Type']||'Unknown'; g[k]=(g[k]||0)+pf(r['Total']); });
       const s = Object.entries(g).sort((a,b)=>b[1]-a[1]).slice(0,8);
       return { labels: s.map(e=>e[0]), values: s.map(e=>e[1]), format: 'currency' };
-    }},
-  'rental-headcount-by-loc': { label: 'Headcount by Location', description: 'Attendees per location', note: 'Total reported attendees at each location', section: 'facility',
-    reportType: 'facility', size: 'md', icon: '\uD83C\uDFDF\uFE0F', component: 'bar',
-    transform: rows => {
-      const g = {}; rows.forEach(r => { const k = r['Location']||'Unknown'; g[k]=(g[k]||0)+(parseInt(r['Head Cnt'])||0); });
-      const s = Object.entries(g).sort((a,b)=>b[1]-a[1]).slice(0,10);
-      return { labels: s.map(e=>e[0]), values: s.map(e=>e[1]) };
     }},
 
   // ── Programs ──
@@ -657,6 +642,68 @@ const W = {
       return { columns:['Date','Location','Facility','Purpose','Total'],
         data:sorted.map(r=>[r['Date']||'-',r['Location']||'-',r['Facility']||'-',r['Purpose']||'-',r['Total']?'$'+pf(r['Total']).toLocaleString():'-']) };
     }},
+  'fac-heatmap': { label: 'Booking Heatmap', description: 'Bookings by day and hour', note: 'Darker cells = more bookings at that time', section: 'facility',
+    reportType: 'facility', size: 'md', icon: '\uD83D\uDD25', component: 'heatmap',
+    transform: rows => {
+      const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+      const hours = ['6a','7a','8a','9a','10a','11a','12p','1p','2p','3p','4p','5p','6p','7p','8p','9p'];
+      const grid = days.map(() => hours.map(() => 0));
+      let maxVal = 0;
+      rows.forEach(r => {
+        const day = (r['Day']||'').trim();
+        const begin = r['Begin']||'';
+        const di = days.indexOf(day.slice(0,3));
+        if (di < 0) return;
+        let hr = parseInt(begin);
+        if (begin.toLowerCase().includes('pm') && hr !== 12) hr += 12;
+        if (begin.toLowerCase().includes('am') && hr === 12) hr = 0;
+        const hi = hr - 6;
+        if (hi >= 0 && hi < hours.length) { grid[di][hi]++; if (grid[di][hi] > maxVal) maxVal = grid[di][hi]; }
+      });
+      return { rows: days, cols: hours, grid, maxVal };
+    }},
+
+  // ── Court Heatmap ──
+  'court-heatmap': { label: 'Court Booking Heatmap', description: 'Bookings by day of week and court', note: 'Darker cells = more reservations', section: 'courts',
+    reportType: 'court-utilization', size: 'md', icon: '\uD83D\uDD25', component: 'heatmap',
+    transform: rows => {
+      const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+      const courts = [...new Set(rows.map(r=>r['court_name']||'Unknown'))].sort().slice(0,12);
+      const grid = days.map(() => courts.map(() => 0));
+      let maxVal = 0;
+      rows.forEach(r => {
+        const d = r['local_date']||''; const cn = r['court_name']||'Unknown';
+        const ci = courts.indexOf(cn); if (ci < 0) return;
+        const dow = new Date(d+'T12:00:00').getDay();
+        grid[dow][ci]++; if (grid[dow][ci] > maxVal) maxVal = grid[dow][ci];
+      });
+      return { rows: days, cols: courts.map(c => c.length > 12 ? c.slice(0,11) + '\u2026' : c), grid, maxVal };
+    }},
+
+  // ── Retention (from program-demographics) ──
+  'ret-unique-families': { label: 'Unique Families', description: 'Distinct households with enrollments', note: 'Based on household ID from program participants', section: 'programs',
+    reportType: 'program-demographics', size: 'sm', icon: '\uD83C\uDFE0', component: 'metric',
+    transform: rows => ({ value: new Set(rows.map(r=>r['Household ID']).filter(Boolean)).size, format:'number' }) },
+  'ret-returning': { label: 'Returning Families', description: 'Households in 2+ programs', note: 'Families enrolled in multiple distinct programs', section: 'programs',
+    reportType: 'program-demographics', size: 'sm', icon: '\uD83D\uDD01', component: 'metric',
+    transform: rows => {
+      const hh = {}; rows.forEach(r => { const h=r['Household ID'], p=r['Program']; if(h&&p){ if(!hh[h]) hh[h]=new Set(); hh[h].add(p); }});
+      return { value: Object.values(hh).filter(s=>s.size>=2).length, format:'number', colorClass:'metric-green' };
+    }},
+  'ret-rate': { label: 'Retention Rate', description: 'Families in 2+ programs / total', note: 'Higher = stronger community re-engagement', section: 'programs',
+    reportType: 'program-demographics', size: 'sm', icon: '\uD83D\uDCC8', component: 'metric',
+    transform: rows => {
+      const hh = {}; rows.forEach(r => { const h=r['Household ID'], p=r['Program']; if(h&&p){ if(!hh[h]) hh[h]=new Set(); hh[h].add(p); }});
+      const total = Object.keys(hh).length; const returning = Object.values(hh).filter(s=>s.size>=2).length;
+      return { value: total>0?Math.round(returning/total*1000)/10:0, format:'percent', colorClass:'metric-green' };
+    }},
+  'ret-avg-programs': { label: 'Avg Programs/Family', description: 'Average programs per household', note: 'Higher = deeper family engagement', section: 'programs',
+    reportType: 'program-demographics', size: 'sm', icon: '\uD83C\uDFAF', component: 'metric',
+    transform: rows => {
+      const hh = {}; rows.forEach(r => { const h=r['Household ID'], p=r['Program']; if(h&&p){ if(!hh[h]) hh[h]=new Set(); hh[h].add(p); }});
+      const vals = Object.values(hh); const total = vals.length;
+      return { value: total>0?Math.round(vals.reduce((s,v)=>s+v.size,0)/total*10)/10:0, format:'number' };
+    }},
 
   // ── GL Table ──
   'tbl-gl': { label: 'GL Code Table', description: 'Revenue breakdown by GL code', note: 'Full GL breakdown with payments, refunds, and net', section: 'revenue',
@@ -676,7 +723,7 @@ const TEMPLATES = {
   general: { label: 'General Overview', icon: '\uD83D\uDCCA', description: 'Revenue, rentals, programs, and courts at a glance',
     sections: [
       { id: 'revenue', widgets: ['gl-total-revenue','gl-total-refunds','gl-net-revenue','gl-transactions'] },
-      { id: 'facility', widgets: ['rental-count','rental-revenue','rental-headcount','rental-locations','rental-by-location'] },
+      { id: 'facility', widgets: ['rental-count','rental-revenue','rental-locations','rental-by-location'] },
       { id: 'programs', widgets: ['program-enrollments','program-revenue','program-fill-rate','program-top'] },
       { id: 'courts', widgets: ['court-total','court-instant','court-managed','court-by-court'] },
       { id: 'memberships', widgets: ['mem-active','mem-canceled','mem-revenue'] },
@@ -690,7 +737,7 @@ const TEMPLATES = {
     ]},
   operations: { label: 'Operations', icon: '\u2699\uFE0F', description: 'Bookings, courts, programs, and utilization',
     sections: [
-      { id: 'facility', widgets: ['rental-count','rental-locations','rental-headcount','rental-day-of-week','rental-daily-trend'] },
+      { id: 'facility', widgets: ['rental-count','rental-locations','rental-day-of-week','rental-daily-trend'] },
       { id: 'courts', widgets: ['court-total','court-instant','court-managed','court-by-court','court-mix'] },
       { id: 'programs', widgets: ['program-enrollments','program-fill-rate','program-top'] },
       { id: 'fasttrack', widgets: ['ft-signups','ft-converted','ft-conv-rate','ft-top-programs'] },
@@ -936,7 +983,31 @@ function MapWidget({ data }) {
   </div>;
 }
 
-const COMP = { metric: MetricCard, bar: BarChartWidget, donut: DonutChartWidget, line: LineChartWidget, table: TableWidget, map: MapWidget };
+function HeatmapWidget({ data }) {
+  if (!data?.grid) return <div className="skeleton skeleton-chart" />;
+  const { rows, cols, grid, maxVal } = data;
+  const colCount = cols.length + 1; // +1 for row labels
+  return (
+    <div style={{overflowX:'auto'}}>
+      <div className="heatmap-grid" style={{gridTemplateColumns:`50px repeat(${cols.length}, 1fr)`}}>
+        <div />
+        {cols.map((c,i) => <div key={i} className="heatmap-col-label">{c}</div>)}
+        {rows.map((row, ri) => (
+          <React.Fragment key={ri}>
+            <div className="heatmap-label">{row}</div>
+            {grid[ri].map((val, ci) => {
+              const intensity = maxVal > 0 ? val / maxVal : 0;
+              const bg = val === 0 ? 'var(--bg-surface)' : `rgba(245,158,11,${0.1 + intensity * 0.8})`;
+              return <div key={ci} className="heatmap-cell" style={{background:bg}}>{val || ''}</div>;
+            })}
+          </React.Fragment>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+const COMP = { metric: MetricCard, bar: BarChartWidget, donut: DonutChartWidget, line: LineChartWidget, table: TableWidget, map: MapWidget, heatmap: HeatmapWidget };
 
 function WidgetCard({ widgetId, reportData, loading, target, onTargetChange }) {
   const def = W[widgetId]; if (!def) return null;
