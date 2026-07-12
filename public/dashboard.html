@@ -102,6 +102,23 @@ body { font-family: var(--font-body); background: var(--bg-page); color: var(--t
 .widget-table td { padding: 5px 10px; border-bottom: 1px solid var(--border-subtle); color: var(--text-secondary); }
 .widget-table tr:hover td { background: var(--bg-card-hover); }
 .widget-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* Target / Goal */
+.metric-with-target { display: flex; align-items: center; gap: 16px; }
+.metric-with-target .metric-left { flex: 1; }
+.progress-ring { width: 68px; height: 68px; flex-shrink: 0; }
+.target-pct { font-family: var(--font-display); font-size: 14px; font-weight: 700; }
+.target-sub { font-size: 10px; color: var(--text-muted); margin-top: 2px; }
+.target-editor { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; padding: 8px 10px;
+  background: var(--bg-surface); border: 1px solid var(--border); border-radius: 8px; }
+.target-editor input { font-family: var(--font-body); font-size: 13px; width: 100px; padding: 4px 8px;
+  border: 1px solid var(--border); border-radius: 4px; background: var(--bg-card); color: var(--text-primary); outline: none; }
+.target-editor input:focus { border-color: var(--amber); }
+.target-editor .te-label { font-size: 11px; color: var(--text-secondary); }
+.gear-btn { background: none; border: none; cursor: pointer; font-size: 13px; opacity: 0.3; padding: 2px;
+  transition: opacity 0.15s; color: var(--text-secondary); }
+.gear-btn:hover { opacity: 0.8; }
+.widget-card:hover .gear-btn { opacity: 0.5; }
 .widget-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
 .widget-label { font-size: 13px; color: var(--text-secondary); font-weight: 500; letter-spacing: 0.02em; }
 .widget-icon { font-size: 16px; opacity: 0.7; }
@@ -720,8 +737,41 @@ Chart.defaults.plugins.tooltip.padding = 10;
 // ═══════════════════════════════════════════════════════
 //  CHART COMPONENTS
 // ═══════════════════════════════════════════════════════
-function MetricCard({ data }) {
+function ProgressRing({ pct, size = 68 }) {
+  const clamped = Math.min(100, Math.max(0, pct));
+  const color = clamped >= 66 ? 'var(--green)' : clamped >= 33 ? 'var(--amber)' : 'var(--red)';
+  const r = 15.9155;
+  const circ = 2 * Math.PI * r;
+  return (
+    <svg className="progress-ring" viewBox="0 0 36 36" width={size} height={size}>
+      <circle cx="18" cy="18" r={r} fill="none" stroke="var(--border)" strokeWidth="3" />
+      <circle cx="18" cy="18" r={r} fill="none" stroke={color} strokeWidth="3"
+        strokeDasharray={`${clamped} ${100 - clamped}`} strokeDashoffset="25"
+        strokeLinecap="round" style={{transition:'stroke-dasharray 0.5s ease'}} />
+      <text x="18" y="19.5" textAnchor="middle" fontSize="8" fontWeight="700"
+        fontFamily="DM Sans,sans-serif" fill="var(--text-primary)">{Math.round(clamped)}%</text>
+    </svg>
+  );
+}
+
+function MetricCard({ data, target }) {
   if (!data) return <div className="skeleton skeleton-metric" />;
+  const hasTarget = target != null && target > 0;
+  const pct = hasTarget ? (data.value / target) * 100 : 0;
+
+  if (hasTarget) {
+    return (
+      <div className="metric-with-target">
+        <div className="metric-left">
+          <div className={`metric-value ${data.colorClass || ''}`} style={{fontSize:30}}>{fmt(data.value, data.format)}</div>
+          <div className="target-sub">{Math.round(pct)}% of {fmt(target, data.format)} target</div>
+          {data.sub && <div style={{fontSize:10,color:'var(--text-muted)',marginTop:2}}>{data.sub}</div>}
+        </div>
+        <ProgressRing pct={pct} />
+      </div>
+    );
+  }
+
   return <div>
     <div className={`metric-value ${data.colorClass || ''}`}>{fmt(data.value, data.format)}</div>
     {data.sub && <div style={{fontSize:11,color:'var(--text-muted)',marginTop:4}}>{data.sub}</div>}
@@ -799,12 +849,23 @@ function TableWidget({ data }) {
 
 const COMP = { metric: MetricCard, bar: BarChartWidget, donut: DonutChartWidget, line: LineChartWidget, table: TableWidget };
 
-function WidgetCard({ widgetId, reportData, loading }) {
+function WidgetCard({ widgetId, reportData, loading, target, onTargetChange }) {
   const def = W[widgetId]; if (!def) return null;
   const Comp = COMP[def.component]; if (!Comp) return null;
   const raw = reportData[def.reportType];
   const data = raw ? def.transform(raw) : null;
   const sizeClass = def.size==='sm'?'widget-sm':def.size==='lg'?'widget-lg':'widget-md';
+  const isMetric = def.component === 'metric';
+  const [editingTarget, setEditingTarget] = useState(false);
+  const [targetInput, setTargetInput] = useState(target || '');
+
+  function saveTarget() {
+    const val = parseFloat(targetInput);
+    onTargetChange(widgetId, isNaN(val) || val <= 0 ? null : val);
+    setEditingTarget(false);
+  }
+  function clearTarget() { onTargetChange(widgetId, null); setTargetInput(''); setEditingTarget(false); }
+
   return (
     <div className={`widget-card ${sizeClass}`}>
       <div className="widget-header">
@@ -812,10 +873,22 @@ function WidgetCard({ widgetId, reportData, loading }) {
           <span className="widget-label">{def.label}</span>
           {def.note && <div style={{fontSize:10,color:'var(--text-muted)',marginTop:2,fontWeight:400}}>{def.note}</div>}
         </div>
-        <span className="widget-icon">{def.icon}</span>
+        <div style={{display:'flex',alignItems:'center',gap:4}}>
+          {isMetric && <button className="gear-btn" onClick={()=>{setEditingTarget(!editingTarget);setTargetInput(target||'');}} title="Set target">{'\u2699'}</button>}
+          <span className="widget-icon">{def.icon}</span>
+        </div>
       </div>
-      {loading && !data ? <div className={def.component==='metric'?'skeleton skeleton-metric':'skeleton skeleton-chart'} />
-        : <Comp data={data} />}
+      {editingTarget && (
+        <div className="target-editor">
+          <span className="te-label">Target:</span>
+          <input type="number" value={targetInput} onChange={e=>setTargetInput(e.target.value)}
+            onKeyDown={e=>{if(e.key==='Enter')saveTarget();}} placeholder="e.g. 50000" autoFocus />
+          <button className="btn btn-sm btn-amber" onClick={saveTarget}>Save</button>
+          {target && <button className="btn btn-sm" style={{color:'var(--red)'}} onClick={clearTarget}>Clear</button>}
+        </div>
+      )}
+      {loading && !data ? <div className={isMetric?'skeleton skeleton-metric':'skeleton skeleton-chart'} />
+        : isMetric ? <MetricCard data={data} target={target} /> : <Comp data={data} />}
     </div>
   );
 }
@@ -823,7 +896,7 @@ function WidgetCard({ widgetId, reportData, loading }) {
 // ═══════════════════════════════════════════════════════
 //  SECTION BLOCK
 // ═══════════════════════════════════════════════════════
-function SectionBlock({ sectionId, widgetIds, reportData, loading }) {
+function SectionBlock({ sectionId, widgetIds, reportData, loading, targets, onTargetChange }) {
   const sec = SECTIONS[sectionId]; if (!sec) return null;
   return (
     <div className="dashboard-section">
@@ -834,7 +907,8 @@ function SectionBlock({ sectionId, widgetIds, reportData, loading }) {
         <span className="section-badge">{widgetIds.length} widgets</span>
       </div>
       <div className="widget-grid">
-        {widgetIds.map(id => <WidgetCard key={id} widgetId={id} reportData={reportData} loading={loading} />)}
+        {widgetIds.map(id => <WidgetCard key={id} widgetId={id} reportData={reportData} loading={loading}
+          target={targets?.[id]} onTargetChange={onTargetChange} />)}
       </div>
     </div>
   );
@@ -1028,6 +1102,7 @@ function DashboardApp() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [lastRefresh, setLastRefresh] = useState(null);
   const [theme, setTheme] = useState('dark');
+  const [targets, setTargets] = useState({});
 
   function applyTheme(t) {
     setTheme(t);
@@ -1047,6 +1122,7 @@ function DashboardApp() {
           setConfig(json.config);
           if (json.config.datePreset) applyPreset(json.config.datePreset);
           if (json.config.theme) { setTheme(json.config.theme); document.documentElement.setAttribute('data-theme', json.config.theme); applyChartTheme(json.config.theme); }
+          if (json.config.targets) setTargets(json.config.targets);
         } else { setConfig('new'); }
       } catch (e) { setConfig('new'); }
     })();
@@ -1113,6 +1189,13 @@ function DashboardApp() {
 
   async function handleCacheTTLChange(ttl) { const cfg={...config,cacheTTL:ttl}; setConfig(cfg); await saveConfig(cfg); }
   async function handleThemeChange(t) { applyTheme(t); const cfg={...config,theme:t}; setConfig(cfg); await saveConfig(cfg); }
+  async function handleTargetChange(widgetId, value) {
+    const newTargets = { ...targets };
+    if (value == null) { delete newTargets[widgetId]; } else { newTargets[widgetId] = value; }
+    setTargets(newTargets);
+    const cfg = { ...config, targets: newTargets }; setConfig(cfg); await saveConfig(cfg);
+    track('target_set', { widget: widgetId, value });
+  }
   function handleRefresh() { clearDataStore(); setDateRange({...dateRange}); track('refresh_clicked'); }
 
   if (config === 'new') return <TemplateChooser onSelect={handleSelectTemplate} />;
@@ -1154,7 +1237,8 @@ function DashboardApp() {
 
       <div className={loading && lastRefresh ? 'sections-loading' : ''}>
         {config.sections.map((sec, i) => (
-          <SectionBlock key={sec.id+i+theme} sectionId={sec.id} widgetIds={sec.widgets} reportData={reportData} loading={loading} />
+          <SectionBlock key={sec.id+i+theme} sectionId={sec.id} widgetIds={sec.widgets} reportData={reportData} loading={loading}
+            targets={targets} onTargetChange={handleTargetChange} />
         ))}
       </div>
 
