@@ -326,12 +326,12 @@ const W = {
   'program-enrollments': { label: 'Total Enrollments', description: 'Sum of program enrollments', section: 'programs',
     reportType: 'programs', size: 'sm', icon: '\uD83C\uDF93', component: 'metric',
     transform: rows => ({ value: rows.reduce((s,r) => s + (parseInt(r['enrolled'])||0), 0), format: 'number' }) },
-  'program-revenue': { label: 'Program Revenue', description: 'Net revenue from programs', section: 'programs',
+  'program-revenue': { label: 'Program Revenue', description: 'Net revenue from programs (all-time)', section: 'programs',
     reportType: 'programs', size: 'sm', icon: '\uD83D\uDCB0', component: 'metric',
-    transform: rows => ({ value: rows.reduce((s,r) => s + pf(r['net_total'] || r['charged']), 0), format: 'currency', colorClass: 'metric-green' }) },
-  'program-cancellations': { label: 'Program Refunds', description: 'Total refund amount from programs', section: 'programs',
+    transform: rows => ({ value: rows.reduce((s,r) => s + pf(r['net_total'] || r['charged']), 0), format: 'currency', colorClass: 'metric-green', sub: 'All-time' }) },
+  'program-cancellations': { label: 'Program Refunds', description: 'Total refund amount from programs (all-time)', section: 'programs',
     reportType: 'programs', size: 'sm', icon: '\uD83D\uDD04', component: 'metric',
-    transform: rows => ({ value: rows.reduce((s,r) => s + pf(r['refunds']), 0), format: 'currency', colorClass: 'metric-red' }) },
+    transform: rows => ({ value: rows.reduce((s,r) => s + pf(r['refunds']), 0), format: 'currency', colorClass: 'metric-red', sub: 'All-time' }) },
   'program-fill-rate': { label: 'Avg Fill Rate', description: 'Average program capacity utilization', section: 'programs',
     reportType: 'programs', size: 'sm', icon: '\uD83D\uDCCA', component: 'metric',
     transform: rows => {
@@ -723,7 +723,10 @@ Chart.defaults.plugins.tooltip.padding = 10;
 // ═══════════════════════════════════════════════════════
 function MetricCard({ data }) {
   if (!data) return <div className="skeleton skeleton-metric" />;
-  return <div className={`metric-value ${data.colorClass || ''}`}>{fmt(data.value, data.format)}</div>;
+  return <div>
+    <div className={`metric-value ${data.colorClass || ''}`}>{fmt(data.value, data.format)}</div>
+    {data.sub && <div style={{fontSize:11,color:'var(--text-muted)',marginTop:4}}>{data.sub}</div>}
+  </div>;
 }
 
 function BarChartWidget({ data }) {
