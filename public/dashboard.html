@@ -434,23 +434,23 @@ const W = {
     }},
 
   // ── Users ──
-  'user-total': { label: 'Total Users', description: 'All registered users', section: 'users-demographics',
+  'user-total': { label: 'Total Users', description: 'All registered users', note: 'All registered household members', section: 'users-demographics',
     reportType: 'users', size: 'sm', icon: '\uD83D\uDC65', component: 'metric',
     transform: rows => ({ value: rows.length, format:'number' }) },
-  'user-new': { label: 'New Users', description: 'Recently registered', section: 'users-demographics',
+  'user-new': { label: 'New Users', description: 'Recently registered', note: 'Signed up in the last 30 days', section: 'users-demographics',
     reportType: 'users', size: 'sm', icon: '\uD83C\uDD95', component: 'metric',
     transform: rows => {
       const thirtyAgo=Date.now()-30*86400000;
       return { value: rows.filter(r=>{const d=r['created_at']||r['Created At']||r['signup_date']||''; return d&&new Date(d).getTime()>thirtyAgo;}).length, format:'number', colorClass:'metric-green' };
     }},
-  'user-by-city': { label: 'Users by City', description: 'Top cities by user count', section: 'users-demographics',
+  'user-by-city': { label: 'Users by City', description: 'Top cities by user count', note: 'All registered users, not just participants', section: 'users-demographics',
     reportType: 'users', size: 'md', icon: '\uD83C\uDFD9\uFE0F', component: 'bar',
     transform: rows => {
       const g={}; rows.forEach(r=>{const k=r['city']||r['City']||'Unknown'; if(k&&k!=='null')g[k]=(g[k]||0)+1;});
       const s=Object.entries(g).sort((a,b)=>b[1]-a[1]).slice(0,10);
       return { labels:s.map(e=>e[0]), values:s.map(e=>e[1]) };
     }},
-  'user-by-zip': { label: 'Users by Zip', description: 'Top zip codes', section: 'users-demographics',
+  'user-by-zip': { label: 'Users by Zip', description: 'Top zip codes', note: 'All registered users, not just participants', section: 'users-demographics',
     reportType: 'users', size: 'md', icon: '\uD83D\uDCEC', component: 'bar',
     transform: rows => {
       const g={}; rows.forEach(r=>{const k=r['Zip Code']||r['zip']||r['Zip']||''; if(k&&k!=='null')g[k]=(g[k]||0)+1;});
@@ -560,14 +560,14 @@ const W = {
     }},
 
   // ── Demographics ──
-  'demo-age': { label: 'Age Distribution', description: 'Participants by age group', section: 'users-demographics',
+  'demo-age': { label: 'Age Distribution', description: 'Participants by age group', note: 'Program participants only', section: 'users-demographics',
     reportType: 'program-demographics', size: 'md', icon: '\uD83D\uDCCA', component: 'bar',
     transform: rows => {
       const bins={'0-5':0,'6-12':0,'13-17':0,'18-25':0,'26-35':0,'36-50':0,'51-65':0,'65+':0};
       rows.forEach(r=>{const a=parseInt(r['age']||r['Age']); if(isNaN(a))return; if(a<=5)bins['0-5']++; else if(a<=12)bins['6-12']++; else if(a<=17)bins['13-17']++; else if(a<=25)bins['18-25']++; else if(a<=35)bins['26-35']++; else if(a<=50)bins['36-50']++; else if(a<=65)bins['51-65']++; else bins['65+']++;});
       return { labels:Object.keys(bins), values:Object.values(bins) };
     }},
-  'demo-gender': { label: 'Gender Breakdown', description: 'Participant gender split', section: 'users-demographics',
+  'demo-gender': { label: 'Gender Breakdown', description: 'Participant gender split', note: 'Program participants only', section: 'users-demographics',
     reportType: 'program-demographics', size: 'md', icon: '\uD83D\uDC65', component: 'donut',
     transform: rows => {
       const g={}; rows.forEach(r=>{const k=r['gender']||r['Gender']||'Unknown'; g[k]=(g[k]||0)+1;});
@@ -789,7 +789,10 @@ function WidgetCard({ widgetId, reportData, loading }) {
   return (
     <div className={`widget-card ${sizeClass}`}>
       <div className="widget-header">
-        <span className="widget-label">{def.label}</span>
+        <div>
+          <span className="widget-label">{def.label}</span>
+          {def.note && <div style={{fontSize:10,color:'var(--text-muted)',marginTop:2,fontWeight:400}}>{def.note}</div>}
+        </div>
         <span className="widget-icon">{def.icon}</span>
       </div>
       {loading && !data ? <div className={def.component==='metric'?'skeleton skeleton-metric':'skeleton skeleton-chart'} />
