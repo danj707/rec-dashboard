@@ -177,8 +177,10 @@ function fmt(val, format) {
   if (val == null || isNaN(val)) return '\u2014';
   if (format === 'currency') return '$' + Number(val).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
   if (format === 'currency2') return '$' + Number(val).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  if (format === 'percent') return Number(val).toFixed(1) + '%';
   return Number(val).toLocaleString('en-US');
 }
+function fmtTooltip(v, format) { return format==='currency' ? '$'+Number(v).toLocaleString('en-US',{maximumFractionDigits:0}) : Number(v).toLocaleString('en-US'); }
 function shortDate(iso) { if (!iso) return ''; const d = new Date(iso + 'T12:00:00'); return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); }
 function getMonthRange(offset = 0) {
   const now = new Date(); const y = now.getFullYear(), m = now.getMonth() + offset;
@@ -375,12 +377,12 @@ const W = {
   'court-hours': { label: 'Hours Reserved', description: 'Total hours booked', section: 'courts',
     reportType: 'court-utilization', size: 'sm', icon: '\u23F1\uFE0F', component: 'metric',
     transform: rows => ({ value: rows.reduce((s,r)=>s+pf(r['duration_hours']||r['Duration Hours']||r['hours']||1),0), format:'number' }) },
-  'court-util-pct': { label: 'Utilization %', description: 'Average court utilization rate', section: 'courts',
+  'court-util-pct': { label: 'Avg Hours/Court', description: 'Average booked hours per court', section: 'courts',
     reportType: 'court-utilization', size: 'sm', icon: '\uD83D\uDCCA', component: 'metric',
     transform: rows => {
       const byC={}; rows.forEach(r=>{const c=r['court_name']||r['Court Name']||'?'; if(!byC[c])byC[c]={used:0}; byC[c].used+=pf(r['duration_hours']||r['hours']||1);});
-      const courts=Object.values(byC); if(!courts.length)return{value:0,format:'percent'};
-      return { value: 0, format: 'percent', colorClass: courts.length?'':'' }; // needs available hours baseline
+      const courts=Object.values(byC); if(!courts.length)return{value:0,format:'number'};
+      return { value: Math.round(courts.reduce((s,c)=>s+c.used,0)/courts.length*10)/10, format:'number' };
     }},
   'court-by-court': { label: 'Bookings by Court', description: 'Reservations per court', section: 'courts',
     reportType: 'court-utilization', size: 'md', icon: '\uD83C\uDFBE', component: 'bar',
@@ -733,6 +735,7 @@ function BarChartWidget({ data }) {
     chart.current = new Chart(ref.current, { type: 'bar',
       data: { labels: data.labels, datasets: [{ data: data.values, backgroundColor: CHART_COLORS.slice(0, data.values.length), borderRadius: 4, maxBarThickness: 40 }] },
       options: { indexAxis: horiz?'y':'x', responsive: true, maintainAspectRatio: false,
+        plugins: { tooltip: { callbacks: { label: ctx => fmtTooltip(ctx.raw, data.format) } } },
         scales: { x: { grid: { display: !horiz }, ticks: { callback: v => data.format==='currency' ? '$'+(v>=1000?(v/1000).toFixed(0)+'k':v) : v } },
                   y: { grid: { display: horiz }, ticks: horiz ? {} : { callback: v => data.format==='currency' ? '$'+(v>=1000?(v/1000).toFixed(0)+'k':v) : v } } } }
     });
@@ -768,6 +771,7 @@ function LineChartWidget({ data }) {
       data: { labels: data.labels, datasets: [{ data: data.values, borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.08)',
         fill: true, tension: 0.3, pointRadius: 3, pointHoverRadius: 6, borderWidth: 2 }] },
       options: { responsive: true, maintainAspectRatio: false,
+        plugins: { tooltip: { callbacks: { label: ctx => fmtTooltip(ctx.raw, data.format) } } },
         scales: { x: { grid: { display: false }, ticks: { maxTicksLimit: 12, font: { size: 10 } } },
                   y: { ticks: { callback: v => data.format==='currency' ? '$'+(v>=1000?(v/1000).toFixed(0)+'k':v) : v } } } }
     });
@@ -779,11 +783,13 @@ function LineChartWidget({ data }) {
 
 function TableWidget({ data }) {
   if (!data) return <div className="skeleton skeleton-chart" />;
+  const numCols = new Set();
+  if (data.data.length) data.data[0].forEach((v,i) => { if (typeof v==='number'||String(v).startsWith('$')||String(v).endsWith('%')) numCols.add(i); });
   return (
     <div className="widget-table">
       <table>
-        <thead><tr>{data.columns.map((c,i) => <th key={i}>{c}</th>)}</tr></thead>
-        <tbody>{data.data.map((row,ri) => <tr key={ri}>{row.map((v,ci) => <td key={ci} className={typeof v==='number'||String(v).startsWith('$')?'num':''}>{v}</td>)}</tr>)}</tbody>
+        <thead><tr>{data.columns.map((c,i) => <th key={i} className={numCols.has(i)?'num':''}>{c}</th>)}</tr></thead>
+        <tbody>{data.data.map((row,ri) => <tr key={ri}>{row.map((v,ci) => <td key={ci} className={numCols.has(ci)?'num':''}>{v}</td>)}</tr>)}</tbody>
       </table>
     </div>
   );
