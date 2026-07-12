@@ -112,6 +112,14 @@ function toggleSection(id) {
   document.getElementById(id).classList.toggle('open');
 }
 
+async function toggleOrg(slug, key, value) {
+  const body = {}; body[key] = value;
+  await fetch('/admin/api/orgs/' + slug + '/toggles', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+}
+
 (async function() {
   const resp = await fetch('/admin/api/orgs');
   const data = await resp.json();
@@ -164,6 +172,16 @@ function toggleSection(id) {
                 ${o.perOrgReports.length ? '<span class="badge badge-amber">custom: ' + o.perOrgReports.join(', ') + '</span>' : ''}
               </div>
               <a href="${BASE}/${o.slug}?token=${o.token}" class="org-link" target="_blank">\u2192 Open Dashboard</a>
+              <div style="display:flex;gap:16px;margin-top:12px;padding-top:10px;border-top:1px solid #1e1e1e">
+                <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:#aaa;cursor:pointer">
+                  <input type="checkbox" ${o.toggles.ai ? 'checked' : ''} onchange="toggleOrg('${o.slug}','ai',this.checked)" style="accent-color:#7c3aed;width:16px;height:16px">
+                  <span>\u2728 AI Insights</span>
+                </label>
+                <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:#aaa;cursor:pointer">
+                  <input type="checkbox" ${o.toggles.reportLinks ? 'checked' : ''} onchange="toggleOrg('${o.slug}','reportLinks',this.checked)" style="accent-color:#f59e0b;width:16px;height:16px">
+                  <span>\uD83D\uDD17 Report Linkage</span>
+                </label>
+              </div>
               ${o.updatedAt ? '<div class="org-updated">Last updated: ' + new Date(o.updatedAt).toLocaleString() + '</div>' : ''}
             </div>
           `).join('')}

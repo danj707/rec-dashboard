@@ -923,13 +923,12 @@ function TableWidget({ data }) {
 // ═══════════════════════════════════════════════════════
 const geoCache = {};
 async function geocode(query) {
-  // Append org city/state for generic location names (no comma = not already "City, State")
   const fullQuery = query.includes(',') ? query : (window._orgGeo ? query + ', ' + window._orgGeo : query);
   if (geoCache[fullQuery]) return geoCache[fullQuery];
   try {
-    const resp = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(fullQuery)}&format=json&limit=1&countrycodes=us`);
+    const resp = await fetch(`/${ORG_SLUG}/api/geocode?token=${TOKEN}&q=${encodeURIComponent(fullQuery)}`);
     const data = await resp.json();
-    if (data.length) { geoCache[fullQuery] = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) }; return geoCache[fullQuery]; }
+    if (data.lat != null && data.lng != null) { geoCache[fullQuery] = data; return data; }
   } catch(e) { console.warn('[GEO] Error:', fullQuery, e); }
   return null;
 }
@@ -965,7 +964,7 @@ function MapWidget({ data }) {
           }).bindTooltip('<strong>' + pt.label + '</strong><br>' + pt.count.toLocaleString() + ' ' + (data.unit || 'users')).addTo(map);
           bounds.push([geo.lat, geo.lng]);
         }
-        if (i < data.points.length - 1) await new Promise(r => setTimeout(r, 1100));
+        if (i < data.points.length - 1) await new Promise(r => setTimeout(r, 500));
       }
       if (bounds.length > 1) map.fitBounds(bounds, { padding: [30, 30] });
       else if (bounds.length === 1) map.setView(bounds[0], 10);
@@ -1056,7 +1055,7 @@ function WidgetCard({ widgetId, reportData, loading, target, onTargetChange }) {
 // ═══════════════════════════════════════════════════════
 //  SECTION BLOCK
 // ═══════════════════════════════════════════════════════
-function SectionBlock({ sectionId, widgetIds, reportData, loading, targets, onTargetChange, dateRange }) {
+function SectionBlock({ sectionId, widgetIds, reportData, loading, targets, onTargetChange, dateRange, aiEnabled }) {
   const sec = SECTIONS[sectionId]; if (!sec) return null;
   const [insight, setInsight] = useState(null);
   const [insightLoading, setInsightLoading] = useState(false);
@@ -1098,7 +1097,7 @@ function SectionBlock({ sectionId, widgetIds, reportData, loading, targets, onTa
         <span className="section-icon">{sec.icon}</span>
         <span className="section-label">{sec.label}</span>
         <div className="section-line" />
-        <button onClick={insightOpen ? () => setInsightOpen(false) : generateInsight}
+        {aiEnabled && <button onClick={insightOpen ? () => setInsightOpen(false) : generateInsight}
           style={{background:insightOpen?'linear-gradient(135deg,#7c3aed,#6d28d9)':'linear-gradient(135deg,rgba(124,58,237,0.12),rgba(245,158,11,0.08))',
             border:insightOpen?'1px solid #7c3aed':'1px solid rgba(124,58,237,0.3)',borderRadius:8,padding:'5px 14px',cursor:'pointer',
             fontSize:12,fontWeight:600,color:insightOpen?'#fff':'var(--purple)',display:'flex',alignItems:'center',gap:5,
@@ -1106,7 +1105,7 @@ function SectionBlock({ sectionId, widgetIds, reportData, loading, targets, onTa
           onMouseOver={e=>{if(!insightOpen){e.currentTarget.style.background='linear-gradient(135deg,rgba(124,58,237,0.2),rgba(245,158,11,0.12))';e.currentTarget.style.borderColor='rgba(124,58,237,0.5)';}}}
           onMouseOut={e=>{if(!insightOpen){e.currentTarget.style.background='linear-gradient(135deg,rgba(124,58,237,0.12),rgba(245,158,11,0.08))';e.currentTarget.style.borderColor='rgba(124,58,237,0.3)';}}}>
           {'\u2728'} {insightLoading ? 'Analyzing...' : insightOpen ? 'Hide Insights' : 'Rec Insights'}
-        </button>
+        </button>}
         <span className="section-badge">{widgetIds.length} widgets</span>
       </div>
       {insightOpen && (
@@ -1336,7 +1335,7 @@ function DashboardApp() {
         const resp = await fetch(`/${ORG_SLUG}/api/config?token=${TOKEN}`);
         const json = await resp.json();
         setAvailableReports(json.availableReports || {});
-        setOrgMeta({ name: json.orgName, logoUrl: json.logoUrl, city: json.city, state: json.state });
+        setOrgMeta({ name: json.orgName, logoUrl: json.logoUrl, city: json.city, state: json.state, toggles: json.toggles || {} });
         window._orgGeo = json.city && json.state ? `${json.city}, ${json.state}` : '';
         if (json.config?.sections?.length > 0) {
           setConfig(json.config);
@@ -1458,7 +1457,7 @@ function DashboardApp() {
       <div className={loading && lastRefresh ? 'sections-loading' : ''}>
         {config.sections.map((sec, i) => (
           <SectionBlock key={sec.id+i+theme} sectionId={sec.id} widgetIds={sec.widgets} reportData={reportData} loading={loading}
-            targets={targets} onTargetChange={handleTargetChange} dateRange={dateRange} />
+            targets={targets} onTargetChange={handleTargetChange} dateRange={dateRange} aiEnabled={orgMeta.toggles?.ai !== false} />
         ))}
       </div>
 

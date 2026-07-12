@@ -256,6 +256,7 @@ app.get('/admin/api/orgs', adminAuth, (req, res) => {
       widgetCount: config?.sections?.reduce((s, sec) => s + sec.widgets.length, 0) || 0,
       theme: config?.theme || 'dark',
       cacheTTL: config?.cacheTTL || 15,
+      toggles: config?.toggles || { ai: true, reportLinks: false },
       updatedAt: config?.updatedAt || null,
     };
   });
@@ -280,6 +281,54 @@ app.get('/admin/api/events/summary', adminAuth, (req, res) => {
     });
     res.json({ total: events.length, byOrg, byType, last7Days: last7 });
   } catch (e) { res.json({ total: 0, error: e.message }); }
+});
+
+// ═══════════════════════════════════════════
+//  GEOCODING PROXY (server-side, cached)
+// ═══════════════════════════════════════════
+const GEO_CACHE_FILE = path.join(DATA_DIR, 'geocache.json');
+let geoCache = {};
+try { if (fs.existsSync(GEO_CACHE_FILE)) geoCache = JSON.parse(fs.readFileSync(GEO_CACHE_FILE, 'utf8')); } catch(e) {}
+function saveGeoCache() { try { ensureDataDir(); fs.writeFileSync(GEO_CACHE_FILE, JSON.stringify(geoCache)); } catch(e) {} }
+
+app.get('/:org/api/geocode', authMiddleware, async (req, res) => {
+  const q = req.query.q;
+  if (!q) return res.json({ lat: null, lng: null });
+  if (geoCache[q]) return res.json(geoCache[q]);
+  try {
+    const resp = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1&countrycodes=us`, {
+      headers: { 'User-Agent': 'rec-dashboard/1.0 (dan@rec.us)' }
+    });
+    const data = await resp.json();
+    if (data.length) {
+      const result = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+      geoCache[q] = result;
+      saveGeoCache();
+      console.log(`[GEO] ${q} → ${result.lat},${result.lng}`);
+      res.json(result);
+    } else {
+      console.log(`[GEO] ${q} → not found`);
+      geoCache[q] = { lat: null, lng: null };
+      saveGeoCache();
+      res.json({ lat: null, lng: null });
+    }
+  } catch(e) {
+    console.error(`[GEO] ${q} error:`, e.message);
+    res.json({ lat: null, lng: null });
+  }
+});
+
+// ═══════════════════════════════════════════
+//  ADMIN ORG TOGGLES
+// ═══════════════════════════════════════════
+app.post('/admin/api/orgs/:slug/toggles', adminAuth, (req, res) => {
+  const { slug } = req.params;
+  if (!ORGS[slug]) return res.status(404).json({ error: 'Not found' });
+  if (!dashboardConfigs[slug]) dashboardConfigs[slug] = {};
+  dashboardConfigs[slug].toggles = { ...dashboardConfigs[slug].toggles, ...req.body };
+  dashboardConfigs[slug].updatedAt = new Date().toISOString();
+  saveAllConfigs(dashboardConfigs);
+  res.json({ ok: true, toggles: dashboardConfigs[slug].toggles });
 });
 
 // ── Org dashboard routes ──
@@ -309,7 +358,8 @@ app.get('/:org/api/config', authMiddleware, (req, res) => {
   const org = ORGS[req.orgSlug];
   for (const [r, uuid] of Object.entries(org.reports || {})) availableReports[r] = true;
   for (const [r, uuid] of Object.entries(SHARED_UUIDS)) availableReports[r] = true;
-  res.json({ config, availableReports, orgName: org.name, logoUrl: org.logoUrl, city: org.city, state: org.state });
+  res.json({ config, availableReports, orgName: org.name, logoUrl: org.logoUrl, city: org.city, state: org.state,
+    toggles: config?.toggles || { ai: true, reportLinks: false } });
 });
 
 app.post('/:org/api/config', authMiddleware, (req, res) => {
