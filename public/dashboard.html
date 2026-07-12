@@ -79,7 +79,17 @@ body { font-family: var(--font-body); background: var(--bg-page); color: var(--t
 .widget-card:hover { transform: translateY(-2px); border-color: var(--border); box-shadow: 0 8px 24px rgba(0,0,0,0.3); }
 .widget-sm { grid-column: span 1; }
 .widget-md { grid-column: span 2; min-height: 300px; }
-@media (max-width: 500px) { .widget-md { grid-column: span 1; } }
+.widget-lg { grid-column: span 4; min-height: 200px; }
+@media (max-width: 500px) { .widget-md, .widget-lg { grid-column: span 1; } }
+
+/* Table widget */
+.widget-table { overflow-x: auto; max-height: 320px; overflow-y: auto; }
+.widget-table table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.widget-table th { text-align: left; padding: 6px 10px; font-size: 10px; font-weight: 600; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 0.04em; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--bg-card); }
+.widget-table td { padding: 5px 10px; border-bottom: 1px solid var(--border-subtle); color: var(--text-secondary); }
+.widget-table tr:hover td { background: var(--bg-card-hover); }
+.widget-table .num { text-align: right; font-variant-numeric: tabular-nums; }
 .widget-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
 .widget-label { font-size: 13px; color: var(--text-secondary); font-weight: 500; letter-spacing: 0.02em; }
 .widget-icon { font-size: 16px; opacity: 0.7; }
@@ -189,6 +199,27 @@ const SECTIONS = {
   programs: { id: 'programs', label: 'Programs & Enrollment', icon: '\uD83D\uDCDA', color: '#3b82f6',
     description: 'Enrollment, capacity, and program revenue',
     defaultWidgets: ['program-enrollments','program-revenue','program-cancellations','program-fill-rate','program-top'] },
+  courts: { id: 'courts', label: 'Court Bookings', icon: '\uD83C\uDFBE', color: '#8b5cf6',
+    description: 'Court reservations, utilization, and booking mix',
+    defaultWidgets: ['court-total','court-instant','court-managed','court-util-pct','court-by-court','court-by-location'] },
+  fasttrack: { id: 'fasttrack', label: 'Fast Track', icon: '\uD83D\uDE80', color: '#f97316',
+    description: 'Pre-registration demand and conversion metrics',
+    defaultWidgets: ['ft-signups','ft-converted','ft-pending','ft-conv-rate','ft-top-programs'] },
+  users: { id: 'users', label: 'Users', icon: '\uD83D\uDC65', color: '#06b6d4',
+    description: 'User growth and demographics',
+    defaultWidgets: ['user-total','user-new','user-by-city'] },
+  memberships: { id: 'memberships', label: 'Memberships', icon: '\uD83C\uDFAB', color: '#ec4899',
+    description: 'Member counts, revenue, and check-ins',
+    defaultWidgets: ['mem-active','mem-canceled','mem-revenue','mem-net','mem-type-donut'] },
+  products: { id: 'products', label: 'Products', icon: '\uD83D\uDECD\uFE0F', color: '#ef4444',
+    description: 'Product and POS sales metrics',
+    defaultWidgets: ['prod-gross','prod-net','prod-refunds','prod-units','prod-by-product'] },
+  instructors: { id: 'instructors', label: 'Instructor Payout', icon: '\uD83C\uDF93', color: '#22c55e',
+    description: 'Instructor revenue splits and performance',
+    defaultWidgets: ['instr-net','instr-payout','instr-org-ret','instr-fill','instr-top'] },
+  demographics: { id: 'demographics', label: 'Demographics', icon: '\uD83D\uDCCA', color: '#f97316',
+    description: 'Participant age, gender, and location breakdown',
+    defaultWidgets: ['demo-age','demo-gender','demo-city'] },
 };
 
 // ═══════════════════════════════════════════════════════
@@ -321,27 +352,304 @@ const W = {
       const s = Object.entries(g).filter(e=>e[1]>0).sort((a,b)=>b[1]-a[1]).slice(0,10);
       return { labels: s.map(e=>e[0]), values: s.map(e=>e[1]), format: 'currency' };
     }},
+  'tbl-program-rev': { label: 'Program Revenue Table', description: 'Program detail with enrollment and revenue', section: 'programs',
+    reportType: 'programs', size: 'lg', icon: '\uD83D\uDCCB', component: 'table',
+    transform: rows => {
+      const g = {}; rows.forEach(r => { const k=r['program']||'Unknown'; if(!g[k]) g[k]={enrolled:0,capacity:0,revenue:0,refunds:0};
+        g[k].enrolled+=(parseInt(r['enrolled'])||0); g[k].capacity+=(parseInt(r['capacity'])||0); g[k].revenue+=pf(r['net_total']||r['charged']); g[k].refunds+=pf(r['refunds']); });
+      const s = Object.entries(g).sort((a,b)=>b[1].revenue-a[1].revenue).slice(0,15);
+      return { columns:['Program','Enrolled','Capacity','Fill %','Revenue','Refunds'],
+        data: s.map(([k,v])=>[k, v.enrolled, v.capacity, v.capacity>0?Math.round(v.enrolled/v.capacity*100)+'%':'-', '$'+Math.round(v.revenue).toLocaleString(), '$'+Math.round(v.refunds).toLocaleString()]) };
+    }},
+
+  // ── Courts ──
+  'court-total': { label: 'Total Reservations', description: 'All court bookings', section: 'courts',
+    reportType: 'court-utilization', size: 'sm', icon: '\uD83C\uDFBE', component: 'metric',
+    transform: rows => ({ value: rows.length, format: 'number' }) },
+  'court-instant': { label: 'Instant Bookings', description: 'Customer self-booked', section: 'courts',
+    reportType: 'court-utilization', size: 'sm', icon: '\u26A1', component: 'metric',
+    transform: rows => ({ value: rows.filter(r=>(r['booking_source']||r['Booking Source']||'').toLowerCase()==='instant').length, format:'number' }) },
+  'court-managed': { label: 'Leagues / Managed', description: 'Staff-managed bookings', section: 'courts',
+    reportType: 'court-utilization', size: 'sm', icon: '\uD83D\uDCCB', component: 'metric',
+    transform: rows => ({ value: rows.filter(r=>(r['booking_source']||r['Booking Source']||'').toLowerCase()!=='instant').length, format:'number' }) },
+  'court-hours': { label: 'Hours Reserved', description: 'Total hours booked', section: 'courts',
+    reportType: 'court-utilization', size: 'sm', icon: '\u23F1\uFE0F', component: 'metric',
+    transform: rows => ({ value: rows.reduce((s,r)=>s+pf(r['duration_hours']||r['Duration Hours']||r['hours']||1),0), format:'number' }) },
+  'court-util-pct': { label: 'Utilization %', description: 'Average court utilization rate', section: 'courts',
+    reportType: 'court-utilization', size: 'sm', icon: '\uD83D\uDCCA', component: 'metric',
+    transform: rows => {
+      const byC={}; rows.forEach(r=>{const c=r['court_name']||r['Court Name']||'?'; if(!byC[c])byC[c]={used:0}; byC[c].used+=pf(r['duration_hours']||r['hours']||1);});
+      const courts=Object.values(byC); if(!courts.length)return{value:0,format:'percent'};
+      return { value: 0, format: 'percent', colorClass: courts.length?'':'' }; // needs available hours baseline
+    }},
+  'court-by-court': { label: 'Bookings by Court', description: 'Reservations per court', section: 'courts',
+    reportType: 'court-utilization', size: 'md', icon: '\uD83C\uDFBE', component: 'bar',
+    transform: rows => {
+      const g={}; rows.forEach(r=>{const k=r['court_name']||r['Court Name']||'Unknown'; g[k]=(g[k]||0)+1;});
+      const s=Object.entries(g).sort((a,b)=>b[1]-a[1]).slice(0,12);
+      return { labels:s.map(e=>e[0]), values:s.map(e=>e[1]) };
+    }},
+  'court-by-location': { label: 'Bookings by Location', description: 'Court bookings per location', section: 'courts',
+    reportType: 'court-utilization', size: 'md', icon: '\uD83D\uDCCD', component: 'bar',
+    transform: rows => {
+      const g={}; rows.forEach(r=>{const k=r['location_name']||r['Location Name']||'Unknown'; g[k]=(g[k]||0)+1;});
+      const s=Object.entries(g).sort((a,b)=>b[1]-a[1]).slice(0,10);
+      return { labels:s.map(e=>e[0]), values:s.map(e=>e[1]) };
+    }},
+  'court-mix': { label: 'Booking Mix', description: 'Instant vs managed breakdown', section: 'courts',
+    reportType: 'court-utilization', size: 'md', icon: '\uD83C\uDFAF', component: 'donut',
+    transform: rows => {
+      let instant=0,managed=0; rows.forEach(r=>{const s=(r['booking_source']||r['Booking Source']||'').toLowerCase(); s==='instant'?instant++:managed++;});
+      return { labels:['Instant','Leagues/Managed'], values:[instant,managed] };
+    }},
+
+  // ── Fast Track ──
+  'ft-signups': { label: 'FT Signups', description: 'Total Fast Track signups', section: 'fasttrack',
+    reportType: 'fasttrack', size: 'sm', icon: '\uD83D\uDE80', component: 'metric',
+    transform: rows => ({ value: rows.reduce((s,r)=>s+(parseInt(r['FT Signups']||r['ft_signups'])||0),0), format:'number' }) },
+  'ft-converted': { label: 'Converted', description: 'FT signups that enrolled', section: 'fasttrack',
+    reportType: 'fasttrack', size: 'sm', icon: '\u2705', component: 'metric',
+    transform: rows => ({ value: rows.reduce((s,r)=>s+(parseInt(r['FT Converted']||r['ft_converted'])||0),0), format:'number', colorClass:'metric-green' }) },
+  'ft-pending': { label: 'Pending', description: 'Not yet converted', section: 'fasttrack',
+    reportType: 'fasttrack', size: 'sm', icon: '\u23F3', component: 'metric',
+    transform: rows => ({ value: rows.reduce((s,r)=>s+(parseInt(r['FT Pending']||r['ft_pending'])||0),0), format:'number', colorClass:'metric-red' }) },
+  'ft-conv-rate': { label: 'Conversion %', description: 'Signup to enrollment rate', section: 'fasttrack',
+    reportType: 'fasttrack', size: 'sm', icon: '\uD83D\uDCC8', component: 'metric',
+    transform: rows => {
+      const sig=rows.reduce((s,r)=>s+(parseInt(r['FT Signups']||r['ft_signups'])||0),0);
+      const conv=rows.reduce((s,r)=>s+(parseInt(r['FT Converted']||r['ft_converted'])||0),0);
+      return { value: sig>0?Math.round(conv/sig*1000)/10:0, format:'percent', colorClass:'metric-green' };
+    }},
+  'ft-wishlists': { label: 'Wishlists', description: 'Active wishlist entries', section: 'fasttrack',
+    reportType: 'fasttrack', size: 'sm', icon: '\uD83D\uDCDD', component: 'metric',
+    transform: rows => ({ value: rows.reduce((s,r)=>s+(parseInt(r['Wishlists']||r['wishlists'])||0),0), format:'number' }) },
+  'ft-top-programs': { label: 'Top FT Programs', description: 'Programs by FT signup volume', section: 'fasttrack',
+    reportType: 'fasttrack', size: 'md', icon: '\uD83C\uDFC6', component: 'bar',
+    transform: rows => {
+      const g={}; rows.forEach(r=>{const k=r['Program']||r['program']||'Unknown'; g[k]=(g[k]||0)+(parseInt(r['FT Signups']||r['ft_signups'])||0);});
+      const s=Object.entries(g).sort((a,b)=>b[1]-a[1]).slice(0,10);
+      return { labels:s.map(e=>e[0]), values:s.map(e=>e[1]) };
+    }},
+
+  // ── Users ──
+  'user-total': { label: 'Total Users', description: 'All registered users', section: 'users',
+    reportType: 'users', size: 'sm', icon: '\uD83D\uDC65', component: 'metric',
+    transform: rows => ({ value: rows.length, format:'number' }) },
+  'user-new': { label: 'New Users', description: 'Recently registered', section: 'users',
+    reportType: 'users', size: 'sm', icon: '\uD83C\uDD95', component: 'metric',
+    transform: rows => {
+      const thirtyAgo=Date.now()-30*86400000;
+      return { value: rows.filter(r=>{const d=r['created_at']||r['Created At']||r['signup_date']||''; return d&&new Date(d).getTime()>thirtyAgo;}).length, format:'number', colorClass:'metric-green' };
+    }},
+  'user-by-city': { label: 'Users by City', description: 'Top cities by user count', section: 'users',
+    reportType: 'users', size: 'md', icon: '\uD83C\uDFD9\uFE0F', component: 'bar',
+    transform: rows => {
+      const g={}; rows.forEach(r=>{const k=r['city']||r['City']||'Unknown'; if(k&&k!=='null')g[k]=(g[k]||0)+1;});
+      const s=Object.entries(g).sort((a,b)=>b[1]-a[1]).slice(0,10);
+      return { labels:s.map(e=>e[0]), values:s.map(e=>e[1]) };
+    }},
+  'user-by-zip': { label: 'Users by Zip', description: 'Top zip codes', section: 'users',
+    reportType: 'users', size: 'md', icon: '\uD83D\uDCEC', component: 'bar',
+    transform: rows => {
+      const g={}; rows.forEach(r=>{const k=r['zip']||r['Zip']||r['zip_code']||''; if(k&&k!=='null')g[k]=(g[k]||0)+1;});
+      const s=Object.entries(g).sort((a,b)=>b[1]-a[1]).slice(0,10);
+      return { labels:s.map(e=>e[0]), values:s.map(e=>e[1]) };
+    }},
+
+  // ── Memberships ──
+  'mem-active': { label: 'Active Members', description: 'Currently active memberships', section: 'memberships',
+    reportType: 'memberships', size: 'sm', icon: '\u2705', component: 'metric',
+    transform: rows => ({ value: rows.filter(r=>(r['status']||r['Status']||'').toLowerCase()==='active').length, format:'number', colorClass:'metric-green' }) },
+  'mem-canceled': { label: 'Canceled', description: 'Canceled memberships', section: 'memberships',
+    reportType: 'memberships', size: 'sm', icon: '\u274C', component: 'metric',
+    transform: rows => ({ value: rows.filter(r=>(r['status']||r['Status']||'').toLowerCase()==='canceled').length, format:'number', colorClass:'metric-red' }) },
+  'mem-revenue': { label: 'Membership Revenue', description: 'Total paid', section: 'memberships',
+    reportType: 'memberships', size: 'sm', icon: '\uD83D\uDCB0', component: 'metric',
+    transform: rows => ({ value: rows.reduce((s,r)=>s+pf(r['paid']||r['Paid']||r['price']||r['Price']),0), format:'currency', colorClass:'metric-green' }) },
+  'mem-net': { label: 'Net Members', description: 'Active minus canceled', section: 'memberships',
+    reportType: 'memberships', size: 'sm', icon: '\uD83D\uDCCA', component: 'metric',
+    transform: rows => {
+      const a=rows.filter(r=>(r['status']||r['Status']||'').toLowerCase()==='active').length;
+      const c=rows.filter(r=>(r['status']||r['Status']||'').toLowerCase()==='canceled').length;
+      return { value: a-c, format:'number' };
+    }},
+  'mem-type-donut': { label: 'Membership Types', description: 'Breakdown by membership type', section: 'memberships',
+    reportType: 'memberships', size: 'md', icon: '\uD83C\uDFAB', component: 'donut',
+    transform: rows => {
+      const g={}; rows.forEach(r=>{const k=r['membership_name']||r['Membership Name']||r['type']||r['Type']||'Unknown'; g[k]=(g[k]||0)+1;});
+      const s=Object.entries(g).sort((a,b)=>b[1]-a[1]).slice(0,8);
+      return { labels:s.map(e=>e[0]), values:s.map(e=>e[1]) };
+    }},
+  'mem-renewal-donut': { label: 'Renewal Types', description: 'Auto vs one-time renewals', section: 'memberships',
+    reportType: 'memberships', size: 'md', icon: '\uD83D\uDD04', component: 'donut',
+    transform: rows => {
+      const g={}; rows.forEach(r=>{const k=r['renewal_type']||r['Renewal Type']||'Unknown'; g[k]=(g[k]||0)+1;});
+      const s=Object.entries(g).sort((a,b)=>b[1]-a[1]);
+      return { labels:s.map(e=>e[0]), values:s.map(e=>e[1]) };
+    }},
+  'tbl-memberships': { label: 'Membership Summary', description: 'Types with active count and revenue', section: 'memberships',
+    reportType: 'memberships', size: 'lg', icon: '\uD83D\uDCCB', component: 'table',
+    transform: rows => {
+      const g={}; rows.forEach(r=>{const k=r['membership_name']||r['Membership Name']||r['type']||r['Type']||'Unknown';
+        if(!g[k])g[k]={active:0,canceled:0,revenue:0}; const st=(r['status']||r['Status']||'').toLowerCase();
+        if(st==='active')g[k].active++; else if(st==='canceled')g[k].canceled++; g[k].revenue+=pf(r['paid']||r['Paid']||r['net']||r['Net']);});
+      const s=Object.entries(g).sort((a,b)=>b[1].active-a[1].active).slice(0,12);
+      return { columns:['Type','Active','Canceled','Revenue'],
+        data:s.map(([k,v])=>[k,v.active,v.canceled,'$'+Math.round(v.revenue).toLocaleString()]) };
+    }},
+
+  // ── Products ──
+  'prod-gross': { label: 'Gross Revenue', description: 'Total product sales', section: 'products',
+    reportType: 'products', size: 'sm', icon: '\uD83D\uDCB5', component: 'metric',
+    transform: rows => ({ value: rows.reduce((s,r)=>s+pf(r['Revenue ($)']||r['Revenue']||r['revenue']),0), format:'currency', colorClass:'metric-green' }) },
+  'prod-net': { label: 'Net Revenue', description: 'Gross minus refunds', section: 'products',
+    reportType: 'products', size: 'sm', icon: '\uD83D\uDCB0', component: 'metric',
+    transform: rows => ({ value: rows.reduce((s,r)=>s+pf(r['Net Revenue ($)']||r['Net Revenue']||r['Net']||r['net']),0), format:'currency', colorClass:'metric-green' }) },
+  'prod-refunds': { label: 'Refunds', description: 'Product refund total', section: 'products',
+    reportType: 'products', size: 'sm', icon: '\uD83D\uDD04', component: 'metric',
+    transform: rows => ({ value: rows.reduce((s,r)=>s+pf(r['Refunds ($)']||r['Refunds']||r['refunds']),0), format:'currency', colorClass:'metric-red' }) },
+  'prod-units': { label: 'Units Sold', description: 'Total quantity', section: 'products',
+    reportType: 'products', size: 'sm', icon: '\uD83D\uDCE6', component: 'metric',
+    transform: rows => ({ value: rows.reduce((s,r)=>s+(parseInt(r['Qty']||r['qty']||r['Quantity'])||0),0), format:'number' }) },
+  'prod-by-product': { label: 'Revenue by Product', description: 'Top products by revenue', section: 'products',
+    reportType: 'products', size: 'md', icon: '\uD83D\uDECD\uFE0F', component: 'bar',
+    transform: rows => {
+      const g={}; rows.forEach(r=>{const k=r['Product']||r['product']||'Unknown'; g[k]=(g[k]||0)+pf(r['Revenue ($)']||r['Revenue']||r['revenue']);});
+      const s=Object.entries(g).sort((a,b)=>b[1]-a[1]).slice(0,10);
+      return { labels:s.map(e=>e[0]), values:s.map(e=>e[1]), format:'currency' };
+    }},
+  'prod-trend': { label: 'Sales Trend', description: 'Revenue over time', section: 'products',
+    reportType: 'products', size: 'md', icon: '\uD83D\uDCC8', component: 'line',
+    transform: rows => {
+      const g={}; rows.forEach(r=>{const d=r['Date']||r['date']||''; if(d){const iso=d.split('T')[0]; g[iso]=(g[iso]||0)+pf(r['Revenue ($)']||r['Revenue']||r['revenue']);}});
+      const s=Object.entries(g).sort((a,b)=>a[0].localeCompare(b[0]));
+      return { labels:s.map(e=>shortDate(e[0])), values:s.map(e=>e[1]), format:'currency' };
+    }},
+
+  // ── Instructor Payout ──
+  'instr-net': { label: 'Net Revenue', description: 'Total net from instructor sections', section: 'instructors',
+    reportType: 'instructor-payout', size: 'sm', icon: '\uD83D\uDCB0', component: 'metric',
+    transform: rows => ({ value: rows.reduce((s,r)=>s+pf(r['Net Revenue']||r['net_revenue']||r['Net']||r['net']),0), format:'currency', colorClass:'metric-green' }) },
+  'instr-payout': { label: 'Instructor Payout', description: 'Total paid to instructors', section: 'instructors',
+    reportType: 'instructor-payout', size: 'sm', icon: '\uD83C\uDF93', component: 'metric',
+    transform: rows => ({ value: rows.reduce((s,r)=>s+pf(r['Instructor Payout']||r['instructor_payout']||r['Split']),0), format:'currency' }) },
+  'instr-org-ret': { label: 'Org Retention', description: 'Revenue kept by org', section: 'instructors',
+    reportType: 'instructor-payout', size: 'sm', icon: '\uD83C\uDFE2', component: 'metric',
+    transform: rows => ({ value: rows.reduce((s,r)=>s+pf(r['Org Retention']||r['org_retention']),0), format:'currency', colorClass:'metric-green' }) },
+  'instr-fill': { label: 'Avg Fill Rate', description: 'Average section capacity used', section: 'instructors',
+    reportType: 'instructor-payout', size: 'sm', icon: '\uD83D\uDCCA', component: 'metric',
+    transform: rows => {
+      const valid=rows.filter(r=>pf(r['Capacity']||r['capacity'])>0);
+      if(!valid.length)return{value:0,format:'percent'};
+      return{value:valid.reduce((s,r)=>s+pf(r['Enrolled']||r['enrolled'])/pf(r['Capacity']||r['capacity'])*100,0)/valid.length, format:'percent'};
+    }},
+  'instr-top': { label: 'Top Instructors', description: 'Ranked by revenue', section: 'instructors',
+    reportType: 'instructor-payout', size: 'md', icon: '\uD83C\uDFC6', component: 'bar',
+    transform: rows => {
+      const g={}; rows.forEach(r=>{const k=r['Instructor']||r['instructor']||'Unknown'; g[k]=(g[k]||0)+pf(r['Net Revenue']||r['net_revenue']||r['Net']||r['net']);});
+      const s=Object.entries(g).filter(e=>e[1]>0).sort((a,b)=>b[1]-a[1]).slice(0,10);
+      return { labels:s.map(e=>e[0]), values:s.map(e=>e[1]), format:'currency' };
+    }},
+  'tbl-instructors': { label: 'Instructor Table', description: 'Sections, participants, and payout', section: 'instructors',
+    reportType: 'instructor-payout', size: 'lg', icon: '\uD83D\uDCCB', component: 'table',
+    transform: rows => {
+      const g={}; rows.forEach(r=>{const k=r['Instructor']||r['instructor']||'Unknown';
+        if(!g[k])g[k]={sections:0,enrolled:0,payout:0,net:0}; g[k].sections++; g[k].enrolled+=(parseInt(r['Enrolled']||r['enrolled'])||0);
+        g[k].payout+=pf(r['Instructor Payout']||r['instructor_payout']||r['Split']); g[k].net+=pf(r['Net Revenue']||r['net_revenue']||r['Net']);});
+      const s=Object.entries(g).sort((a,b)=>b[1].net-a[1].net).slice(0,15);
+      return { columns:['Instructor','Sections','Enrolled','Payout','Net Revenue'],
+        data:s.map(([k,v])=>[k,v.sections,v.enrolled,'$'+Math.round(v.payout).toLocaleString(),'$'+Math.round(v.net).toLocaleString()]) };
+    }},
+
+  // ── Demographics ──
+  'demo-age': { label: 'Age Distribution', description: 'Participants by age group', section: 'demographics',
+    reportType: 'program-demographics', size: 'md', icon: '\uD83D\uDCCA', component: 'bar',
+    transform: rows => {
+      const bins={'0-5':0,'6-12':0,'13-17':0,'18-25':0,'26-35':0,'36-50':0,'51-65':0,'65+':0};
+      rows.forEach(r=>{const a=parseInt(r['age']||r['Age']); if(isNaN(a))return; if(a<=5)bins['0-5']++; else if(a<=12)bins['6-12']++; else if(a<=17)bins['13-17']++; else if(a<=25)bins['18-25']++; else if(a<=35)bins['26-35']++; else if(a<=50)bins['36-50']++; else if(a<=65)bins['51-65']++; else bins['65+']++;});
+      return { labels:Object.keys(bins), values:Object.values(bins) };
+    }},
+  'demo-gender': { label: 'Gender Breakdown', description: 'Participant gender split', section: 'demographics',
+    reportType: 'program-demographics', size: 'md', icon: '\uD83D\uDC65', component: 'donut',
+    transform: rows => {
+      const g={}; rows.forEach(r=>{const k=r['gender']||r['Gender']||'Unknown'; g[k]=(g[k]||0)+1;});
+      const s=Object.entries(g).sort((a,b)=>b[1]-a[1]).slice(0,6);
+      return { labels:s.map(e=>e[0]), values:s.map(e=>e[1]) };
+    }},
+  'demo-city': { label: 'Participants by City', description: 'Top cities', section: 'demographics',
+    reportType: 'program-demographics', size: 'md', icon: '\uD83C\uDFD9\uFE0F', component: 'bar',
+    transform: rows => {
+      const g={}; rows.forEach(r=>{const k=r['city']||r['City']||''; if(k&&k!=='null')g[k]=(g[k]||0)+1;});
+      const s=Object.entries(g).sort((a,b)=>b[1]-a[1]).slice(0,10);
+      return { labels:s.map(e=>e[0]), values:s.map(e=>e[1]) };
+    }},
+  'demo-race': { label: 'Race/Ethnicity', description: 'Participant breakdown', section: 'demographics',
+    reportType: 'program-demographics', size: 'md', icon: '\uD83C\uDF0D', component: 'donut',
+    transform: rows => {
+      const g={}; rows.forEach(r=>{const k=r['race']||r['Race']||r['ethnicity']||r['Ethnicity']||'Unknown'; g[k]=(g[k]||0)+1;});
+      const s=Object.entries(g).sort((a,b)=>b[1]-a[1]).slice(0,8);
+      return { labels:s.map(e=>e[0]), values:s.map(e=>e[1]) };
+    }},
+
+  // ── Facility Extras ──
+  'fac-resident': { label: 'Resident vs Non-Resident', description: 'Booking residency split', section: 'facility',
+    reportType: 'facility', size: 'md', icon: '\uD83C\uDFE0', component: 'donut',
+    transform: rows => {
+      const g={}; rows.forEach(r=>{const k=r['Resident?']||r['resident']||'Unknown'; g[k]=(g[k]||0)+1;});
+      const s=Object.entries(g).sort((a,b)=>b[1]-a[1]);
+      return { labels:s.map(e=>e[0]||'Unknown'), values:s.map(e=>e[1]) };
+    }},
+  'fac-booking-type': { label: 'Booking Type Split', description: 'Breakdown by booking type', section: 'facility',
+    reportType: 'facility', size: 'md', icon: '\uD83D\uDCCB', component: 'donut',
+    transform: rows => {
+      const g={}; rows.forEach(r=>{const k=r['Booking Type']||r['booking_type']||'Unknown'; g[k]=(g[k]||0)+1;});
+      const s=Object.entries(g).sort((a,b)=>b[1]-a[1]);
+      return { labels:s.map(e=>e[0]||'Unknown'), values:s.map(e=>e[1]) };
+    }},
+  'tbl-facility': { label: 'Bookings Table', description: 'Recent bookings detail', section: 'facility',
+    reportType: 'facility', size: 'lg', icon: '\uD83D\uDCCB', component: 'table',
+    transform: rows => {
+      const sorted=rows.slice().sort((a,b)=>(b['Date']||'').localeCompare(a['Date']||'')).slice(0,20);
+      return { columns:['Date','Location','Facility','Purpose','Total'],
+        data:sorted.map(r=>[r['Date']||'-',r['Location']||'-',r['Facility']||'-',r['Purpose']||'-',r['Total']?'$'+pf(r['Total']).toLocaleString():'-']) };
+    }},
+
+  // ── GL Table ──
+  'tbl-gl': { label: 'GL Code Table', description: 'Revenue breakdown by GL code', section: 'revenue',
+    reportType: 'gl', size: 'lg', icon: '\uD83D\uDCCB', component: 'table',
+    transform: rows => {
+      return { columns:['GL Code','Account Name','Payments','Refunds','Net'],
+        data:rows.sort((a,b)=>pf(b['Net Amount'])-pf(a['Net Amount'])).slice(0,15).map(r=>[
+          r['GL Code']||'-', r['Account Name']||'-', '$'+Math.round(pf(r['Total Payments'])).toLocaleString(),
+          '$'+Math.round(pf(r['Total Refunds'])).toLocaleString(), '$'+Math.round(pf(r['Net Amount'])).toLocaleString()]) };
+    }},
 };
 
 // ═══════════════════════════════════════════════════════
 //  DASHBOARD TEMPLATES
 // ═══════════════════════════════════════════════════════
 const TEMPLATES = {
-  general: { label: 'General Overview', icon: '\uD83D\uDCCA', description: 'Revenue, rentals, and programs at a glance',
+  general: { label: 'General Overview', icon: '\uD83D\uDCCA', description: 'Revenue, rentals, programs, and courts at a glance',
     sections: [
-      { id: 'revenue', widgets: ['gl-total-revenue','gl-total-refunds','gl-net-revenue','gl-transactions','gl-by-code','gl-by-payment-method'] },
-      { id: 'facility', widgets: ['rental-count','rental-revenue','rental-headcount','rental-locations','rental-by-location','rental-daily-trend'] },
-      { id: 'programs', widgets: ['program-enrollments','program-revenue','program-cancellations','program-fill-rate','program-top'] },
+      { id: 'revenue', widgets: ['gl-total-revenue','gl-total-refunds','gl-net-revenue','gl-transactions'] },
+      { id: 'facility', widgets: ['rental-count','rental-revenue','rental-headcount','rental-locations','rental-by-location'] },
+      { id: 'programs', widgets: ['program-enrollments','program-revenue','program-fill-rate','program-top'] },
+      { id: 'courts', widgets: ['court-total','court-instant','court-managed','court-by-court'] },
+      { id: 'memberships', widgets: ['mem-active','mem-canceled','mem-revenue'] },
     ]},
-  financial: { label: 'Revenue Focus', icon: '\uD83D\uDCB0', description: 'Deep dive into revenue metrics and trends',
+  financial: { label: 'Revenue Focus', icon: '\uD83D\uDCB0', description: 'Deep dive into all revenue streams',
     sections: [
-      { id: 'revenue', widgets: ['gl-total-revenue','gl-total-refunds','gl-net-revenue','gl-transactions','gl-by-code','gl-by-payment-method'] },
-      { id: 'facility', widgets: ['rental-revenue','rental-avg-value','rental-by-location','rental-revenue-trend','rental-by-site-type'] },
+      { id: 'revenue', widgets: ['gl-total-revenue','gl-total-refunds','gl-net-revenue','gl-transactions','gl-by-code','gl-by-payment-method','tbl-gl'] },
+      { id: 'facility', widgets: ['rental-revenue','rental-avg-value','rental-by-location','rental-revenue-trend'] },
+      { id: 'products', widgets: ['prod-gross','prod-net','prod-refunds','prod-units','prod-by-product'] },
+      { id: 'instructors', widgets: ['instr-net','instr-payout','instr-org-ret','instr-top'] },
     ]},
-  operations: { label: 'Operations', icon: '\u2699\uFE0F', description: 'Bookings, utilization, and activity patterns',
+  operations: { label: 'Operations', icon: '\u2699\uFE0F', description: 'Bookings, courts, programs, and utilization',
     sections: [
-      { id: 'facility', widgets: ['rental-count','rental-locations','rental-headcount','rental-avg-value','rental-day-of-week','rental-daily-trend','rental-headcount-by-loc'] },
-      { id: 'programs', widgets: ['program-enrollments','program-fill-rate','program-cancellations','program-top','program-revenue-by-prog'] },
+      { id: 'facility', widgets: ['rental-count','rental-locations','rental-headcount','rental-day-of-week','rental-daily-trend'] },
+      { id: 'courts', widgets: ['court-total','court-instant','court-managed','court-by-court','court-mix'] },
+      { id: 'programs', widgets: ['program-enrollments','program-fill-rate','program-top'] },
+      { id: 'fasttrack', widgets: ['ft-signups','ft-converted','ft-conv-rate','ft-top-programs'] },
     ]},
 };
 
@@ -467,15 +775,28 @@ function LineChartWidget({ data }) {
   return <div className="chart-container"><canvas ref={ref} /></div>;
 }
 
-const COMP = { metric: MetricCard, bar: BarChartWidget, donut: DonutChartWidget, line: LineChartWidget };
+function TableWidget({ data }) {
+  if (!data) return <div className="skeleton skeleton-chart" />;
+  return (
+    <div className="widget-table">
+      <table>
+        <thead><tr>{data.columns.map((c,i) => <th key={i}>{c}</th>)}</tr></thead>
+        <tbody>{data.data.map((row,ri) => <tr key={ri}>{row.map((v,ci) => <td key={ci} className={typeof v==='number'||String(v).startsWith('$')?'num':''}>{v}</td>)}</tr>)}</tbody>
+      </table>
+    </div>
+  );
+}
+
+const COMP = { metric: MetricCard, bar: BarChartWidget, donut: DonutChartWidget, line: LineChartWidget, table: TableWidget };
 
 function WidgetCard({ widgetId, reportData, loading }) {
   const def = W[widgetId]; if (!def) return null;
   const Comp = COMP[def.component]; if (!Comp) return null;
   const raw = reportData[def.reportType];
   const data = raw ? def.transform(raw) : null;
+  const sizeClass = def.size==='sm'?'widget-sm':def.size==='lg'?'widget-lg':'widget-md';
   return (
-    <div className={`widget-card ${def.size==='sm'?'widget-sm':'widget-md'}`}>
+    <div className={`widget-card ${sizeClass}`}>
       <div className="widget-header">
         <span className="widget-label">{def.label}</span>
         <span className="widget-icon">{def.icon}</span>
@@ -509,9 +830,15 @@ function SectionBlock({ sectionId, widgetIds, reportData, loading }) {
 // ═══════════════════════════════════════════════════════
 //  EDIT MODAL
 // ═══════════════════════════════════════════════════════
+const MAX_PER_SECTION = 8;
+const MAX_TOTAL = 20;
+
 function EditModal({ sections, onSave, onClose, availableReports }) {
   const [draft, setDraft] = useState(sections.map(s => ({ ...s, widgets: [...s.widgets] })));
   const [expanded, setExpanded] = useState(sections[0]?.id || '');
+
+  const totalWidgets = draft.reduce((s, sec) => s + sec.widgets.length, 0);
+  const atLimit = totalWidgets >= MAX_TOTAL;
 
   function removeSection(idx) { setDraft(d => d.filter((_,i) => i!==idx)); }
   function moveSection(idx, dir) {
@@ -549,7 +876,7 @@ function EditModal({ sections, onSave, onClose, availableReports }) {
                 <div className="edit-section-header" onClick={() => setExpanded(isOpen ? '' : sec.id)}>
                   <span style={{fontSize:18}}>{secDef.icon}</span>
                   <span className="edit-section-title">{secDef.label}</span>
-                  <span style={{fontSize:11,color:'var(--text-muted)'}}>{sec.widgets.length} widgets</span>
+                  <span style={{fontSize:11,color:sec.widgets.length>=MAX_PER_SECTION?'var(--red)':'var(--text-muted)'}}>{sec.widgets.length}/{MAX_PER_SECTION}</span>
                   <div style={{display:'flex',gap:3}}>
                     <button className="btn btn-sm" onClick={e=>{e.stopPropagation();moveSection(si,-1);}} disabled={si===0}>{'\u25B2'}</button>
                     <button className="btn btn-sm" onClick={e=>{e.stopPropagation();moveSection(si,1);}} disabled={si===draft.length-1}>{'\u25BC'}</button>
@@ -579,7 +906,8 @@ function EditModal({ sections, onSave, onClose, availableReports }) {
                         <div key={id} className="widget-list-item">
                           <span className="widget-list-icon">{wd.icon}</span>
                           <div className="widget-list-info"><div className="widget-list-name">{wd.label}</div><div className="widget-list-desc">{wd.description}</div></div>
-                          <button className="btn btn-sm" style={{color:'var(--green)'}} onClick={()=>toggleWidget(si,id)}>+</button>
+                          <button className="btn btn-sm" style={{color: atLimit||sec.widgets.length>=MAX_PER_SECTION?'var(--text-muted)':'var(--green)'}}
+                            disabled={atLimit||sec.widgets.length>=MAX_PER_SECTION} onClick={()=>toggleWidget(si,id)}>+</button>
                         </div>
                       ))}
                     </>}
@@ -599,6 +927,7 @@ function EditModal({ sections, onSave, onClose, availableReports }) {
           </>}
         </div>
         <div className="modal-footer">
+          <span style={{fontSize:11,color:atLimit?'var(--red)':'var(--text-muted)',flex:1}}>{totalWidgets}/{MAX_TOTAL} widgets{atLimit?' (limit reached)':''}</span>
           <button className="btn" onClick={onClose}>Cancel</button>
           <button className="btn btn-amber" onClick={() => onSave(draft)}>Save Layout</button>
         </div>

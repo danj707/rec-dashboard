@@ -35,12 +35,15 @@ const SHARED_UUIDS = {
   users: '0aa0f55d-738f-4df7-837a-eb21f3ee1793',
   memberships: 'f4496307-d965-4637-b048-ecc703f2d37f',
   'court-utilization': '7b0fca20-8fe0-4720-9653-7e15c30176b2',
-  retention: '3cfc9cfa-b1db-41e9-83fd-01fb90a5b0c8'
+  retention: '3cfc9cfa-b1db-41e9-83fd-01fb90a5b0c8',
+  products: 'b9678f5f-b5fb-48f7-96da-f22a1b4e8d8a',
+  'instructor-payout': 'a8db6d86-eddc-4511-a28c-ad4bf636859e',
+  checkins: '574324e0-b5a1-46c5-8770-8c466631fdcf'
 };
 
 // Reports that don't accept date parameters
 const NO_DATE_REPORTS = new Set([
-  'program-demographics', 'memberships', 'users', 'retention'
+  'program-demographics', 'memberships', 'users', 'retention', 'checkins'
 ]);
 
 // ═══════════════════════════════════════════
@@ -164,6 +167,12 @@ async function fetchMetabaseData(orgSlug, reportType, query) {
 //  UPDATES LOG
 // ═══════════════════════════════════════════
 const UPDATES = [
+  { date: '2025-07-12', title: 'Widget Expansion: 70+ Widgets Across 10 Sections', items: [
+    'New sections: Courts, Fast Track, Users, Memberships, Products, Instructor Payout, Demographics',
+    'Table view widgets added to each section (program revenue, GL codes, bookings, instructors, memberships)',
+    'Widget limits: max 8 per section, max 20 per dashboard',
+    'Admin auth: HTTP Basic auth on admin routes'
+  ]},
   { date: '2025-07-12', title: 'Light/Dark Theme + Reset', items: [
     'Added dark/light theme toggle in settings, persists per-org',
     'Fixed dashboard reset (inline confirm, no iframe-blocked confirm())',
