@@ -20,7 +20,18 @@
   --amber: #f59e0b; --amber-glow: rgba(245,158,11,0.08);
   --blue: #3b82f6; --green: #22c55e; --red: #ef4444; --purple: #8b5cf6;
   --pink: #ec4899; --cyan: #06b6d4;
+  --chart-grid: #262626; --chart-text: #888;
   --font-display: 'DM Sans', sans-serif; --font-body: 'Inter', sans-serif;
+}
+[data-theme="light"] {
+  --bg-page: #f3f4f6; --bg-card: #ffffff; --bg-card-hover: #fafafa;
+  --bg-surface: #f0f0f0; --bg-modal: #ffffff;
+  --border: #e2e2e2; --border-subtle: #ebebeb;
+  --text-primary: #111111; --text-secondary: #555555; --text-muted: #999999;
+  --amber: #d97706; --amber-glow: rgba(217,119,6,0.08);
+  --blue: #2563eb; --green: #16a34a; --red: #dc2626; --purple: #7c3aed;
+  --pink: #db2777; --cyan: #0891b2;
+  --chart-grid: #e5e5e5; --chart-text: #666;
 }
 body { font-family: var(--font-body); background: var(--bg-page); color: var(--text-primary); min-height: 100vh; }
 
@@ -379,11 +390,18 @@ window.addEventListener('beforeunload', flushEvents);
 // ═══════════════════════════════════════════════════════
 //  CHART DEFAULTS
 // ═══════════════════════════════════════════════════════
-Chart.defaults.color = '#888'; Chart.defaults.borderColor = '#262626';
+function applyChartTheme(theme) {
+  const isDark = theme !== 'light';
+  Chart.defaults.color = isDark ? '#888' : '#666';
+  Chart.defaults.borderColor = isDark ? '#262626' : '#e5e5e5';
+  Chart.defaults.plugins.tooltip.backgroundColor = isDark ? '#1e1e1e' : '#ffffff';
+  Chart.defaults.plugins.tooltip.borderColor = isDark ? '#333' : '#ddd';
+  Chart.defaults.plugins.tooltip.titleColor = isDark ? '#eee' : '#111';
+  Chart.defaults.plugins.tooltip.bodyColor = isDark ? '#ccc' : '#333';
+}
+applyChartTheme('dark');
 Chart.defaults.font.family = "'Inter', sans-serif";
 Chart.defaults.plugins.legend.display = false;
-Chart.defaults.plugins.tooltip.backgroundColor = '#1e1e1e';
-Chart.defaults.plugins.tooltip.borderColor = '#333';
 Chart.defaults.plugins.tooltip.borderWidth = 1;
 Chart.defaults.plugins.tooltip.cornerRadius = 6;
 Chart.defaults.plugins.tooltip.padding = 10;
@@ -616,21 +634,38 @@ function TemplateChooser({ onSelect }) {
 // ═══════════════════════════════════════════════════════
 //  SETTINGS
 // ═══════════════════════════════════════════════════════
-function SettingsPopover({ cacheTTL, onCacheTTLChange, onClearCache, onReset }) {
+function SettingsPopover({ cacheTTL, onCacheTTLChange, onClearCache, onReset, theme, onThemeChange }) {
+  const [confirmReset, setConfirmReset] = useState(false);
   return (
     <div style={{ position:'absolute',top:'100%',right:0,marginTop:6,background:'var(--bg-modal)',border:'1px solid var(--border)',
-      borderRadius:10,padding:16,width:260,zIndex:60,boxShadow:'0 12px 32px rgba(0,0,0,0.5)' }} onClick={e=>e.stopPropagation()}>
-      <div style={{fontSize:13,fontWeight:600,marginBottom:12}}>Dashboard Settings</div>
+      borderRadius:10,padding:16,width:280,zIndex:60,boxShadow:'0 12px 32px rgba(0,0,0,0.5)' }} onClick={e=>e.stopPropagation()}>
+      <div style={{fontSize:13,fontWeight:600,marginBottom:14}}>Dashboard Settings</div>
+
+      <div style={{fontSize:12,color:'var(--text-secondary)',marginBottom:6}}>Theme</div>
+      <div style={{display:'flex',gap:6,marginBottom:14}}>
+        <button className={`btn btn-sm ${theme==='dark'?'btn-amber':''}`} style={{flex:1}} onClick={()=>onThemeChange('dark')}>Dark</button>
+        <button className={`btn btn-sm ${theme==='light'?'btn-amber':''}`} style={{flex:1}} onClick={()=>onThemeChange('light')}>Light</button>
+      </div>
+
       <div style={{fontSize:12,color:'var(--text-secondary)',marginBottom:6}}>Cache Duration</div>
       <select value={cacheTTL} onChange={e=>onCacheTTLChange(Number(e.target.value))}
         style={{width:'100%',padding:'6px 8px',borderRadius:6,border:'1px solid var(--border)',background:'var(--bg-surface)',color:'var(--text-primary)',fontSize:13,marginBottom:12}}>
         <option value={5}>5 minutes</option><option value={15}>15 minutes</option><option value={30}>30 minutes</option><option value={60}>1 hour</option><option value={240}>4 hours</option>
       </select>
-      <button className="btn" style={{width:'100%',fontSize:12,marginBottom:8}} onClick={onClearCache}>Clear Cache Now</button>
+      <button className="btn" style={{width:'100%',fontSize:12,marginBottom:10}} onClick={onClearCache}>Clear Cache Now</button>
+
       <div style={{borderTop:'1px solid var(--border)',paddingTop:10,marginTop:4}}>
-        <button className="btn" style={{width:'100%',fontSize:12,color:'var(--red)',borderColor:'#3a1515'}} onClick={() => {
-          if (confirm('Reset dashboard? This will clear your layout and return to the template chooser.')) onReset();
-        }}>Reset Dashboard</button>
+        {!confirmReset ? (
+          <button className="btn" style={{width:'100%',fontSize:12,color:'var(--red)',borderColor:'rgba(239,68,68,0.3)'}} onClick={()=>setConfirmReset(true)}>Reset Dashboard</button>
+        ) : (
+          <div style={{textAlign:'center'}}>
+            <div style={{fontSize:12,color:'var(--red)',marginBottom:8}}>Clear layout and start over?</div>
+            <div style={{display:'flex',gap:6}}>
+              <button className="btn btn-sm" style={{flex:1}} onClick={()=>setConfirmReset(false)}>Cancel</button>
+              <button className="btn btn-sm" style={{flex:1,background:'var(--red)',color:'#fff',borderColor:'var(--red)'}} onClick={onReset}>Yes, Reset</button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -650,6 +685,14 @@ function DashboardApp() {
   const [editOpen, setEditOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [lastRefresh, setLastRefresh] = useState(null);
+  const [theme, setTheme] = useState('dark');
+
+  function applyTheme(t) {
+    setTheme(t);
+    document.documentElement.setAttribute('data-theme', t);
+    applyChartTheme(t);
+    track('theme_changed', { theme: t });
+  }
 
   useEffect(() => {
     (async () => {
@@ -661,6 +704,7 @@ function DashboardApp() {
         if (json.config?.sections?.length > 0) {
           setConfig(json.config);
           if (json.config.datePreset) applyPreset(json.config.datePreset);
+          if (json.config.theme) { setTheme(json.config.theme); document.documentElement.setAttribute('data-theme', json.config.theme); applyChartTheme(json.config.theme); }
         } else { setConfig('new'); }
       } catch (e) { setConfig('new'); }
     })();
@@ -723,6 +767,7 @@ function DashboardApp() {
   }
 
   async function handleCacheTTLChange(ttl) { const cfg={...config,cacheTTL:ttl}; setConfig(cfg); await saveConfig(cfg); }
+  async function handleThemeChange(t) { applyTheme(t); const cfg={...config,theme:t}; setConfig(cfg); await saveConfig(cfg); }
   function handleRefresh() { clearDataStore(); setDateRange({...dateRange}); track('refresh_clicked'); }
 
   if (config === 'new') return <TemplateChooser onSelect={handleSelectTemplate} />;
@@ -751,7 +796,7 @@ function DashboardApp() {
           <button className="btn" onClick={()=>{setEditOpen(true);track('edit_opened');}}>{'\u270E'} Edit Dashboard</button>
           <div style={{position:'relative'}}>
             <button className="btn" onClick={()=>setSettingsOpen(!settingsOpen)}>{'\u2699'}</button>
-            {settingsOpen && <SettingsPopover cacheTTL={config.cacheTTL||15} onCacheTTLChange={handleCacheTTLChange} onClearCache={handleClearCache} onReset={handleReset} />}
+            {settingsOpen && <SettingsPopover cacheTTL={config.cacheTTL||15} onCacheTTLChange={handleCacheTTLChange} onClearCache={handleClearCache} onReset={handleReset} theme={theme} onThemeChange={handleThemeChange} />}
           </div>
         </div>
       </div>
@@ -762,7 +807,7 @@ function DashboardApp() {
       </div>
 
       {config.sections.map((sec, i) => (
-        <SectionBlock key={sec.id+i} sectionId={sec.id} widgetIds={sec.widgets} reportData={reportData} loading={loading} />
+        <SectionBlock key={sec.id+i+theme} sectionId={sec.id} widgetIds={sec.widgets} reportData={reportData} loading={loading} />
       ))}
 
       {editOpen && <EditModal sections={config.sections} availableReports={availableReports} onSave={handleSaveSections} onClose={()=>setEditOpen(false)} />}
