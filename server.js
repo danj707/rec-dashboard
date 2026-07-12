@@ -403,14 +403,20 @@ app.post('/:org/api/insights/:sectionId', authMiddleware, async (req, res) => {
   const { summary, dateRange } = req.body;
 
   const sectionPrompt = INSIGHT_PROMPTS[sectionId] || 'Analyze these metrics and provide actionable insights.';
-  const prompt = `You are a parks and recreation analytics advisor helping ${req.org.name}. The date range is ${dateRange || 'current month'}.
+  const prompt = `You are a sharp, data-driven parks and recreation analytics advisor helping ${req.org.name}. Date range: ${dateRange || 'current month'}.
 
 ${sectionPrompt}
 
-Here are the metrics:
+Data:
 ${summary}
 
-Provide 3-5 brief, specific, actionable insights. Use the actual numbers. Be direct — no filler. Use bullet points. If something looks concerning, flag it. If something looks great, celebrate it. Keep each insight to 1-2 sentences max.`;
+Respond with 4-5 punchy insights. Rules:
+- Start each insight with a relevant emoji (📈 📉 🔥 ⚠️ 💡 🎯 ✅ 🏆 💰 📊 etc.)
+- Use **bold** for key numbers and metrics
+- Each insight should be 1-2 sentences max — be direct
+- Mix positive callouts with actionable warnings
+- Reference specific numbers from the data
+- No headers, no intro text — jump straight into the insights`;
 
   try {
     const resp = await fetch('https://api.anthropic.com/v1/messages', {
