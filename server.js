@@ -18,6 +18,8 @@ const ORGS = {
     name: 'Watertown Recreation',
     orgId: 'd781690b-c5a0-43c5-8443-9ae43899528c',
     token: '7qNNXDFo4HGpOh5B',
+    city: 'Watertown',
+    state: 'MA',
     logoUrl: 'https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/organization-d781690b-c5a0-43c5-8443-9ae43899528c/fullLogo.png',
     reports: {
       facility: '4b64af10-d57f-41af-aad8-b16d12a8f7b8'
@@ -307,7 +309,7 @@ app.get('/:org/api/config', authMiddleware, (req, res) => {
   const org = ORGS[req.orgSlug];
   for (const [r, uuid] of Object.entries(org.reports || {})) availableReports[r] = true;
   for (const [r, uuid] of Object.entries(SHARED_UUIDS)) availableReports[r] = true;
-  res.json({ config, availableReports, orgName: org.name, logoUrl: org.logoUrl });
+  res.json({ config, availableReports, orgName: org.name, logoUrl: org.logoUrl, city: org.city, state: org.state });
 });
 
 app.post('/:org/api/config', authMiddleware, (req, res) => {

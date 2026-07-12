@@ -876,11 +876,13 @@ function TableWidget({ data }) {
 // ═══════════════════════════════════════════════════════
 const geoCache = {};
 async function geocode(query) {
-  if (geoCache[query]) return geoCache[query];
+  // Append org city/state for generic location names (no comma = not already "City, State")
+  const fullQuery = query.includes(',') ? query : (window._orgGeo ? query + ', ' + window._orgGeo : query);
+  if (geoCache[fullQuery]) return geoCache[fullQuery];
   try {
-    const resp = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1&countrycodes=us`);
+    const resp = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(fullQuery)}&format=json&limit=1&countrycodes=us`);
     const data = await resp.json();
-    if (data.length) { geoCache[query] = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) }; return geoCache[query]; }
+    if (data.length) { geoCache[fullQuery] = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) }; return geoCache[fullQuery]; }
   } catch(e) {}
   return null;
 }
@@ -1204,7 +1206,8 @@ function DashboardApp() {
         const resp = await fetch(`/${ORG_SLUG}/api/config?token=${TOKEN}`);
         const json = await resp.json();
         setAvailableReports(json.availableReports || {});
-        setOrgMeta({ name: json.orgName, logoUrl: json.logoUrl });
+        setOrgMeta({ name: json.orgName, logoUrl: json.logoUrl, city: json.city, state: json.state });
+        window._orgGeo = json.city && json.state ? `${json.city}, ${json.state}` : '';
         if (json.config?.sections?.length > 0) {
           setConfig(json.config);
           if (json.config.datePreset) applyPreset(json.config.datePreset);
