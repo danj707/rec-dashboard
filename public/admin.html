@@ -14,27 +14,31 @@ code { font-family: 'JetBrains Mono', monospace; font-size: 0.85em; background: 
 
 .container { max-width: 1100px; margin: 0 auto; padding: 0 24px; }
 
-/* Header */
 .header { border-bottom: 1px solid #1e1e1e; padding: 20px 0; margin-bottom: 32px; }
 .header-inner { display: flex; align-items: center; justify-content: space-between; }
 .header h1 { font-family: 'DM Sans', sans-serif; font-size: 22px; font-weight: 700; }
 .header h1 span { color: #f59e0b; }
 .header-meta { font-size: 12px; color: #666; }
 
-/* Section titles */
-.section-title {
+/* Collapsible sections */
+.collapsible { margin-bottom: 24px; }
+.collapsible-header {
   font-family: 'DM Sans', sans-serif; font-size: 18px; font-weight: 600;
-  margin-bottom: 16px; padding-bottom: 8px; border-bottom: 1px solid #1e1e1e;
-  display: flex; align-items: center; gap: 10px;
+  padding: 12px 0; border-bottom: 1px solid #1e1e1e; cursor: pointer;
+  display: flex; align-items: center; gap: 10px; user-select: none;
 }
-.section-title .icon { font-size: 20px; }
+.collapsible-header:hover { color: #f59e0b; }
+.collapsible-header .icon { font-size: 20px; }
+.collapsible-header .flex { flex: 1; }
+.chevron { font-size: 14px; color: #555; transition: transform 0.25s ease; display: inline-block; }
+.collapsible.open .chevron { transform: rotate(180deg); }
+.collapsible-body { overflow: hidden; max-height: 0; transition: max-height 0.35s ease; }
+.collapsible.open .collapsible-body { max-height: 5000px; }
+.collapsible-inner { padding: 16px 0; }
 
 /* Org cards */
-.org-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(480px, 1fr)); gap: 16px; margin-bottom: 40px; }
-.org-card {
-  background: #141414; border: 1px solid #1e1e1e; border-radius: 12px;
-  padding: 20px; transition: border-color 0.2s;
-}
+.org-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(480px, 1fr)); gap: 16px; }
+.org-card { background: #141414; border: 1px solid #1e1e1e; border-radius: 12px; padding: 20px; transition: border-color 0.2s; }
 .org-card:hover { border-color: #333; }
 .org-card-header { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; }
 .org-logo { height: 40px; width: auto; max-width: 160px; border-radius: 6px; object-fit: contain; }
@@ -56,21 +60,29 @@ code { font-family: 'JetBrains Mono', monospace; font-size: 0.85em; background: 
 .org-updated { font-size: 11px; color: #555; margin-top: 10px; }
 
 /* How it works */
-.how-section { margin-bottom: 40px; }
-.how-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+.how-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; margin-top: 20px; }
 .how-card { background: #141414; border: 1px solid #1e1e1e; border-radius: 10px; padding: 18px; }
 .how-card h3 { font-family: 'DM Sans', sans-serif; font-size: 14px; font-weight: 600; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
-.how-card p { font-size: 13px; color: #aaa; line-height: 1.6; }
+.how-card p { font-size: 13px; color: #aaa; line-height: 1.7; }
+.how-card p code { font-size: 0.85em; }
 
-/* Architecture diagram */
-.arch-box {
-  background: #141414; border: 1px solid #1e1e1e; border-radius: 10px;
-  padding: 20px; margin-bottom: 16px; font-family: 'JetBrains Mono', monospace;
-  font-size: 12px; color: #aaa; line-height: 1.8; white-space: pre; overflow-x: auto;
-}
+/* SVG container */
+.svg-wrap { display: flex; justify-content: center; margin: 8px 0 12px; }
+.svg-wrap svg { max-width: 100%; height: auto; }
+
+/* Architecture text */
+.arch-detail { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 20px; }
+@media (max-width: 700px) { .arch-detail { grid-template-columns: 1fr; } }
+.arch-block { background: #141414; border: 1px solid #1e1e1e; border-radius: 10px; padding: 18px; }
+.arch-block h4 { font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 600; color: #f59e0b; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.04em; }
+.arch-block p { font-size: 13px; color: #aaa; line-height: 1.7; }
+
+/* Shared reports */
+.shared-grid { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.shared-tag { font-family: 'JetBrains Mono', monospace; font-size: 11px; background: #1a1a1a;
+  border: 1px solid #262626; border-radius: 6px; padding: 4px 10px; color: #aaa; }
 
 /* Updates */
-.updates-section { margin-bottom: 40px; }
 .update-entry { background: #141414; border: 1px solid #1e1e1e; border-radius: 10px; padding: 16px 18px; margin-bottom: 10px; }
 .update-header { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
 .update-date { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #f59e0b; background: rgba(245,158,11,0.1); padding: 2px 8px; border-radius: 4px; }
@@ -79,14 +91,8 @@ code { font-family: 'JetBrains Mono', monospace; font-size: 0.85em; background: 
 .update-items li { font-size: 13px; color: #aaa; padding: 2px 0 2px 16px; position: relative; }
 .update-items li::before { content: ''; position: absolute; left: 0; top: 10px; width: 6px; height: 6px; border-radius: 50%; background: #333; }
 
-/* Shared reports */
-.shared-grid { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 40px; }
-.shared-tag { font-family: 'JetBrains Mono', monospace; font-size: 11px; background: #1a1a1a;
-  border: 1px solid #262626; border-radius: 6px; padding: 4px 10px; color: #aaa; }
-
 .loading { text-align: center; padding: 60px; color: #666; font-size: 14px; }
-.footer { border-top: 1px solid #1e1e1e; padding: 20px 0; margin-top: 20px; text-align: center;
-  font-size: 11px; color: #444; }
+.footer { border-top: 1px solid #1e1e1e; padding: 20px 0; margin-top: 20px; text-align: center; font-size: 11px; color: #444; }
 </style>
 </head>
 <body>
@@ -102,6 +108,10 @@ code { font-family: 'JetBrains Mono', monospace; font-size: 0.85em; background: 
 </div>
 
 <script>
+function toggleSection(id) {
+  document.getElementById(id).classList.toggle('open');
+}
+
 (async function() {
   const resp = await fetch('/admin/api/orgs');
   const data = await resp.json();
@@ -111,121 +121,224 @@ code { font-family: 'JetBrains Mono', monospace; font-size: 0.85em; background: 
   try { const er = await fetch('/admin/api/events/summary'); evtData = await er.json(); } catch(e) {}
 
   document.getElementById('header-meta').textContent =
-    `${orgs.length} org${orgs.length !== 1 ? 's' : ''} \u00B7 ${sharedReports.length} shared reports \u00B7 ${evtData.total} events tracked`;
+    orgs.length + ' org' + (orgs.length !== 1 ? 's' : '') + ' \u00B7 ' + sharedReports.length + ' shared reports \u00B7 ' + evtData.total + ' events tracked';
 
   const BASE = window.location.origin;
 
   document.getElementById('content').innerHTML = `
-    <!-- Org Cards -->
-    <div class="section-title"><span class="icon">\uD83C\uDFE2</span> Organizations</div>
-    <div class="org-grid">
-      ${orgs.map(o => `
-        <div class="org-card">
-          <div class="org-card-header">
-            ${o.logoUrl ? `<img src="${o.logoUrl}" class="org-logo" alt="" onerror="this.style.display='none'">` : ''}
-            <div>
-              <div class="org-name">${o.name}</div>
-              <div class="org-slug">/${o.slug}</div>
-            </div>
-          </div>
-          <div class="org-meta">
-            <div class="org-stat">
-              <div class="org-stat-label">Sections</div>
-              <div class="org-stat-value">${o.sectionCount}</div>
-            </div>
-            <div class="org-stat">
-              <div class="org-stat-label">Widgets</div>
-              <div class="org-stat-value">${o.widgetCount}</div>
-            </div>
-            <div class="org-stat">
-              <div class="org-stat-label">Events</div>
-              <div class="org-stat-value">${evtData.byOrg[o.slug] || 0}</div>
-            </div>
-          </div>
-          <div class="org-badges">
-            <span class="badge ${o.configured ? 'badge-green' : 'badge-gray'}">${o.configured ? 'Configured' : 'Not configured'}</span>
-            ${o.template ? `<span class="badge badge-amber">${o.template}</span>` : ''}
-            <span class="badge badge-blue">${o.theme || 'dark'} mode</span>
-            <span class="badge badge-gray">cache ${o.cacheTTL}m</span>
-            <span class="badge badge-gray">${o.reportCount} reports</span>
-            ${o.perOrgReports.length ? `<span class="badge badge-amber">custom: ${o.perOrgReports.join(', ')}</span>` : ''}
-          </div>
-          <a href="${BASE}/${o.slug}?token=${o.token}" class="org-link" target="_blank">\u2192 Open Dashboard</a>
-          ${o.updatedAt ? `<div class="org-updated">Last updated: ${new Date(o.updatedAt).toLocaleString()}</div>` : ''}
-        </div>
-      `).join('')}
-    </div>
 
-    <!-- Shared Reports -->
-    <div class="section-title"><span class="icon">\uD83D\uDD17</span> Shared Metabase Reports</div>
-    <div class="shared-grid">
-      ${sharedReports.map(r => `<span class="shared-tag">${r}</span>`).join('')}
-    </div>
-
-    <!-- How It Works -->
-    <div class="how-section">
-      <div class="section-title"><span class="icon">\u2699\uFE0F</span> How It Works</div>
-      <div class="arch-box">User opens dashboard in Metabase iframe
-       \u2502
-       \u2193
-\u250C\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510
-\u2502  Railway: rec-dashboard-production       \u2502
-\u2502                                             \u2502
-\u2502  GET /           \u2192 Admin dashboard          \u2502
-\u2502  GET /:org       \u2192 Org dashboard (React)    \u2502
-\u2502  GET /:org/api/data/:type \u2192 Metabase proxy  \u2502
-\u2502  GET /:org/api/config    \u2192 Saved layout     \u2502
-\u2502  POST /:org/api/events   \u2192 Usage tracking   \u2502
-\u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518
-       \u2502 (server-side, no CORS)
-       \u2193
-\u250C\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510
-\u2502  Metabase: rec.metabaseapp.com              \u2502
-\u2502  Shared cards + org_id injection             \u2502
-\u2502  One set of reports powers ALL orgs           \u2502
-\u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518</div>
-      <div class="how-grid">
-        <div class="how-card">
-          <h3>\uD83E\uDDE9 Widget Registry</h3>
-          <p>Each widget declares its <code>reportType</code>, <code>transform</code> function, and <code>component</code> type. The dashboard fetches only the unique report types needed, then each widget slices what it needs from the shared response.</p>
-        </div>
-        <div class="how-card">
-          <h3>\uD83D\uDCC2 Sections</h3>
-          <p>Widgets are grouped into sections (Revenue, Facility, Programs, etc). Admins can add/remove entire sections and customize widgets within each. Sections map to report categories.</p>
-        </div>
-        <div class="how-card">
-          <h3>\uD83D\uDD17 Shared Metabase Cards</h3>
-          <p>One set of Metabase SQL cards serves all orgs via <code>org_id</code> template variable injection. No more duplicating 50+ cards per org. Per-org overrides available when needed.</p>
-        </div>
-        <div class="how-card">
-          <h3>\uD83D\uDCBE Config Persistence</h3>
-          <p>Dashboard layouts saved to <code>/data/dashboards.json</code> on Railway persistent volume. Each org's config includes sections, widgets, theme, cache TTL, and template choice.</p>
-        </div>
-        <div class="how-card">
-          <h3>\uD83D\uDCCA Event Tracking</h3>
-          <p>Every user action (views, edits, date changes, theme switches) logged to <code>/data/events.jsonl</code>. Batched client-side, append-only server-side. Key for measuring adoption.</p>
-        </div>
-        <div class="how-card">
-          <h3>\u2795 Adding a New Org</h3>
-          <p>Add entry to <code>ORGS</code> map in server.js: slug, orgId, token, logoUrl. All shared reports light up automatically. Push to GitHub, Railway auto-deploys. Done.</p>
-        </div>
+    <!-- ═══ Organizations ═══ -->
+    <div class="collapsible open" id="sec-orgs">
+      <div class="collapsible-header" onclick="toggleSection('sec-orgs')">
+        <span class="icon">\uD83C\uDFE2</span>
+        <span class="flex">Organizations</span>
+        <span style="font-size:12px;color:#666;font-weight:400">${orgs.length} org${orgs.length !== 1 ? 's' : ''}</span>
+        <span class="chevron">\u25BC</span>
       </div>
+      <div class="collapsible-body"><div class="collapsible-inner">
+        <div class="org-grid">
+          ${orgs.map(o => `
+            <div class="org-card">
+              <div class="org-card-header">
+                ${o.logoUrl ? '<img src="' + o.logoUrl + '" class="org-logo" alt="" onerror="this.style.display=\'none\'">' : ''}
+                <div>
+                  <div class="org-name">${o.name}</div>
+                  <div class="org-slug">/${o.slug}</div>
+                </div>
+              </div>
+              <div class="org-meta">
+                <div class="org-stat"><div class="org-stat-label">Sections</div><div class="org-stat-value">${o.sectionCount}</div></div>
+                <div class="org-stat"><div class="org-stat-label">Widgets</div><div class="org-stat-value">${o.widgetCount}</div></div>
+                <div class="org-stat"><div class="org-stat-label">Events</div><div class="org-stat-value">${evtData.byOrg[o.slug] || 0}</div></div>
+              </div>
+              <div class="org-badges">
+                <span class="badge ${o.configured ? 'badge-green' : 'badge-gray'}">${o.configured ? 'Configured' : 'Not configured'}</span>
+                ${o.template ? '<span class="badge badge-amber">' + o.template + '</span>' : ''}
+                <span class="badge badge-blue">${o.theme || 'dark'} mode</span>
+                <span class="badge badge-gray">cache ${o.cacheTTL}m</span>
+                <span class="badge badge-gray">${o.reportCount} reports</span>
+                ${o.perOrgReports.length ? '<span class="badge badge-amber">custom: ' + o.perOrgReports.join(', ') + '</span>' : ''}
+              </div>
+              <a href="${BASE}/${o.slug}?token=${o.token}" class="org-link" target="_blank">\u2192 Open Dashboard</a>
+              ${o.updatedAt ? '<div class="org-updated">Last updated: ' + new Date(o.updatedAt).toLocaleString() + '</div>' : ''}
+            </div>
+          `).join('')}
+        </div>
+      </div></div>
     </div>
 
-    <!-- Updates -->
-    <div class="updates-section">
-      <div class="section-title"><span class="icon">\uD83D\uDCDD</span> Updates</div>
-      ${updates.map(u => `
-        <div class="update-entry">
-          <div class="update-header">
-            <span class="update-date">${u.date}</span>
-            <span class="update-title">${u.title}</span>
-          </div>
-          <ul class="update-items">
-            ${u.items.map(item => `<li>${item}</li>`).join('')}
-          </ul>
+    <!-- ═══ How It Works ═══ -->
+    <div class="collapsible open" id="sec-how">
+      <div class="collapsible-header" onclick="toggleSection('sec-how')">
+        <span class="icon">\u2699\uFE0F</span>
+        <span class="flex">How It Works</span>
+        <span class="chevron">\u25BC</span>
+      </div>
+      <div class="collapsible-body"><div class="collapsible-inner">
+
+        <!-- SVG Architecture Diagram -->
+        <div class="svg-wrap">
+          <svg viewBox="0 0 880 520" xmlns="http://www.w3.org/2000/svg" style="max-width:880px">
+            <defs>
+              <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#f59e0b"/></marker>
+              <marker id="arrow-dim" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#555"/></marker>
+              <linearGradient id="glow" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#f59e0b" stop-opacity="0.1"/><stop offset="100%" stop-color="#f59e0b" stop-opacity="0"/></linearGradient>
+              <filter id="cardShadow"><feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#000" flood-opacity="0.4"/></filter>
+            </defs>
+
+            <!-- Background -->
+            <rect width="880" height="520" rx="12" fill="#0d0d0d"/>
+
+            <!-- ── User / Browser ── -->
+            <rect x="330" y="16" width="220" height="56" rx="10" fill="#1a1a1a" stroke="#333" stroke-width="1" filter="url(#cardShadow)"/>
+            <text x="382" y="39" font-family="DM Sans,sans-serif" font-size="11" fill="#888" font-weight="500">USER / BROWSER</text>
+            <text x="362" y="57" font-family="Inter,sans-serif" font-size="12" fill="#ccc">Metabase iframe embed</text>
+            <text x="345" y="39" font-size="14">\uD83C\uDF10</text>
+
+            <!-- Arrow down -->
+            <line x1="440" y1="72" x2="440" y2="105" stroke="#f59e0b" stroke-width="1.5" marker-end="url(#arrow)"/>
+            <text x="448" y="93" font-family="JetBrains Mono,monospace" font-size="9" fill="#f59e0b">/:org?token=</text>
+
+            <!-- ── Railway Server ── -->
+            <rect x="120" y="108" width="640" height="220" rx="12" fill="#111" stroke="#262626" stroke-width="1" filter="url(#cardShadow)"/>
+            <rect x="120" y="108" width="640" height="32" rx="12" fill="#181818"/>
+            <rect x="120" y="128" width="640" height="2" fill="#262626"/>
+            <text x="148" y="127" font-family="DM Sans,sans-serif" font-size="12" fill="#f59e0b" font-weight="600">Railway: rec-dashboard-production</text>
+            <circle cx="722" cy="122" r="5" fill="#22c55e"/><text x="732" y="126" font-family="Inter,sans-serif" font-size="9" fill="#666">running</text>
+
+            <!-- Server internals -->
+            <!-- Routes -->
+            <rect x="140" y="145" width="175" height="80" rx="8" fill="#1a1a1a" stroke="#262626" stroke-width="1"/>
+            <text x="156" y="164" font-family="DM Sans,sans-serif" font-size="11" fill="#aaa" font-weight="600">Express Routes</text>
+            <text x="156" y="182" font-family="JetBrains Mono,monospace" font-size="9.5" fill="#666">GET  /           admin</text>
+            <text x="156" y="195" font-family="JetBrains Mono,monospace" font-size="9.5" fill="#666">GET  /:org       dashboard</text>
+            <text x="156" y="208" font-family="JetBrains Mono,monospace" font-size="9.5" fill="#666">GET  /api/data   proxy</text>
+            <text x="156" y="221" font-family="JetBrains Mono,monospace" font-size="9.5" fill="#666">POST /api/events tracking</text>
+
+            <!-- Widget Engine -->
+            <rect x="333" y="145" width="175" height="80" rx="8" fill="#1a1a1a" stroke="#262626" stroke-width="1"/>
+            <text x="349" y="164" font-family="DM Sans,sans-serif" font-size="11" fill="#aaa" font-weight="600">Widget Engine</text>
+            <text x="349" y="182" font-family="Inter,sans-serif" font-size="10" fill="#666">20+ widgets in registry</text>
+            <text x="349" y="196" font-family="Inter,sans-serif" font-size="10" fill="#666">Section-based layout</text>
+            <text x="349" y="210" font-family="Inter,sans-serif" font-size="10" fill="#666">Chart.js + React CDN</text>
+
+            <!-- Cache -->
+            <rect x="526" y="145" width="215" height="80" rx="8" fill="#1a1a1a" stroke="#262626" stroke-width="1"/>
+            <text x="542" y="164" font-family="DM Sans,sans-serif" font-size="11" fill="#aaa" font-weight="600">In-Memory Cache</text>
+            <text x="542" y="182" font-family="Inter,sans-serif" font-size="10" fill="#666">Per-org configurable TTL</text>
+            <text x="542" y="196" font-family="Inter,sans-serif" font-size="10" fill="#666">Key: org:report:dateRange</text>
+            <text x="542" y="210" font-family="Inter,sans-serif" font-size="10" fill="#666">Stale-on-restart, warm on demand</text>
+
+            <!-- Persistent Volume -->
+            <rect x="140" y="240" width="175" height="75" rx="8" fill="#1a1a1a" stroke="#262626" stroke-width="1"/>
+            <text x="152" y="259" font-size="13">\uD83D\uDCBE</text>
+            <text x="170" y="259" font-family="DM Sans,sans-serif" font-size="11" fill="#aaa" font-weight="600">Persistent Volume /data</text>
+            <text x="156" y="278" font-family="JetBrains Mono,monospace" font-size="9.5" fill="#666">dashboards.json  configs</text>
+            <text x="156" y="292" font-family="JetBrains Mono,monospace" font-size="9.5" fill="#666">events.jsonl     tracking</text>
+
+            <!-- Auth -->
+            <rect x="333" y="240" width="175" height="75" rx="8" fill="#1a1a1a" stroke="#262626" stroke-width="1"/>
+            <text x="345" y="259" font-size="13">\uD83D\uDD12</text>
+            <text x="363" y="259" font-family="DM Sans,sans-serif" font-size="11" fill="#aaa" font-weight="600">Token Auth</text>
+            <text x="349" y="278" font-family="Inter,sans-serif" font-size="10" fill="#666">URL token per org</text>
+            <text x="349" y="292" font-family="Inter,sans-serif" font-size="10" fill="#666">Same as reporting project</text>
+
+            <!-- Data Batching -->
+            <rect x="526" y="240" width="215" height="75" rx="8" fill="#1a1a1a" stroke="#262626" stroke-width="1"/>
+            <text x="538" y="259" font-size="13">\u26A1</text>
+            <text x="555" y="259" font-family="DM Sans,sans-serif" font-size="11" fill="#aaa" font-weight="600">Smart Data Batching</text>
+            <text x="542" y="278" font-family="Inter,sans-serif" font-size="10" fill="#666">Dedup report types from widgets</text>
+            <text x="542" y="292" font-family="Inter,sans-serif" font-size="10" fill="#666">Parallel fetch, shared response</text>
+
+            <!-- Arrow to Metabase -->
+            <line x1="440" y1="328" x2="440" y2="370" stroke="#f59e0b" stroke-width="1.5" marker-end="url(#arrow)"/>
+            <text x="448" y="350" font-family="JetBrains Mono,monospace" font-size="9" fill="#f59e0b">org_id injection</text>
+
+            <!-- ── Metabase ── -->
+            <rect x="170" y="373" width="540" height="74" rx="12" fill="#111" stroke="#262626" stroke-width="1" filter="url(#cardShadow)"/>
+            <rect x="170" y="373" width="540" height="28" rx="12" fill="#181818"/>
+            <rect x="170" y="393" width="540" height="2" fill="#262626"/>
+            <text x="198" y="392" font-family="DM Sans,sans-serif" font-size="12" fill="#3b82f6" font-weight="600">Metabase: rec.metabaseapp.com</text>
+
+            <text x="190" y="418" font-family="Inter,sans-serif" font-size="11" fill="#888">Shared public cards</text>
+            <text x="190" y="434" font-family="JetBrains Mono,monospace" font-size="9.5" fill="#555">/api/public/card/{uuid}/query/json?parameters=[{org_id}]</text>
+
+            <text x="520" y="418" font-family="Inter,sans-serif" font-size="11" fill="#888">One set of SQL</text>
+            <text x="520" y="434" font-family="Inter,sans-serif" font-size="10" fill="#555">serves all ~59 orgs</text>
+
+            <!-- Arrow to Postgres -->
+            <line x1="440" y1="447" x2="440" y2="475" stroke="#555" stroke-width="1" marker-end="url(#arrow-dim)"/>
+
+            <!-- Postgres -->
+            <rect x="330" y="478" width="220" height="32" rx="8" fill="#1a1a1a" stroke="#262626" stroke-width="1"/>
+            <text x="358" y="499" font-family="DM Sans,sans-serif" font-size="11" fill="#666" font-weight="500">PostgreSQL (rec.us read replica)</text>
+
+            <!-- Side labels -->
+            <text x="18" y="200" font-family="Inter,sans-serif" font-size="10" fill="#333" transform="rotate(-90 18 200)">SERVER SIDE</text>
+            <text x="860" y="200" font-family="Inter,sans-serif" font-size="10" fill="#333" transform="rotate(90 860 200)">NO CORS ISSUES</text>
+          </svg>
         </div>
-      `).join('')}
+
+        <!-- Detailed Architecture Blocks -->
+        <div class="arch-detail">
+          <div class="arch-block">
+            <h4>Shared UUID Architecture</h4>
+            <p>Every Metabase SQL card is written with a <code>{{org_id}}</code> template variable in its WHERE clause. The dashboard server injects the requesting org's UUID into this parameter at fetch time. This means <strong>one SQL card powers all organizations</strong> — no more duplicating and editing 50+ cards per org. Per-org UUID overrides are supported when an org needs a custom query (e.g. Norman's GL with a <code>Locations</code> column).</p>
+          </div>
+          <div class="arch-block">
+            <h4>Widget Registry Pattern</h4>
+            <p>Each widget is a self-contained definition: <code>reportType</code> (which Metabase data), <code>transform</code> (how to aggregate rows into chart data), <code>component</code> (metric card, bar, donut, or line chart), and <code>section</code> (which category it belongs to). Adding a new widget means one object in the registry — no routing, no new endpoints, no new HTML files.</p>
+          </div>
+          <div class="arch-block">
+            <h4>Smart Data Batching</h4>
+            <p>When a dashboard loads, the engine scans all active widgets, collects the unique <code>reportType</code> values needed, and fires those fetches in parallel. If 6 widgets all need <code>facility</code> data, that is one Metabase call, not six. Each widget's <code>transform</code> function slices what it needs from the shared response.</p>
+          </div>
+          <div class="arch-block">
+            <h4>Section-Based Layouts</h4>
+            <p>Widgets are organized into sections (Revenue Overview, Facility Rentals, Programs, etc). Admins choose which sections appear on their dashboard, reorder them, and customize widgets within each. The config is persisted to <code>/data/dashboards.json</code> on Railway's persistent volume, surviving restarts and redeploys.</p>
+          </div>
+          <div class="arch-block">
+            <h4>Event Tracking Pipeline</h4>
+            <p>Every user interaction fires a tracking event: dashboard views, date range changes, template selections, widget edits, layout saves, theme switches. Events batch client-side on a 2-second debounce, then POST as a JSON array. Server appends to <code>/data/events.jsonl</code> (one JSON object per line, append-only). Queryable via <code>/admin/api/events/summary</code>.</p>
+          </div>
+          <div class="arch-block">
+            <h4>Adding a New Org</h4>
+            <p>Add 5 lines to the <code>ORGS</code> map in server.js: slug, orgId, token, logoUrl, and optional per-org report UUIDs. All 9 shared report types light up automatically. Push to GitHub, Railway auto-deploys in ~60 seconds. The org's admin hits their URL, picks a template, and their dashboard is live. Total onboarding time: under 2 minutes.</p>
+          </div>
+        </div>
+
+        <!-- How it works cards -->
+        <div style="margin-top:20px">
+          <h4 style="font-family:'DM Sans',sans-serif;font-size:14px;font-weight:600;margin-bottom:12px;color:#888">Shared Metabase Reports</h4>
+          <div class="shared-grid">
+            ${sharedReports.map(r => '<span class="shared-tag">' + r + '</span>').join('')}
+          </div>
+        </div>
+
+      </div></div>
+    </div>
+
+    <!-- ═══ Updates ═══ -->
+    <div class="collapsible open" id="sec-updates">
+      <div class="collapsible-header" onclick="toggleSection('sec-updates')">
+        <span class="icon">\uD83D\uDCDD</span>
+        <span class="flex">Updates</span>
+        <span style="font-size:12px;color:#666;font-weight:400">${updates.length} entries</span>
+        <span class="chevron">\u25BC</span>
+      </div>
+      <div class="collapsible-body"><div class="collapsible-inner">
+        ${updates.map(u => `
+          <div class="update-entry">
+            <div class="update-header">
+              <span class="update-date">${u.date}</span>
+              <span class="update-title">${u.title}</span>
+            </div>
+            <ul class="update-items">
+              ${u.items.map(item => '<li>' + item + '</li>').join('')}
+            </ul>
+          </div>
+        `).join('')}
+      </div></div>
     </div>
   `;
 })();
