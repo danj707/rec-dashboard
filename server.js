@@ -161,6 +161,38 @@ async function fetchMetabaseData(orgSlug, reportType, query) {
 }
 
 // ═══════════════════════════════════════════
+//  UPDATES LOG
+// ═══════════════════════════════════════════
+const UPDATES = [
+  { date: '2025-07-12', title: 'Light/Dark Theme + Reset', items: [
+    'Added dark/light theme toggle in settings, persists per-org',
+    'Fixed dashboard reset (inline confirm, no iframe-blocked confirm())',
+    'Event tracking for theme changes'
+  ]},
+  { date: '2025-07-12', title: 'Event Tracking + Analytics', items: [
+    'Full event tracking pipeline: dashboard_view, template_selected, edit_opened, layout_saved, date_preset_changed, refresh, cache_cleared, dashboard_reset',
+    'Batched client-side events (2s debounce), server-side JSONL storage',
+    'GET /:org/api/events/stats endpoint for analytics'
+  ]},
+  { date: '2025-07-12', title: 'Sectioned Dashboard Architecture', items: [
+    'Replaced flat widget grid with section-based layout (Revenue Overview, Facility Rentals, Programs & Enrollment)',
+    'GL widgets: Total Revenue, Refunds, Net Revenue, Transactions, Revenue by GL Code, Payment Methods',
+    'Programs widgets: Enrollments, Revenue, Refunds, Fill Rate, Top Programs, Revenue by Program',
+    'Facility widgets renamed with rental- prefix for clarity',
+    'Edit modal redesigned for section-level + widget-level editing',
+    'Templates updated to section-based config'
+  ]},
+  { date: '2025-07-11', title: 'Initial Launch', items: [
+    'Standalone Railway project with persistent volume',
+    'Widget registry with 12 facility-based widgets',
+    'Template chooser (General, Revenue Focus, Operations)',
+    'Edit Widgets modal with add/remove/reorder',
+    'Metabase data proxy with configurable cache TTL',
+    'Token-based auth, Watertown as pilot org'
+  ]},
+];
+
+// ═══════════════════════════════════════════
 //  ROUTES
 // ═══════════════════════════════════════════
 
@@ -169,6 +201,58 @@ app.use('/public', express.static(path.join(__dirname, 'public')));
 
 // Health check
 app.get('/health', (req, res) => res.json({ status: 'ok', orgs: Object.keys(ORGS).length }));
+
+// ── Admin routes (before /:org catch-all) ──
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'admin.html'));
+});
+
+app.get('/admin/api/orgs', (req, res) => {
+  const orgs = Object.entries(ORGS).map(([slug, org]) => {
+    const config = dashboardConfigs[slug] || null;
+    const availableReports = { ...SHARED_UUIDS };
+    for (const r of Object.keys(org.reports || {})) availableReports[r] = true;
+    return {
+      slug,
+      name: org.name,
+      orgId: org.orgId,
+      logoUrl: org.logoUrl,
+      token: org.token,
+      reportCount: Object.keys(availableReports).length,
+      perOrgReports: Object.keys(org.reports || {}),
+      configured: !!config,
+      template: config?.template || null,
+      sectionCount: config?.sections?.length || 0,
+      widgetCount: config?.sections?.reduce((s, sec) => s + sec.widgets.length, 0) || 0,
+      theme: config?.theme || 'dark',
+      cacheTTL: config?.cacheTTL || 15,
+      updatedAt: config?.updatedAt || null,
+    };
+  });
+  res.json({ orgs, updates: UPDATES, sharedReports: Object.keys(SHARED_UUIDS) });
+});
+
+app.get('/admin/api/events/summary', (req, res) => {
+  try {
+    if (!fs.existsSync(EVENTS_FILE)) return res.json({ total: 0, byOrg: {}, byType: {} });
+    const lines = fs.readFileSync(EVENTS_FILE, 'utf8').trim().split('\n').filter(Boolean);
+    const events = lines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+    const byOrg = {}, byType = {};
+    events.forEach(e => {
+      byOrg[e.org] = (byOrg[e.org] || 0) + 1;
+      byType[e.event] = (byType[e.event] || 0) + 1;
+    });
+    const last7 = {};
+    const now = Date.now();
+    events.forEach(e => {
+      const day = e.ts?.split('T')[0];
+      if (day && (now - new Date(e.ts).getTime()) < 7 * 86400000) last7[day] = (last7[day] || 0) + 1;
+    });
+    res.json({ total: events.length, byOrg, byType, last7Days: last7 });
+  } catch (e) { res.json({ total: 0, error: e.message }); }
+});
+
+// ── Org dashboard routes ──
 
 // --- Dashboard page ---
 app.get('/:org', authMiddleware, (req, res) => {

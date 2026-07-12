@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>rec.us Dashboard Platform — Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Inter', sans-serif; background: #0a0a0a; color: #e5e5e5; line-height: 1.6; }
+a { color: #f59e0b; text-decoration: none; }
+a:hover { text-decoration: underline; }
+code { font-family: 'JetBrains Mono', monospace; font-size: 0.85em; background: #1e1e1e; padding: 2px 6px; border-radius: 4px; }
+
+.container { max-width: 1100px; margin: 0 auto; padding: 0 24px; }
+
+/* Header */
+.header { border-bottom: 1px solid #1e1e1e; padding: 20px 0; margin-bottom: 32px; }
+.header-inner { display: flex; align-items: center; justify-content: space-between; }
+.header h1 { font-family: 'DM Sans', sans-serif; font-size: 22px; font-weight: 700; }
+.header h1 span { color: #f59e0b; }
+.header-meta { font-size: 12px; color: #666; }
+
+/* Section titles */
+.section-title {
+  font-family: 'DM Sans', sans-serif; font-size: 18px; font-weight: 600;
+  margin-bottom: 16px; padding-bottom: 8px; border-bottom: 1px solid #1e1e1e;
+  display: flex; align-items: center; gap: 10px;
+}
+.section-title .icon { font-size: 20px; }
+
+/* Org cards */
+.org-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(480px, 1fr)); gap: 16px; margin-bottom: 40px; }
+.org-card {
+  background: #141414; border: 1px solid #1e1e1e; border-radius: 12px;
+  padding: 20px; transition: border-color 0.2s;
+}
+.org-card:hover { border-color: #333; }
+.org-card-header { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; }
+.org-logo { height: 40px; width: auto; max-width: 160px; border-radius: 6px; object-fit: contain; }
+.org-name { font-family: 'DM Sans', sans-serif; font-size: 16px; font-weight: 600; }
+.org-slug { font-size: 12px; color: #666; font-family: 'JetBrains Mono', monospace; }
+.org-meta { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 14px; }
+.org-stat { background: #1a1a1a; border-radius: 8px; padding: 10px 12px; }
+.org-stat-label { font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 2px; }
+.org-stat-value { font-family: 'DM Sans', sans-serif; font-size: 18px; font-weight: 600; }
+.org-badges { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+.badge { font-size: 10px; padding: 3px 8px; border-radius: 4px; font-weight: 600; }
+.badge-green { background: rgba(34,197,94,0.15); color: #22c55e; }
+.badge-amber { background: rgba(245,158,11,0.15); color: #f59e0b; }
+.badge-gray { background: rgba(136,136,136,0.15); color: #888; }
+.badge-blue { background: rgba(59,130,246,0.15); color: #3b82f6; }
+.org-link { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500;
+  padding: 6px 14px; border-radius: 6px; background: #f59e0b; color: #000; transition: background 0.15s; }
+.org-link:hover { background: #d97706; text-decoration: none; }
+.org-updated { font-size: 11px; color: #555; margin-top: 10px; }
+
+/* How it works */
+.how-section { margin-bottom: 40px; }
+.how-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+.how-card { background: #141414; border: 1px solid #1e1e1e; border-radius: 10px; padding: 18px; }
+.how-card h3 { font-family: 'DM Sans', sans-serif; font-size: 14px; font-weight: 600; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+.how-card p { font-size: 13px; color: #aaa; line-height: 1.6; }
+
+/* Architecture diagram */
+.arch-box {
+  background: #141414; border: 1px solid #1e1e1e; border-radius: 10px;
+  padding: 20px; margin-bottom: 16px; font-family: 'JetBrains Mono', monospace;
+  font-size: 12px; color: #aaa; line-height: 1.8; white-space: pre; overflow-x: auto;
+}
+
+/* Updates */
+.updates-section { margin-bottom: 40px; }
+.update-entry { background: #141414; border: 1px solid #1e1e1e; border-radius: 10px; padding: 16px 18px; margin-bottom: 10px; }
+.update-header { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.update-date { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #f59e0b; background: rgba(245,158,11,0.1); padding: 2px 8px; border-radius: 4px; }
+.update-title { font-family: 'DM Sans', sans-serif; font-size: 14px; font-weight: 600; }
+.update-items { list-style: none; padding: 0; }
+.update-items li { font-size: 13px; color: #aaa; padding: 2px 0 2px 16px; position: relative; }
+.update-items li::before { content: ''; position: absolute; left: 0; top: 10px; width: 6px; height: 6px; border-radius: 50%; background: #333; }
+
+/* Shared reports */
+.shared-grid { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 40px; }
+.shared-tag { font-family: 'JetBrains Mono', monospace; font-size: 11px; background: #1a1a1a;
+  border: 1px solid #262626; border-radius: 6px; padding: 4px 10px; color: #aaa; }
+
+.loading { text-align: center; padding: 60px; color: #666; font-size: 14px; }
+.footer { border-top: 1px solid #1e1e1e; padding: 20px 0; margin-top: 20px; text-align: center;
+  font-size: 11px; color: #444; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <div class="header-inner">
+      <h1><span>rec.us</span> Dashboard Platform</h1>
+      <div class="header-meta" id="header-meta">Loading...</div>
+    </div>
+  </div>
+  <div id="content"><div class="loading">Loading admin data...</div></div>
+  <div class="footer">rec.us Dashboard Platform &middot; Powered by shared Metabase cards, zero per-org duplication</div>
+</div>
+
+<script>
+(async function() {
+  const resp = await fetch('/admin/api/orgs');
+  const data = await resp.json();
+  const { orgs, updates, sharedReports } = data;
+
+  let evtData = { total: 0, byOrg: {}, byType: {}, last7Days: {} };
+  try { const er = await fetch('/admin/api/events/summary'); evtData = await er.json(); } catch(e) {}
+
+  document.getElementById('header-meta').textContent =
+    `${orgs.length} org${orgs.length !== 1 ? 's' : ''} \u00B7 ${sharedReports.length} shared reports \u00B7 ${evtData.total} events tracked`;
+
+  const BASE = window.location.origin;
+
+  document.getElementById('content').innerHTML = `
+    <!-- Org Cards -->
+    <div class="section-title"><span class="icon">\uD83C\uDFE2</span> Organizations</div>
+    <div class="org-grid">
+      ${orgs.map(o => `
+        <div class="org-card">
+          <div class="org-card-header">
+            ${o.logoUrl ? `<img src="${o.logoUrl}" class="org-logo" alt="" onerror="this.style.display='none'">` : ''}
+            <div>
+              <div class="org-name">${o.name}</div>
+              <div class="org-slug">/${o.slug}</div>
+            </div>
+          </div>
+          <div class="org-meta">
+            <div class="org-stat">
+              <div class="org-stat-label">Sections</div>
+              <div class="org-stat-value">${o.sectionCount}</div>
+            </div>
+            <div class="org-stat">
+              <div class="org-stat-label">Widgets</div>
+              <div class="org-stat-value">${o.widgetCount}</div>
+            </div>
+            <div class="org-stat">
+              <div class="org-stat-label">Events</div>
+              <div class="org-stat-value">${evtData.byOrg[o.slug] || 0}</div>
+            </div>
+          </div>
+          <div class="org-badges">
+            <span class="badge ${o.configured ? 'badge-green' : 'badge-gray'}">${o.configured ? 'Configured' : 'Not configured'}</span>
+            ${o.template ? `<span class="badge badge-amber">${o.template}</span>` : ''}
+            <span class="badge badge-blue">${o.theme || 'dark'} mode</span>
+            <span class="badge badge-gray">cache ${o.cacheTTL}m</span>
+            <span class="badge badge-gray">${o.reportCount} reports</span>
+            ${o.perOrgReports.length ? `<span class="badge badge-amber">custom: ${o.perOrgReports.join(', ')}</span>` : ''}
+          </div>
+          <a href="${BASE}/${o.slug}?token=${o.token}" class="org-link" target="_blank">\u2192 Open Dashboard</a>
+          ${o.updatedAt ? `<div class="org-updated">Last updated: ${new Date(o.updatedAt).toLocaleString()}</div>` : ''}
+        </div>
+      `).join('')}
+    </div>
+
+    <!-- Shared Reports -->
+    <div class="section-title"><span class="icon">\uD83D\uDD17</span> Shared Metabase Reports</div>
+    <div class="shared-grid">
+      ${sharedReports.map(r => `<span class="shared-tag">${r}</span>`).join('')}
+    </div>
+
+    <!-- How It Works -->
+    <div class="how-section">
+      <div class="section-title"><span class="icon">\u2699\uFE0F</span> How It Works</div>
+      <div class="arch-box">User opens dashboard in Metabase iframe
+       \u2502
+       \u2193
+\u250C\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510
+\u2502  Railway: rec-dashboard-production       \u2502
+\u2502                                             \u2502
+\u2502  GET /           \u2192 Admin dashboard          \u2502
+\u2502  GET /:org       \u2192 Org dashboard (React)    \u2502
+\u2502  GET /:org/api/data/:type \u2192 Metabase proxy  \u2502
+\u2502  GET /:org/api/config    \u2192 Saved layout     \u2502
+\u2502  POST /:org/api/events   \u2192 Usage tracking   \u2502
+\u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518
+       \u2502 (server-side, no CORS)
+       \u2193
+\u250C\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510
+\u2502  Metabase: rec.metabaseapp.com              \u2502
+\u2502  Shared cards + org_id injection             \u2502
+\u2502  One set of reports powers ALL orgs           \u2502
+\u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518</div>
+      <div class="how-grid">
+        <div class="how-card">
+          <h3>\uD83E\uDDE9 Widget Registry</h3>
+          <p>Each widget declares its <code>reportType</code>, <code>transform</code> function, and <code>component</code> type. The dashboard fetches only the unique report types needed, then each widget slices what it needs from the shared response.</p>
+        </div>
+        <div class="how-card">
+          <h3>\uD83D\uDCC2 Sections</h3>
+          <p>Widgets are grouped into sections (Revenue, Facility, Programs, etc). Admins can add/remove entire sections and customize widgets within each. Sections map to report categories.</p>
+        </div>
+        <div class="how-card">
+          <h3>\uD83D\uDD17 Shared Metabase Cards</h3>
+          <p>One set of Metabase SQL cards serves all orgs via <code>org_id</code> template variable injection. No more duplicating 50+ cards per org. Per-org overrides available when needed.</p>
+        </div>
+        <div class="how-card">
+          <h3>\uD83D\uDCBE Config Persistence</h3>
+          <p>Dashboard layouts saved to <code>/data/dashboards.json</code> on Railway persistent volume. Each org's config includes sections, widgets, theme, cache TTL, and template choice.</p>
+        </div>
+        <div class="how-card">
+          <h3>\uD83D\uDCCA Event Tracking</h3>
+          <p>Every user action (views, edits, date changes, theme switches) logged to <code>/data/events.jsonl</code>. Batched client-side, append-only server-side. Key for measuring adoption.</p>
+        </div>
+        <div class="how-card">
+          <h3>\u2795 Adding a New Org</h3>
+          <p>Add entry to <code>ORGS</code> map in server.js: slug, orgId, token, logoUrl. All shared reports light up automatically. Push to GitHub, Railway auto-deploys. Done.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Updates -->
+    <div class="updates-section">
+      <div class="section-title"><span class="icon">\uD83D\uDCDD</span> Updates</div>
+      ${updates.map(u => `
+        <div class="update-entry">
+          <div class="update-header">
+            <span class="update-date">${u.date}</span>
+            <span class="update-title">${u.title}</span>
+          </div>
+          <ul class="update-items">
+            ${u.items.map(item => `<li>${item}</li>`).join('')}
+          </ul>
+        </div>
+      `).join('')}
+    </div>
+  `;
+})();
+</script>
+</body>
+</html>
