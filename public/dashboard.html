@@ -107,6 +107,13 @@ body { font-family: var(--font-body); background: var(--bg-page); color: var(--t
 .skeleton-metric { height: 48px; width: 140px; margin-top: 12px; }
 .skeleton-chart { height: 200px; width: 100%; margin-top: 12px; }
 
+/* Loading overlay on date change */
+.sections-loading .dashboard-section { opacity: 0.35; pointer-events: none; transition: opacity 0.2s; }
+.loading-bar { height: 3px; background: var(--bg-surface); overflow: hidden; }
+.loading-bar.active .loading-bar-inner { animation: loadSlide 1.2s ease-in-out infinite; }
+.loading-bar-inner { height: 100%; width: 30%; background: var(--amber); border-radius: 2px; }
+@keyframes loadSlide { 0% { transform: translateX(-100%); } 100% { transform: translateX(430%); } }
+
 /* Modal */
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 100;
   display: flex; justify-content: flex-end; backdrop-filter: blur(2px); }
@@ -1128,10 +1135,13 @@ function DashboardApp() {
           {loading ? 'Loading data...' : lastRefresh ? `Last refreshed ${lastRefresh.toLocaleTimeString()}` : 'Ready'}</div>
         <div>{config.sections.length} sections · {totalWidgets} widgets · cache {config.cacheTTL||15}m</div>
       </div>
+      <div className={`loading-bar ${loading ? 'active' : ''}`}><div className="loading-bar-inner" /></div>
 
-      {config.sections.map((sec, i) => (
-        <SectionBlock key={sec.id+i+theme} sectionId={sec.id} widgetIds={sec.widgets} reportData={reportData} loading={loading} />
-      ))}
+      <div className={loading && lastRefresh ? 'sections-loading' : ''}>
+        {config.sections.map((sec, i) => (
+          <SectionBlock key={sec.id+i+theme} sectionId={sec.id} widgetIds={sec.widgets} reportData={reportData} loading={loading} />
+        ))}
+      </div>
 
       {editOpen && <EditModal sections={config.sections} availableReports={availableReports} onSave={handleSaveSections} onClose={()=>setEditOpen(false)} />}
     </div>
