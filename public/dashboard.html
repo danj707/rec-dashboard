@@ -531,38 +531,34 @@ const W = {
     }},
 
   // ── Instructor Payout ──
-  'instr-net': { label: 'Net Revenue', description: 'Total net from instructor sections', section: 'instructors',
+  'instr-net': { label: 'Net Revenue', description: 'Total collected minus refunds', section: 'instructors',
     reportType: 'instructor-payout', size: 'sm', icon: '\uD83D\uDCB0', component: 'metric',
-    transform: rows => ({ value: rows.reduce((s,r)=>s+pf(r['Net Revenue']||r['net_revenue']||r['Net']||r['net']),0), format:'currency', colorClass:'metric-green' }) },
-  'instr-payout': { label: 'Instructor Payout', description: 'Total paid to instructors', section: 'instructors',
+    transform: rows => ({ value: rows.reduce((s,r)=>s+pf(r['amount_paid'])-pf(r['amount_refunded']),0), format:'currency', colorClass:'metric-green' }) },
+  'instr-payout': { label: 'Total Collected', description: 'Gross amount paid by participants', section: 'instructors',
     reportType: 'instructor-payout', size: 'sm', icon: '\uD83C\uDF93', component: 'metric',
-    transform: rows => ({ value: rows.reduce((s,r)=>s+pf(r['Instructor Payout']||r['instructor_payout']||r['Split']),0), format:'currency' }) },
-  'instr-org-ret': { label: 'Org Retention', description: 'Revenue kept by org', section: 'instructors',
-    reportType: 'instructor-payout', size: 'sm', icon: '\uD83C\uDFE2', component: 'metric',
-    transform: rows => ({ value: rows.reduce((s,r)=>s+pf(r['Org Retention']||r['org_retention']),0), format:'currency', colorClass:'metric-green' }) },
-  'instr-fill': { label: 'Avg Fill Rate', description: 'Average section capacity used', section: 'instructors',
-    reportType: 'instructor-payout', size: 'sm', icon: '\uD83D\uDCCA', component: 'metric',
-    transform: rows => {
-      const valid=rows.filter(r=>pf(r['Capacity']||r['capacity'])>0);
-      if(!valid.length)return{value:0,format:'percent'};
-      return{value:valid.reduce((s,r)=>s+pf(r['Enrolled']||r['enrolled'])/pf(r['Capacity']||r['capacity'])*100,0)/valid.length, format:'percent'};
-    }},
-  'instr-top': { label: 'Top Instructors', description: 'Ranked by revenue', section: 'instructors',
+    transform: rows => ({ value: rows.reduce((s,r)=>s+pf(r['amount_paid']),0), format:'currency' }) },
+  'instr-org-ret': { label: 'Total Refunded', description: 'Refunds issued', section: 'instructors',
+    reportType: 'instructor-payout', size: 'sm', icon: '\uD83D\uDD04', component: 'metric',
+    transform: rows => ({ value: rows.reduce((s,r)=>s+pf(r['amount_refunded']),0), format:'currency', colorClass:'metric-red' }) },
+  'instr-fill': { label: 'Sections', description: 'Unique sections with instructors', section: 'instructors',
+    reportType: 'instructor-payout', size: 'sm', icon: '\uD83D\uDCCB', component: 'metric',
+    transform: rows => ({ value: new Set(rows.map(r=>r['section_id']).filter(Boolean)).size, format:'number' }) },
+  'instr-top': { label: 'Top Instructors', description: 'Ranked by net revenue', section: 'instructors',
     reportType: 'instructor-payout', size: 'md', icon: '\uD83C\uDFC6', component: 'bar',
     transform: rows => {
-      const g={}; rows.forEach(r=>{const k=r['Instructor']||r['instructor']||'Unknown'; g[k]=(g[k]||0)+pf(r['Net Revenue']||r['net_revenue']||r['Net']||r['net']);});
+      const g={}; rows.forEach(r=>{const k=r['instructor']||'Unknown'; g[k]=(g[k]||0)+pf(r['amount_paid'])-pf(r['amount_refunded']);});
       const s=Object.entries(g).filter(e=>e[1]>0).sort((a,b)=>b[1]-a[1]).slice(0,10);
       return { labels:s.map(e=>e[0]), values:s.map(e=>e[1]), format:'currency' };
     }},
-  'tbl-instructors': { label: 'Instructor Table', description: 'Sections, participants, and payout', section: 'instructors',
+  'tbl-instructors': { label: 'Instructor Table', description: 'Sections, participants, and revenue', section: 'instructors',
     reportType: 'instructor-payout', size: 'lg', icon: '\uD83D\uDCCB', component: 'table',
     transform: rows => {
-      const g={}; rows.forEach(r=>{const k=r['Instructor']||r['instructor']||'Unknown';
-        if(!g[k])g[k]={sections:0,enrolled:0,payout:0,net:0}; g[k].sections++; g[k].enrolled+=(parseInt(r['Enrolled']||r['enrolled'])||0);
-        g[k].payout+=pf(r['Instructor Payout']||r['instructor_payout']||r['Split']); g[k].net+=pf(r['Net Revenue']||r['net_revenue']||r['Net']);});
-      const s=Object.entries(g).sort((a,b)=>b[1].net-a[1].net).slice(0,15);
-      return { columns:['Instructor','Sections','Enrolled','Payout','Net Revenue'],
-        data:s.map(([k,v])=>[k,v.sections,v.enrolled,'$'+Math.round(v.payout).toLocaleString(),'$'+Math.round(v.net).toLocaleString()]) };
+      const g={}; rows.forEach(r=>{const k=r['instructor']||'Unknown';
+        if(!g[k])g[k]={sections:new Set(),participants:0,paid:0,refunded:0}; g[k].sections.add(r['section_id']); g[k].participants++;
+        g[k].paid+=pf(r['amount_paid']); g[k].refunded+=pf(r['amount_refunded']);});
+      const s=Object.entries(g).sort((a,b)=>(b[1].paid-b[1].refunded)-(a[1].paid-a[1].refunded)).slice(0,15);
+      return { columns:['Instructor','Sections','Participants','Collected','Refunded','Net'],
+        data:s.map(([k,v])=>[k,v.sections.size,v.participants,'$'+Math.round(v.paid).toLocaleString(),'$'+Math.round(v.refunded).toLocaleString(),'$'+Math.round(v.paid-v.refunded).toLocaleString()]) };
     }},
 
   // ── Demographics ──
