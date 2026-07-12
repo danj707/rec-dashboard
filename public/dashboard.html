@@ -1039,7 +1039,7 @@ function WidgetCard({ widgetId, reportData, loading, target, onTargetChange, dat
             {ALL_TIME_REPORTS.has(def.reportType)
               ? <span style={{background:'#eff6ff',color:'#2563eb',padding:'1px 6px',borderRadius:3,fontWeight:600,fontSize:9,whiteSpace:'nowrap'}}>All time</span>
               : dateRange
-                ? <span style={{background:'#fffbeb',color:'#d97706',padding:'1px 6px',borderRadius:3,fontWeight:600,fontSize:9,whiteSpace:'nowrap'}}>{dateRange.start} \u2013 {dateRange.end}</span>
+                ? <span style={{background:'#fffbeb',color:'#d97706',padding:'1px 6px',borderRadius:3,fontWeight:600,fontSize:9,whiteSpace:'nowrap'}}>{(() => { const f = d => { const p = d.split('-'); return new Date(p[0],p[1]-1,p[2]).toLocaleDateString('en-US',{month:'short',day:'numeric'}); }; return f(dateRange.start) + ' – ' + f(dateRange.end); })()}</span>
                 : null
             }
             {def.note && <span>{def.note}</span>}
