@@ -202,12 +202,31 @@ app.use('/public', express.static(path.join(__dirname, 'public')));
 // Health check
 app.get('/health', (req, res) => res.json({ status: 'ok', orgs: Object.keys(ORGS).length }));
 
+// ── Admin auth ──
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
+
+function adminAuth(req, res, next) {
+  if (!ADMIN_PASSWORD) return next(); // no password set = open access
+  const auth = req.headers.authorization;
+  if (!auth || !auth.startsWith('Basic ')) {
+    res.setHeader('WWW-Authenticate', 'Basic realm="rec.us Dashboard Admin"');
+    return res.status(401).send('Authentication required');
+  }
+  const decoded = Buffer.from(auth.split(' ')[1], 'base64').toString();
+  const password = decoded.includes(':') ? decoded.split(':').slice(1).join(':') : decoded;
+  if (password !== ADMIN_PASSWORD) {
+    res.setHeader('WWW-Authenticate', 'Basic realm="rec.us Dashboard Admin"');
+    return res.status(401).send('Invalid credentials');
+  }
+  next();
+}
+
 // ── Admin routes (before /:org catch-all) ──
-app.get('/', (req, res) => {
+app.get('/', adminAuth, (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'admin.html'));
 });
 
-app.get('/admin/api/orgs', (req, res) => {
+app.get('/admin/api/orgs', adminAuth, (req, res) => {
   const orgs = Object.entries(ORGS).map(([slug, org]) => {
     const config = dashboardConfigs[slug] || null;
     const availableReports = { ...SHARED_UUIDS };
@@ -232,7 +251,7 @@ app.get('/admin/api/orgs', (req, res) => {
   res.json({ orgs, updates: UPDATES, sharedReports: Object.keys(SHARED_UUIDS) });
 });
 
-app.get('/admin/api/events/summary', (req, res) => {
+app.get('/admin/api/events/summary', adminAuth, (req, res) => {
   try {
     if (!fs.existsSync(EVENTS_FILE)) return res.json({ total: 0, byOrg: {}, byType: {} });
     const lines = fs.readFileSync(EVENTS_FILE, 'utf8').trim().split('\n').filter(Boolean);
