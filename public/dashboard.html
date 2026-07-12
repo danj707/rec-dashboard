@@ -13,395 +13,339 @@
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
-  --bg-page: #0a0a0a;
-  --bg-card: #141414;
-  --bg-card-hover: #1a1a1a;
-  --bg-surface: #1e1e1e;
-  --bg-modal: #111111;
-  --border: #262626;
-  --border-subtle: #1e1e1e;
-  --text-primary: #f0f0f0;
-  --text-secondary: #888888;
-  --text-muted: #555555;
-  --amber: #f59e0b;
-  --amber-dim: #92610a;
-  --amber-glow: rgba(245, 158, 11, 0.08);
-  --blue: #3b82f6;
-  --green: #22c55e;
-  --red: #ef4444;
-  --purple: #8b5cf6;
-  --pink: #ec4899;
-  --cyan: #06b6d4;
-  --font-display: 'DM Sans', sans-serif;
-  --font-body: 'Inter', sans-serif;
+  --bg-page: #0a0a0a; --bg-card: #141414; --bg-card-hover: #1a1a1a;
+  --bg-surface: #1e1e1e; --bg-modal: #111111;
+  --border: #262626; --border-subtle: #1e1e1e;
+  --text-primary: #f0f0f0; --text-secondary: #888888; --text-muted: #555555;
+  --amber: #f59e0b; --amber-glow: rgba(245,158,11,0.08);
+  --blue: #3b82f6; --green: #22c55e; --red: #ef4444; --purple: #8b5cf6;
+  --pink: #ec4899; --cyan: #06b6d4;
+  --font-display: 'DM Sans', sans-serif; --font-body: 'Inter', sans-serif;
 }
 body { font-family: var(--font-body); background: var(--bg-page); color: var(--text-primary); min-height: 100vh; }
-a { color: var(--amber); text-decoration: none; }
 
 /* Header */
-.dash-header {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 16px 24px; border-bottom: 1px solid var(--border);
-  background: var(--bg-card); position: sticky; top: 0; z-index: 50;
-}
+.dash-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 24px;
+  border-bottom: 1px solid var(--border); background: var(--bg-card); position: sticky; top: 0; z-index: 50; }
 .dash-header-left { display: flex; align-items: center; gap: 14px; }
 .dash-logo { height: 36px; width: auto; max-width: 180px; border-radius: 6px; object-fit: contain; }
 .dash-title { font-family: var(--font-display); font-size: 20px; font-weight: 600; }
 .dash-subtitle { font-size: 12px; color: var(--text-secondary); margin-top: 1px; }
-.dash-header-center { display: flex; align-items: center; gap: 8px; }
+.dash-header-center { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .dash-header-right { display: flex; align-items: center; gap: 8px; }
 
 /* Buttons */
-.btn {
-  font-family: var(--font-body); font-size: 13px; font-weight: 500;
-  padding: 7px 14px; border-radius: 6px; border: 1px solid var(--border);
-  background: var(--bg-surface); color: var(--text-primary); cursor: pointer;
-  transition: all 0.15s;
-}
+.btn { font-family: var(--font-body); font-size: 13px; font-weight: 500; padding: 7px 14px; border-radius: 6px;
+  border: 1px solid var(--border); background: var(--bg-surface); color: var(--text-primary); cursor: pointer; transition: all 0.15s; }
 .btn:hover { background: #252525; border-color: #333; }
 .btn-amber { background: var(--amber); color: #000; border-color: var(--amber); font-weight: 600; }
 .btn-amber:hover { background: #d97706; }
 .btn-sm { padding: 4px 10px; font-size: 12px; }
-.btn-quick { background: transparent; border: 1px solid var(--border); color: var(--text-secondary); padding: 5px 10px; font-size: 12px; border-radius: 4px; }
+.btn-quick { background: transparent; border: 1px solid var(--border); color: var(--text-secondary);
+  padding: 5px 10px; font-size: 12px; border-radius: 4px; cursor: pointer; }
 .btn-quick:hover, .btn-quick.active { border-color: var(--amber); color: var(--amber); background: var(--amber-glow); }
-
-/* Date inputs */
-.date-input {
-  font-family: var(--font-body); font-size: 13px; padding: 6px 10px;
-  border-radius: 6px; border: 1px solid var(--border); background: var(--bg-surface);
-  color: var(--text-primary); outline: none;
-}
+.date-input { font-family: var(--font-body); font-size: 13px; padding: 6px 10px; border-radius: 6px;
+  border: 1px solid var(--border); background: var(--bg-surface); color: var(--text-primary); outline: none; }
 .date-input:focus { border-color: var(--amber); }
 
+/* Section */
+.dashboard-section { padding: 0 24px; margin-bottom: 8px; }
+.section-header { display: flex; align-items: center; gap: 12px; padding: 20px 0 12px 0; }
+.section-icon { font-size: 22px; }
+.section-label { font-family: var(--font-display); font-size: 17px; font-weight: 600; }
+.section-line { flex: 1; height: 1px; background: var(--border); }
+.section-badge { font-size: 10px; color: var(--text-muted); padding: 3px 8px; border: 1px solid var(--border); border-radius: 4px; }
+
 /* Widget Grid */
-.widget-grid {
-  display: grid; grid-template-columns: repeat(4, 1fr);
-  gap: 16px; padding: 24px;
-}
+.widget-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
 @media (max-width: 1100px) { .widget-grid { grid-template-columns: repeat(3, 1fr); } }
 @media (max-width: 800px) { .widget-grid { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 500px) { .widget-grid { grid-template-columns: 1fr; } }
 
 /* Widget Cards */
-.widget-card {
-  background: var(--bg-card); border: 1px solid var(--border-subtle);
-  border-radius: 12px; padding: 20px; position: relative;
-  transition: transform 0.15s, box-shadow 0.2s, border-color 0.2s;
-}
+.widget-card { background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: 12px;
+  padding: 20px; position: relative; transition: transform 0.15s, box-shadow 0.2s, border-color 0.2s; }
 .widget-card:hover { transform: translateY(-2px); border-color: var(--border); box-shadow: 0 8px 24px rgba(0,0,0,0.3); }
 .widget-sm { grid-column: span 1; }
 .widget-md { grid-column: span 2; min-height: 300px; }
-@media (max-width: 800px) { .widget-md { grid-column: span 2; } }
 @media (max-width: 500px) { .widget-md { grid-column: span 1; } }
-
 .widget-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
 .widget-label { font-size: 13px; color: var(--text-secondary); font-weight: 500; letter-spacing: 0.02em; }
 .widget-icon { font-size: 16px; opacity: 0.7; }
 
-/* Metric Card */
-.metric-value {
-  font-family: var(--font-display); font-size: 36px; font-weight: 700;
-  line-height: 1.1; margin-top: 8px; letter-spacing: -0.02em;
-}
-.metric-value.currency { color: var(--green); }
-.metric-sub { font-size: 12px; color: var(--text-muted); margin-top: 6px; }
-
-/* Chart container */
+/* Metric */
+.metric-value { font-family: var(--font-display); font-size: 36px; font-weight: 700; line-height: 1.1; margin-top: 8px; letter-spacing: -0.02em; }
+.metric-green { color: var(--green); }
+.metric-red { color: var(--red); }
 .chart-container { position: relative; width: 100%; height: calc(100% - 50px); min-height: 220px; }
 
-/* Loading skeleton */
+/* Skeleton */
 .skeleton { background: linear-gradient(90deg, var(--bg-surface) 25%, #222 50%, var(--bg-surface) 75%);
   background-size: 200% 100%; animation: shimmer 1.5s infinite; border-radius: 8px; }
 @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
 .skeleton-metric { height: 48px; width: 140px; margin-top: 12px; }
 .skeleton-chart { height: 200px; width: 100%; margin-top: 12px; }
 
-/* Edit Modal */
-.modal-overlay {
-  position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 100;
-  display: flex; justify-content: flex-end; backdrop-filter: blur(2px);
-}
-.modal-panel {
-  width: 520px; max-width: 90vw; background: var(--bg-modal);
-  border-left: 1px solid var(--border); height: 100vh; overflow-y: auto;
-  animation: slideIn 0.2s ease-out;
-}
+/* Modal */
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 100;
+  display: flex; justify-content: flex-end; backdrop-filter: blur(2px); }
+.modal-panel { width: 560px; max-width: 92vw; background: var(--bg-modal); border-left: 1px solid var(--border);
+  height: 100vh; overflow-y: auto; animation: slideIn 0.2s ease-out; }
 @keyframes slideIn { from { transform: translateX(100%); } to { transform: translateX(0); } }
-.modal-header {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 20px 24px; border-bottom: 1px solid var(--border);
-  position: sticky; top: 0; background: var(--bg-modal); z-index: 5;
-}
+.modal-header { display: flex; align-items: center; justify-content: space-between; padding: 20px 24px;
+  border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--bg-modal); z-index: 5; }
 .modal-title { font-family: var(--font-display); font-size: 18px; font-weight: 600; }
 .modal-close { background: none; border: none; color: var(--text-secondary); cursor: pointer; font-size: 20px; padding: 4px; }
 .modal-close:hover { color: var(--text-primary); }
 .modal-body { padding: 20px 24px; }
-.modal-section-title { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 10px; }
-.modal-footer { padding: 16px 24px; border-top: 1px solid var(--border); display: flex; gap: 8px; justify-content: flex-end;
-  position: sticky; bottom: 0; background: var(--bg-modal); }
+.modal-footer { padding: 16px 24px; border-top: 1px solid var(--border); display: flex; gap: 8px;
+  justify-content: flex-end; position: sticky; bottom: 0; background: var(--bg-modal); }
 
-/* Widget list items in modal */
-.widget-list-item {
-  display: flex; align-items: center; gap: 12px;
-  padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border-subtle);
-  margin-bottom: 6px; background: var(--bg-card); cursor: default;
-  transition: border-color 0.1s;
-}
+/* Modal section blocks */
+.edit-section { margin-bottom: 20px; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.edit-section-header { display: flex; align-items: center; gap: 10px; padding: 12px 14px;
+  background: var(--bg-surface); cursor: pointer; user-select: none; }
+.edit-section-header:hover { background: #252525; }
+.edit-section-title { font-size: 14px; font-weight: 600; flex: 1; }
+.edit-section-body { padding: 10px 14px; }
+.widget-list-item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px;
+  border: 1px solid var(--border-subtle); margin-bottom: 5px; background: var(--bg-card); }
 .widget-list-item:hover { border-color: var(--border); }
-.widget-list-icon { font-size: 18px; flex-shrink: 0; }
+.widget-list-icon { font-size: 16px; flex-shrink: 0; }
 .widget-list-info { flex: 1; min-width: 0; }
 .widget-list-name { font-size: 13px; font-weight: 500; }
 .widget-list-desc { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
-.widget-list-action { flex-shrink: 0; }
-.badge { font-size: 10px; padding: 2px 7px; border-radius: 4px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
-.badge-facility { background: rgba(59,130,246,0.15); color: var(--blue); }
-.badge-gl { background: rgba(139,92,246,0.15); color: var(--purple); }
-.badge-programs { background: rgba(34,197,94,0.15); color: var(--green); }
+.add-section-btn { display: flex; align-items: center; gap: 10px; padding: 14px; border: 2px dashed var(--border);
+  border-radius: 10px; cursor: pointer; width: 100%; background: transparent; color: var(--text-secondary);
+  font-size: 13px; font-family: var(--font-body); transition: all 0.15s; }
+.add-section-btn:hover { border-color: var(--amber); color: var(--amber); }
+.mini-label { font-size: 10px; font-weight: 600; color: var(--text-muted); text-transform: uppercase;
+  letter-spacing: 0.08em; margin: 10px 0 6px; }
 
 /* Template Chooser */
-.template-overlay { position: fixed; inset: 0; background: var(--bg-page); z-index: 200; display: flex; align-items: center; justify-content: center; }
-.template-container { max-width: 800px; width: 90%; text-align: center; }
+.template-overlay { position: fixed; inset: 0; background: var(--bg-page); z-index: 200;
+  display: flex; align-items: center; justify-content: center; }
+.template-container { max-width: 900px; width: 90%; text-align: center; }
 .template-heading { font-family: var(--font-display); font-size: 28px; font-weight: 700; margin-bottom: 8px; }
 .template-sub { color: var(--text-secondary); margin-bottom: 40px; font-size: 15px; }
 .template-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
 @media (max-width: 700px) { .template-grid { grid-template-columns: 1fr; } }
-.template-card {
-  background: var(--bg-card); border: 2px solid var(--border); border-radius: 14px;
-  padding: 28px 20px; cursor: pointer; transition: all 0.2s; text-align: center;
-}
+.template-card { background: var(--bg-card); border: 2px solid var(--border); border-radius: 14px;
+  padding: 28px 20px; cursor: pointer; transition: all 0.2s; text-align: center; }
 .template-card:hover { border-color: var(--amber); transform: translateY(-4px); box-shadow: 0 12px 32px rgba(0,0,0,0.4); }
 .template-card-icon { font-size: 36px; margin-bottom: 12px; }
 .template-card-name { font-family: var(--font-display); font-size: 16px; font-weight: 600; margin-bottom: 6px; }
 .template-card-desc { font-size: 12px; color: var(--text-secondary); line-height: 1.5; }
 
-/* Cache / settings bar */
-.settings-bar {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 8px 24px; font-size: 11px; color: var(--text-muted);
-  border-bottom: 1px solid var(--border-subtle);
-}
-.cache-label { display: flex; align-items: center; gap: 6px; }
-.cache-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); display: inline-block; }
+.settings-bar { display: flex; align-items: center; justify-content: space-between; padding: 8px 24px;
+  font-size: 11px; color: var(--text-muted); border-bottom: 1px solid var(--border-subtle); }
+.cache-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; margin-right: 6px; }
 </style>
 </head>
 <body>
 <div id="root"></div>
 <script type="text/babel">
-const { useState, useEffect, useRef, useCallback, useMemo } = React;
-
-// ═══════════════════════════════════════════
-//  PARSE URL PARAMS
-// ═══════════════════════════════════════════
+const { useState, useEffect, useRef, useCallback } = React;
 const params = new URLSearchParams(window.location.search);
 const TOKEN = params.get('token') || '';
 const ORG_SLUG = window.location.pathname.replace(/^\//, '').replace(/\/.*/, '');
+const CHART_COLORS = ['#f59e0b','#3b82f6','#22c55e','#ef4444','#8b5cf6','#ec4899','#06b6d4','#84cc16','#14b8a6','#f97316'];
+const pf = v => parseFloat(v) || 0;
 
-// ═══════════════════════════════════════════
-//  CHART COLORS
-// ═══════════════════════════════════════════
-const CHART_COLORS = ['#f59e0b','#3b82f6','#22c55e','#ef4444','#8b5cf6','#ec4899','#06b6d4','#84cc16'];
-const CHART_COLORS_DIM = CHART_COLORS.map(c => c + '33');
-
-// ═══════════════════════════════════════════
-//  FORMAT HELPERS
-// ═══════════════════════════════════════════
 function fmt(val, format) {
   if (val == null || isNaN(val)) return '\u2014';
   if (format === 'currency') return '$' + Number(val).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
   if (format === 'currency2') return '$' + Number(val).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  if (format === 'percent') return Number(val).toFixed(1) + '%';
   return Number(val).toLocaleString('en-US');
 }
-
-function shortDate(iso) {
-  if (!iso) return '';
-  const d = new Date(iso + 'T12:00:00');
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-}
-
+function shortDate(iso) { if (!iso) return ''; const d = new Date(iso + 'T12:00:00'); return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); }
 function getMonthRange(offset = 0) {
-  const now = new Date();
-  const y = now.getFullYear(), m = now.getMonth() + offset;
-  const start = new Date(y, m, 1);
-  const end = new Date(y, m + 1, 0);
-  return {
-    start: start.toISOString().split('T')[0],
-    end: end.toISOString().split('T')[0]
-  };
+  const now = new Date(); const y = now.getFullYear(), m = now.getMonth() + offset;
+  const start = new Date(y, m, 1), end = new Date(y, m + 1, 0);
+  return { start: start.toISOString().split('T')[0], end: end.toISOString().split('T')[0] };
 }
 
-// ═══════════════════════════════════════════
+// ═══════════════════════════════════════════════════════
+//  SECTION REGISTRY
+// ═══════════════════════════════════════════════════════
+const SECTIONS = {
+  revenue: { id: 'revenue', label: 'Revenue Overview', icon: '\uD83D\uDCB0', color: '#22c55e',
+    description: 'Financial summary from GL data',
+    defaultWidgets: ['gl-total-revenue','gl-total-refunds','gl-net-revenue','gl-transactions','gl-by-code','gl-by-payment-method'] },
+  facility: { id: 'facility', label: 'Facility Rentals', icon: '\uD83C\uDFE2', color: '#f59e0b',
+    description: 'Booking counts, revenue, and trends',
+    defaultWidgets: ['rental-count','rental-revenue','rental-headcount','rental-locations','rental-by-location','rental-daily-trend','rental-day-of-week'] },
+  programs: { id: 'programs', label: 'Programs & Enrollment', icon: '\uD83D\uDCDA', color: '#3b82f6',
+    description: 'Enrollment, capacity, and program revenue',
+    defaultWidgets: ['program-enrollments','program-revenue','program-cancellations','program-top'] },
+};
+
+// ═══════════════════════════════════════════════════════
 //  WIDGET REGISTRY
-// ═══════════════════════════════════════════
-const WIDGET_REGISTRY = {
-  'total-revenue': {
-    id: 'total-revenue', label: 'Total Revenue', description: 'Sum of all booking revenue',
-    category: 'financial', reportType: 'facility', size: 'sm', icon: '\uD83D\uDCB0',
-    component: 'metric',
-    transform: (rows) => ({
-      value: rows.reduce((s, r) => s + (parseFloat(r['Total']) || 0), 0),
-      format: 'currency'
-    })
-  },
-  'total-bookings': {
-    id: 'total-bookings', label: 'Total Bookings', description: 'Number of facility reservations',
-    category: 'general', reportType: 'facility', size: 'sm', icon: '\uD83D\uDCC5',
-    component: 'metric',
-    transform: (rows) => ({ value: rows.length, format: 'number' })
-  },
-  'avg-booking-value': {
-    id: 'avg-booking-value', label: 'Avg Booking Value', description: 'Average revenue per booking',
-    category: 'financial', reportType: 'facility', size: 'sm', icon: '\uD83D\uDCCA',
-    component: 'metric',
-    transform: (rows) => {
-      const total = rows.reduce((s, r) => s + (parseFloat(r['Total']) || 0), 0);
-      return { value: rows.length ? total / rows.length : 0, format: 'currency2' };
-    }
-  },
-  'unique-locations': {
-    id: 'unique-locations', label: 'Active Locations', description: 'Locations with bookings',
-    category: 'general', reportType: 'facility', size: 'sm', icon: '\uD83D\uDCCD',
-    component: 'metric',
-    transform: (rows) => ({
-      value: new Set(rows.map(r => r['Location']).filter(Boolean)).size,
-      format: 'number'
-    })
-  },
-  'total-headcount': {
-    id: 'total-headcount', label: 'Total Headcount', description: 'Sum of all attendees',
-    category: 'general', reportType: 'facility', size: 'sm', icon: '\uD83D\uDC65',
-    component: 'metric',
-    transform: (rows) => ({
-      value: rows.reduce((s, r) => s + (parseInt(r['Head Cnt']) || 0), 0),
-      format: 'number'
-    })
-  },
-  'revenue-by-location': {
-    id: 'revenue-by-location', label: 'Revenue by Location', description: 'Top locations ranked by revenue',
-    category: 'financial', reportType: 'facility', size: 'md', icon: '\uD83C\uDFE2',
-    component: 'bar',
-    transform: (rows) => {
-      const g = {};
-      rows.forEach(r => { const k = r['Location'] || 'Unknown'; g[k] = (g[k] || 0) + (parseFloat(r['Total']) || 0); });
-      const s = Object.entries(g).sort((a, b) => b[1] - a[1]).slice(0, 10);
-      return { labels: s.map(e => e[0]), values: s.map(e => e[1]), format: 'currency' };
-    }
-  },
-  'bookings-by-purpose': {
-    id: 'bookings-by-purpose', label: 'Bookings by Purpose', description: 'Breakdown of booking types',
-    category: 'general', reportType: 'facility', size: 'md', icon: '\uD83C\uDFAF',
-    component: 'donut',
-    transform: (rows) => {
-      const g = {};
-      rows.forEach(r => { const k = r['Purpose'] || 'Unknown'; g[k] = (g[k] || 0) + 1; });
-      const s = Object.entries(g).sort((a, b) => b[1] - a[1]).slice(0, 8);
-      return { labels: s.map(e => e[0]), values: s.map(e => e[1]) };
-    }
-  },
-  'daily-bookings-trend': {
-    id: 'daily-bookings-trend', label: 'Daily Bookings', description: 'Booking count over time',
-    category: 'general', reportType: 'facility', size: 'md', icon: '\uD83D\uDCC8',
-    component: 'line',
-    transform: (rows) => {
-      const g = {};
-      rows.forEach(r => { const d = r['Date']; if (d) g[d] = (g[d] || 0) + 1; });
-      const s = Object.entries(g).sort((a, b) => a[0].localeCompare(b[0]));
-      return { labels: s.map(e => shortDate(e[0])), values: s.map(e => e[1]) };
-    }
-  },
-  'revenue-trend': {
-    id: 'revenue-trend', label: 'Revenue Trend', description: 'Daily revenue over time',
-    category: 'financial', reportType: 'facility', size: 'md', icon: '\uD83D\uDCB9',
-    component: 'line',
-    transform: (rows) => {
-      const g = {};
-      rows.forEach(r => { const d = r['Date']; if (d) g[d] = (g[d] || 0) + (parseFloat(r['Total']) || 0); });
-      const s = Object.entries(g).sort((a, b) => a[0].localeCompare(b[0]));
-      return { labels: s.map(e => shortDate(e[0])), values: s.map(e => e[1]), format: 'currency' };
-    }
-  },
-  'bookings-by-day-of-week': {
-    id: 'bookings-by-day-of-week', label: 'Bookings by Day of Week', description: 'Which days are busiest',
-    category: 'general', reportType: 'facility', size: 'md', icon: '\uD83D\uDCC6',
-    component: 'bar',
-    transform: (rows) => {
+// ═══════════════════════════════════════════════════════
+const W = {
+  // ── Revenue / GL ──
+  'gl-total-revenue': { label: 'Total Revenue', description: 'Sum of all payments across GL codes', section: 'revenue',
+    reportType: 'gl', size: 'sm', icon: '\uD83D\uDCB0', component: 'metric',
+    transform: rows => ({ value: rows.reduce((s,r) => s + pf(r['Total Payments']), 0), format: 'currency', colorClass: 'metric-green' }) },
+  'gl-total-refunds': { label: 'Total Refunds', description: 'Sum of all refunds', section: 'revenue',
+    reportType: 'gl', size: 'sm', icon: '\uD83D\uDD04', component: 'metric',
+    transform: rows => ({ value: rows.reduce((s,r) => s + pf(r['Total Refunds']), 0), format: 'currency', colorClass: 'metric-red' }) },
+  'gl-net-revenue': { label: 'Net Revenue', description: 'Total payments minus refunds', section: 'revenue',
+    reportType: 'gl', size: 'sm', icon: '\uD83D\uDCC8', component: 'metric',
+    transform: rows => ({ value: rows.reduce((s,r) => s + pf(r['Net Amount']), 0), format: 'currency', colorClass: 'metric-green' }) },
+  'gl-transactions': { label: 'Transactions', description: 'Number of payment transactions', section: 'revenue',
+    reportType: 'gl', size: 'sm', icon: '\uD83D\uDCCB', component: 'metric',
+    transform: rows => ({ value: rows.reduce((s,r) => s + pf(r['Number of Payments']), 0), format: 'number' }) },
+  'gl-by-code': { label: 'Revenue by GL Code', description: 'Net revenue broken out by GL code', section: 'revenue',
+    reportType: 'gl', size: 'md', icon: '\uD83D\uDCCA', component: 'bar',
+    transform: rows => {
+      const g = {}; rows.forEach(r => { const k = r['GL Code'] || r['Account Name'] || 'Unknown'; g[k] = (g[k]||0) + pf(r['Net Amount']); });
+      const s = Object.entries(g).filter(e => e[1] > 0).sort((a,b) => b[1]-a[1]).slice(0,10);
+      return { labels: s.map(e=>e[0]), values: s.map(e=>e[1]), format: 'currency' };
+    }},
+  'gl-by-payment-method': { label: 'Revenue by Payment Method', description: 'Breakdown by how people paid', section: 'revenue',
+    reportType: 'gl', size: 'md', icon: '\uD83D\uDCB3', component: 'donut',
+    transform: rows => {
+      const methods = { 'Credit Card': 0, 'Cash': 0, 'Check': 0, 'Org Credit': 0, 'Free': 0, 'Gift Card': 0, 'Other': 0 };
+      rows.forEach(r => {
+        methods['Credit Card'] += pf(r['Credit Card Payments']) || (pf(r['CC Online Payments']) + pf(r['CC In-Person Payments']));
+        methods['Cash'] += pf(r['Cash Payments']); methods['Check'] += pf(r['Check Payments']);
+        methods['Org Credit'] += pf(r['Organization Credit Payments']); methods['Free'] += pf(r['Free Payments']);
+        methods['Gift Card'] += pf(r['Gift Card Payments']); methods['Other'] += pf(r['Other Payments']);
+      });
+      const s = Object.entries(methods).filter(e => e[1] > 0).sort((a,b) => b[1]-a[1]);
+      return { labels: s.map(e=>e[0]), values: s.map(e=>e[1]), format: 'currency' };
+    }},
+
+  // ── Facility Rentals ──
+  'rental-count': { label: 'Total Bookings', description: 'Number of facility reservations', section: 'facility',
+    reportType: 'facility', size: 'sm', icon: '\uD83D\uDCC5', component: 'metric',
+    transform: rows => ({ value: rows.length, format: 'number' }) },
+  'rental-revenue': { label: 'Rental Revenue', description: 'Sum of facility booking revenue', section: 'facility',
+    reportType: 'facility', size: 'sm', icon: '\uD83D\uDCB5', component: 'metric',
+    transform: rows => ({ value: rows.reduce((s,r) => s + pf(r['Total']), 0), format: 'currency', colorClass: 'metric-green' }) },
+  'rental-headcount': { label: 'Total Headcount', description: 'Sum of all attendees', section: 'facility',
+    reportType: 'facility', size: 'sm', icon: '\uD83D\uDC65', component: 'metric',
+    transform: rows => ({ value: rows.reduce((s,r) => s + (parseInt(r['Head Cnt'])||0), 0), format: 'number' }) },
+  'rental-locations': { label: 'Active Locations', description: 'Locations with bookings', section: 'facility',
+    reportType: 'facility', size: 'sm', icon: '\uD83D\uDCCD', component: 'metric',
+    transform: rows => ({ value: new Set(rows.map(r => r['Location']).filter(Boolean)).size, format: 'number' }) },
+  'rental-avg-value': { label: 'Avg Booking Value', description: 'Revenue per booking', section: 'facility',
+    reportType: 'facility', size: 'sm', icon: '\uD83D\uDCCA', component: 'metric',
+    transform: rows => { const t = rows.reduce((s,r)=>s+pf(r['Total']),0); return { value: rows.length ? t/rows.length : 0, format: 'currency2' }; } },
+  'rental-by-location': { label: 'Revenue by Location', description: 'Top locations by revenue', section: 'facility',
+    reportType: 'facility', size: 'md', icon: '\uD83C\uDFE2', component: 'bar',
+    transform: rows => {
+      const g = {}; rows.forEach(r => { const k = r['Location']||'Unknown'; g[k]=(g[k]||0)+pf(r['Total']); });
+      const s = Object.entries(g).sort((a,b)=>b[1]-a[1]).slice(0,10);
+      return { labels: s.map(e=>e[0]), values: s.map(e=>e[1]), format: 'currency' };
+    }},
+  'rental-daily-trend': { label: 'Daily Bookings', description: 'Booking count over time', section: 'facility',
+    reportType: 'facility', size: 'md', icon: '\uD83D\uDCC8', component: 'line',
+    transform: rows => {
+      const g = {}; rows.forEach(r => { const d = r['Date']; if(d) g[d]=(g[d]||0)+1; });
+      const s = Object.entries(g).sort((a,b)=>a[0].localeCompare(b[0]));
+      return { labels: s.map(e=>shortDate(e[0])), values: s.map(e=>e[1]) };
+    }},
+  'rental-revenue-trend': { label: 'Revenue Trend', description: 'Daily revenue over time', section: 'facility',
+    reportType: 'facility', size: 'md', icon: '\uD83D\uDCB9', component: 'line',
+    transform: rows => {
+      const g = {}; rows.forEach(r => { const d = r['Date']; if(d) g[d]=(g[d]||0)+pf(r['Total']); });
+      const s = Object.entries(g).sort((a,b)=>a[0].localeCompare(b[0]));
+      return { labels: s.map(e=>shortDate(e[0])), values: s.map(e=>e[1]), format: 'currency' };
+    }},
+  'rental-day-of-week': { label: 'Bookings by Day of Week', description: 'Which days are busiest', section: 'facility',
+    reportType: 'facility', size: 'md', icon: '\uD83D\uDCC6', component: 'bar',
+    transform: rows => {
       const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-      const c = {}; days.forEach(d => c[d] = 0);
-      rows.forEach(r => { const d = (r['Day'] || '').trim(); if (d in c) c[d]++; });
-      return { labels: days.map(d => d.slice(0, 3)), values: days.map(d => c[d]) };
-    }
-  },
-  'headcount-by-location': {
-    id: 'headcount-by-location', label: 'Headcount by Location', description: 'Attendees per location',
-    category: 'general', reportType: 'facility', size: 'md', icon: '\uD83C\uDFDF\uFE0F',
-    component: 'bar',
-    transform: (rows) => {
-      const g = {};
-      rows.forEach(r => { const k = r['Location'] || 'Unknown'; g[k] = (g[k] || 0) + (parseInt(r['Head Cnt']) || 0); });
-      const s = Object.entries(g).sort((a, b) => b[1] - a[1]).slice(0, 10);
-      return { labels: s.map(e => e[0]), values: s.map(e => e[1]) };
-    }
-  },
-  'revenue-by-site-type': {
-    id: 'revenue-by-site-type', label: 'Revenue by Site Type', description: 'Revenue split by facility type',
-    category: 'financial', reportType: 'facility', size: 'md', icon: '\uD83C\uDFD7\uFE0F',
-    component: 'donut',
-    transform: (rows) => {
-      const g = {};
-      rows.forEach(r => { const k = r['Site Type'] || 'Unknown'; g[k] = (g[k] || 0) + (parseFloat(r['Total']) || 0); });
-      const s = Object.entries(g).sort((a, b) => b[1] - a[1]).slice(0, 8);
-      return { labels: s.map(e => e[0]), values: s.map(e => e[1]), format: 'currency' };
-    }
-  }
+      const c = {}; days.forEach(d => c[d]=0);
+      rows.forEach(r => { const d=(r['Day']||'').trim(); if(d in c) c[d]++; });
+      return { labels: days.map(d=>d.slice(0,3)), values: days.map(d=>c[d]) };
+    }},
+  'rental-by-site-type': { label: 'Revenue by Site Type', description: 'Revenue split by facility type', section: 'facility',
+    reportType: 'facility', size: 'md', icon: '\uD83C\uDFD7\uFE0F', component: 'donut',
+    transform: rows => {
+      const g = {}; rows.forEach(r => { const k = r['Site Type']||'Unknown'; g[k]=(g[k]||0)+pf(r['Total']); });
+      const s = Object.entries(g).sort((a,b)=>b[1]-a[1]).slice(0,8);
+      return { labels: s.map(e=>e[0]), values: s.map(e=>e[1]), format: 'currency' };
+    }},
+  'rental-headcount-by-loc': { label: 'Headcount by Location', description: 'Attendees per location', section: 'facility',
+    reportType: 'facility', size: 'md', icon: '\uD83C\uDFDF\uFE0F', component: 'bar',
+    transform: rows => {
+      const g = {}; rows.forEach(r => { const k = r['Location']||'Unknown'; g[k]=(g[k]||0)+(parseInt(r['Head Cnt'])||0); });
+      const s = Object.entries(g).sort((a,b)=>b[1]-a[1]).slice(0,10);
+      return { labels: s.map(e=>e[0]), values: s.map(e=>e[1]) };
+    }},
+
+  // ── Programs ──
+  'program-enrollments': { label: 'Total Enrollments', description: 'Sum of program enrollments', section: 'programs',
+    reportType: 'programs', size: 'sm', icon: '\uD83C\uDF93', component: 'metric',
+    transform: rows => ({ value: rows.reduce((s,r) => s + (parseInt(r['Enrollments'] || r['Enrolled'])||0), 0), format: 'number' }) },
+  'program-revenue': { label: 'Program Revenue', description: 'Net revenue from programs', section: 'programs',
+    reportType: 'programs', size: 'sm', icon: '\uD83D\uDCB0', component: 'metric',
+    transform: rows => ({ value: rows.reduce((s,r) => s + pf(r['Net Revenue'] || r['Net Total'] || r['Charged']), 0), format: 'currency', colorClass: 'metric-green' }) },
+  'program-cancellations': { label: 'Cancellations', description: 'Total cancelled enrollments', section: 'programs',
+    reportType: 'programs', size: 'sm', icon: '\u274C', component: 'metric',
+    transform: rows => ({ value: rows.reduce((s,r) => s + (parseInt(r['Cancellations'])||0), 0), format: 'number', colorClass: 'metric-red' }) },
+  'program-top': { label: 'Top Programs', description: 'Programs ranked by enrollment', section: 'programs',
+    reportType: 'programs', size: 'md', icon: '\uD83C\uDFC6', component: 'bar',
+    transform: rows => {
+      const g = {}; rows.forEach(r => { const k = r['Program']||r['program']||'Unknown'; g[k]=(g[k]||0)+(parseInt(r['Enrollments']||r['Enrolled'])||0); });
+      const s = Object.entries(g).sort((a,b)=>b[1]-a[1]).slice(0,10);
+      return { labels: s.map(e=>e[0]), values: s.map(e=>e[1]) };
+    }},
+  'program-revenue-by-prog': { label: 'Revenue by Program', description: 'Programs ranked by revenue', section: 'programs',
+    reportType: 'programs', size: 'md', icon: '\uD83D\uDCCA', component: 'bar',
+    transform: rows => {
+      const g = {}; rows.forEach(r => { const k = r['Program']||'Unknown'; g[k]=(g[k]||0)+pf(r['Net Revenue']||r['Net Total']||r['Charged']); });
+      const s = Object.entries(g).filter(e=>e[1]>0).sort((a,b)=>b[1]-a[1]).slice(0,10);
+      return { labels: s.map(e=>e[0]), values: s.map(e=>e[1]), format: 'currency' };
+    }},
 };
 
-// ═══════════════════════════════════════════
+// ═══════════════════════════════════════════════════════
 //  DASHBOARD TEMPLATES
-// ═══════════════════════════════════════════
-const DASHBOARD_TEMPLATES = {
-  general: {
-    label: 'General Overview',
-    description: 'Broad view across bookings, revenue, and activity',
-    icon: '\uD83D\uDCCA',
-    widgets: ['total-revenue','total-bookings','total-headcount','unique-locations','revenue-by-location','revenue-by-site-type','daily-bookings-trend','bookings-by-day-of-week']
-  },
-  financial: {
-    label: 'Revenue Focus',
-    description: 'Deep dive into revenue metrics and trends',
-    icon: '\uD83D\uDCB0',
-    widgets: ['total-revenue','avg-booking-value','total-bookings','total-headcount','revenue-by-location','revenue-trend','revenue-by-site-type','headcount-by-location']
-  },
-  operations: {
-    label: 'Operations',
-    description: 'Booking patterns, utilization, and capacity',
-    icon: '\u2699\uFE0F',
-    widgets: ['total-bookings','unique-locations','total-headcount','avg-booking-value','bookings-by-day-of-week','daily-bookings-trend','headcount-by-location','revenue-by-site-type']
-  }
+// ═══════════════════════════════════════════════════════
+const TEMPLATES = {
+  general: { label: 'General Overview', icon: '\uD83D\uDCCA', description: 'Revenue, rentals, and programs at a glance',
+    sections: [
+      { id: 'revenue', widgets: ['gl-total-revenue','gl-total-refunds','gl-net-revenue','gl-transactions','gl-by-code','gl-by-payment-method'] },
+      { id: 'facility', widgets: ['rental-count','rental-revenue','rental-headcount','rental-locations','rental-by-location','rental-daily-trend'] },
+      { id: 'programs', widgets: ['program-enrollments','program-revenue','program-cancellations','program-top'] },
+    ]},
+  financial: { label: 'Revenue Focus', icon: '\uD83D\uDCB0', description: 'Deep dive into revenue metrics and trends',
+    sections: [
+      { id: 'revenue', widgets: ['gl-total-revenue','gl-total-refunds','gl-net-revenue','gl-transactions','gl-by-code','gl-by-payment-method'] },
+      { id: 'facility', widgets: ['rental-revenue','rental-avg-value','rental-by-location','rental-revenue-trend','rental-by-site-type'] },
+    ]},
+  operations: { label: 'Operations', icon: '\u2699\uFE0F', description: 'Bookings, utilization, and activity patterns',
+    sections: [
+      { id: 'facility', widgets: ['rental-count','rental-locations','rental-headcount','rental-avg-value','rental-day-of-week','rental-daily-trend','rental-headcount-by-loc'] },
+      { id: 'programs', widgets: ['program-enrollments','program-cancellations','program-top','program-revenue-by-prog'] },
+    ]},
 };
 
-// ═══════════════════════════════════════════
+// ═══════════════════════════════════════════════════════
 //  DATA LAYER
-// ═══════════════════════════════════════════
+// ═══════════════════════════════════════════════════════
 const dataStore = {};
-
-async function fetchReportData(reportType, dateRange) {
-  const key = `${reportType}:${dateRange.start}:${dateRange.end}`;
+async function fetchReportData(rt, dr) {
+  const key = `${rt}:${dr.start}:${dr.end}`;
   if (dataStore[key]) return dataStore[key];
-  const qs = new URLSearchParams({ token: TOKEN, start: dateRange.start, end: dateRange.end });
-  const resp = await fetch(`/${ORG_SLUG}/api/data/${reportType}?${qs}`);
-  if (!resp.ok) throw new Error(`Failed: ${resp.status}`);
+  const qs = new URLSearchParams({ token: TOKEN, start: dr.start, end: dr.end });
+  const resp = await fetch(`/${ORG_SLUG}/api/data/${rt}?${qs}`);
+  if (!resp.ok) return [];
   const json = await resp.json();
   dataStore[key] = json.rows || [];
   return dataStore[key];
 }
-
 function clearDataStore() { Object.keys(dataStore).forEach(k => delete dataStore[k]); }
 
-// ═══════════════════════════════════════════
+// ═══════════════════════════════════════════════════════
 //  CHART DEFAULTS
-// ═══════════════════════════════════════════
-Chart.defaults.color = '#888';
-Chart.defaults.borderColor = '#262626';
+// ═══════════════════════════════════════════════════════
+Chart.defaults.color = '#888'; Chart.defaults.borderColor = '#262626';
 Chart.defaults.font.family = "'Inter', sans-serif";
 Chart.defaults.plugins.legend.display = false;
 Chart.defaults.plugins.tooltip.backgroundColor = '#1e1e1e';
@@ -410,246 +354,223 @@ Chart.defaults.plugins.tooltip.borderWidth = 1;
 Chart.defaults.plugins.tooltip.cornerRadius = 6;
 Chart.defaults.plugins.tooltip.padding = 10;
 
-// ═══════════════════════════════════════════
-//  WIDGET COMPONENTS
-// ═══════════════════════════════════════════
-
-function MetricCard({ data, widgetDef }) {
+// ═══════════════════════════════════════════════════════
+//  CHART COMPONENTS
+// ═══════════════════════════════════════════════════════
+function MetricCard({ data }) {
   if (!data) return <div className="skeleton skeleton-metric" />;
-  return (
-    <div>
-      <div className={`metric-value ${data.format === 'currency' || data.format === 'currency2' ? 'currency' : ''}`}>
-        {fmt(data.value, data.format)}
-      </div>
-    </div>
-  );
+  return <div className={`metric-value ${data.colorClass || ''}`}>{fmt(data.value, data.format)}</div>;
 }
 
-function BarChartWidget({ data, widgetDef }) {
-  const canvasRef = useRef(null);
-  const chartRef = useRef(null);
-
+function BarChartWidget({ data }) {
+  const ref = useRef(null), chart = useRef(null);
   useEffect(() => {
-    if (chartRef.current) chartRef.current.destroy();
-    if (!canvasRef.current || !data) return;
-    const isHorizontal = data.labels.length > 5;
-    chartRef.current = new Chart(canvasRef.current, {
-      type: 'bar',
-      data: {
-        labels: data.labels,
-        datasets: [{ data: data.values, backgroundColor: CHART_COLORS.slice(0, data.values.length), borderRadius: 4, maxBarThickness: 40 }]
-      },
-      options: {
-        indexAxis: isHorizontal ? 'y' : 'x',
-        responsive: true, maintainAspectRatio: false,
-        scales: {
-          x: { grid: { display: !isHorizontal }, ticks: { callback: v => data.format === 'currency' ? '$' + (v/1000).toFixed(0) + 'k' : v } },
-          y: { grid: { display: isHorizontal }, ticks: isHorizontal ? {} : { callback: v => data.format === 'currency' ? '$' + (v/1000).toFixed(0) + 'k' : v } }
-        }
-      }
+    if (chart.current) chart.current.destroy();
+    if (!ref.current || !data) return;
+    const horiz = data.labels.length > 5;
+    chart.current = new Chart(ref.current, { type: 'bar',
+      data: { labels: data.labels, datasets: [{ data: data.values, backgroundColor: CHART_COLORS.slice(0, data.values.length), borderRadius: 4, maxBarThickness: 40 }] },
+      options: { indexAxis: horiz?'y':'x', responsive: true, maintainAspectRatio: false,
+        scales: { x: { grid: { display: !horiz }, ticks: { callback: v => data.format==='currency' ? '$'+(v>=1000?(v/1000).toFixed(0)+'k':v) : v } },
+                  y: { grid: { display: horiz }, ticks: horiz ? {} : { callback: v => data.format==='currency' ? '$'+(v>=1000?(v/1000).toFixed(0)+'k':v) : v } } } }
     });
-    return () => { if (chartRef.current) chartRef.current.destroy(); };
+    return () => { if (chart.current) chart.current.destroy(); };
   }, [data]);
-
   if (!data) return <div className="skeleton skeleton-chart" />;
-  return <div className="chart-container"><canvas ref={canvasRef} /></div>;
+  return <div className="chart-container"><canvas ref={ref} /></div>;
 }
 
-function DonutChartWidget({ data, widgetDef }) {
-  const canvasRef = useRef(null);
-  const chartRef = useRef(null);
-
+function DonutChartWidget({ data }) {
+  const ref = useRef(null), chart = useRef(null);
   useEffect(() => {
-    if (chartRef.current) chartRef.current.destroy();
-    if (!canvasRef.current || !data) return;
-    chartRef.current = new Chart(canvasRef.current, {
-      type: 'doughnut',
-      data: {
-        labels: data.labels,
-        datasets: [{ data: data.values, backgroundColor: CHART_COLORS.slice(0, data.values.length), borderWidth: 0, spacing: 2 }]
-      },
-      options: {
-        responsive: true, maintainAspectRatio: false, cutout: '65%',
-        plugins: {
-          legend: { display: true, position: 'right', labels: { boxWidth: 10, padding: 10, font: { size: 11 }, color: '#aaa' } },
-          tooltip: { callbacks: { label: ctx => {
-            const v = ctx.raw;
-            return `${ctx.label}: ${data.format === 'currency' ? fmt(v, 'currency') : v.toLocaleString()}`;
-          }}}
-        }
-      }
+    if (chart.current) chart.current.destroy();
+    if (!ref.current || !data) return;
+    chart.current = new Chart(ref.current, { type: 'doughnut',
+      data: { labels: data.labels, datasets: [{ data: data.values, backgroundColor: CHART_COLORS.slice(0, data.values.length), borderWidth: 0, spacing: 2 }] },
+      options: { responsive: true, maintainAspectRatio: false, cutout: '65%',
+        plugins: { legend: { display: true, position: 'right', labels: { boxWidth: 10, padding: 8, font: { size: 11 }, color: '#aaa' } },
+          tooltip: { callbacks: { label: ctx => `${ctx.label}: ${data.format==='currency' ? fmt(ctx.raw,'currency') : ctx.raw.toLocaleString()}` } } } }
     });
-    return () => { if (chartRef.current) chartRef.current.destroy(); };
+    return () => { if (chart.current) chart.current.destroy(); };
   }, [data]);
-
   if (!data) return <div className="skeleton skeleton-chart" />;
-  return <div className="chart-container"><canvas ref={canvasRef} /></div>;
+  return <div className="chart-container"><canvas ref={ref} /></div>;
 }
 
-function LineChartWidget({ data, widgetDef }) {
-  const canvasRef = useRef(null);
-  const chartRef = useRef(null);
-
+function LineChartWidget({ data }) {
+  const ref = useRef(null), chart = useRef(null);
   useEffect(() => {
-    if (chartRef.current) chartRef.current.destroy();
-    if (!canvasRef.current || !data) return;
-    chartRef.current = new Chart(canvasRef.current, {
-      type: 'line',
-      data: {
-        labels: data.labels,
-        datasets: [{
-          data: data.values, borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.08)',
-          fill: true, tension: 0.3, pointRadius: 3, pointHoverRadius: 6, borderWidth: 2
-        }]
-      },
-      options: {
-        responsive: true, maintainAspectRatio: false,
-        scales: {
-          x: { grid: { display: false }, ticks: { maxTicksLimit: 12, font: { size: 10 } } },
-          y: { ticks: { callback: v => data.format === 'currency' ? '$' + (v >= 1000 ? (v/1000).toFixed(0) + 'k' : v) : v } }
-        }
-      }
+    if (chart.current) chart.current.destroy();
+    if (!ref.current || !data) return;
+    chart.current = new Chart(ref.current, { type: 'line',
+      data: { labels: data.labels, datasets: [{ data: data.values, borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.08)',
+        fill: true, tension: 0.3, pointRadius: 3, pointHoverRadius: 6, borderWidth: 2 }] },
+      options: { responsive: true, maintainAspectRatio: false,
+        scales: { x: { grid: { display: false }, ticks: { maxTicksLimit: 12, font: { size: 10 } } },
+                  y: { ticks: { callback: v => data.format==='currency' ? '$'+(v>=1000?(v/1000).toFixed(0)+'k':v) : v } } } }
     });
-    return () => { if (chartRef.current) chartRef.current.destroy(); };
+    return () => { if (chart.current) chart.current.destroy(); };
   }, [data]);
-
   if (!data) return <div className="skeleton skeleton-chart" />;
-  return <div className="chart-container"><canvas ref={canvasRef} /></div>;
+  return <div className="chart-container"><canvas ref={ref} /></div>;
 }
 
-const COMPONENT_MAP = { metric: MetricCard, bar: BarChartWidget, donut: DonutChartWidget, line: LineChartWidget };
+const COMP = { metric: MetricCard, bar: BarChartWidget, donut: DonutChartWidget, line: LineChartWidget };
 
-// ═══════════════════════════════════════════
-//  WIDGET WRAPPER
-// ═══════════════════════════════════════════
 function WidgetCard({ widgetId, reportData, loading }) {
-  const def = WIDGET_REGISTRY[widgetId];
-  if (!def) return null;
-  const Comp = COMPONENT_MAP[def.component];
-  if (!Comp) return null;
-
-  const rawRows = reportData[def.reportType];
-  const transformed = rawRows ? def.transform(rawRows) : null;
-  const sizeClass = def.size === 'sm' ? 'widget-sm' : 'widget-md';
-
+  const def = W[widgetId]; if (!def) return null;
+  const Comp = COMP[def.component]; if (!Comp) return null;
+  const raw = reportData[def.reportType];
+  const data = raw ? def.transform(raw) : null;
   return (
-    <div className={`widget-card ${sizeClass}`}>
+    <div className={`widget-card ${def.size==='sm'?'widget-sm':'widget-md'}`}>
       <div className="widget-header">
         <span className="widget-label">{def.label}</span>
         <span className="widget-icon">{def.icon}</span>
       </div>
-      {loading && !transformed ? (
-        <div className={def.component === 'metric' ? 'skeleton skeleton-metric' : 'skeleton skeleton-chart'} />
-      ) : (
-        <Comp data={transformed} widgetDef={def} />
-      )}
+      {loading && !data ? <div className={def.component==='metric'?'skeleton skeleton-metric':'skeleton skeleton-chart'} />
+        : <Comp data={data} />}
     </div>
   );
 }
 
-// ═══════════════════════════════════════════
-//  EDIT MODAL
-// ═══════════════════════════════════════════
-function EditModal({ activeIds, onSave, onClose, availableReports }) {
-  const [selected, setSelected] = useState([...activeIds]);
-
-  const toggle = (id) => {
-    setSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
-  };
-
-  const moveUp = (idx) => {
-    if (idx === 0) return;
-    setSelected(prev => { const n = [...prev]; [n[idx-1], n[idx]] = [n[idx], n[idx-1]]; return n; });
-  };
-
-  const moveDown = (idx) => {
-    if (idx >= selected.length - 1) return;
-    setSelected(prev => { const n = [...prev]; [n[idx], n[idx+1]] = [n[idx+1], n[idx]]; return n; });
-  };
-
-  const available = Object.values(WIDGET_REGISTRY).filter(w =>
-    !selected.includes(w.id) && availableReports[w.reportType]
+// ═══════════════════════════════════════════════════════
+//  SECTION BLOCK
+// ═══════════════════════════════════════════════════════
+function SectionBlock({ sectionId, widgetIds, reportData, loading }) {
+  const sec = SECTIONS[sectionId]; if (!sec) return null;
+  return (
+    <div className="dashboard-section">
+      <div className="section-header">
+        <span className="section-icon">{sec.icon}</span>
+        <span className="section-label">{sec.label}</span>
+        <div className="section-line" />
+        <span className="section-badge">{widgetIds.length} widgets</span>
+      </div>
+      <div className="widget-grid">
+        {widgetIds.map(id => <WidgetCard key={id} widgetId={id} reportData={reportData} loading={loading} />)}
+      </div>
+    </div>
   );
+}
 
-  const grouped = {};
-  available.forEach(w => { (grouped[w.reportType] = grouped[w.reportType] || []).push(w); });
+// ═══════════════════════════════════════════════════════
+//  EDIT MODAL
+// ═══════════════════════════════════════════════════════
+function EditModal({ sections, onSave, onClose, availableReports }) {
+  const [draft, setDraft] = useState(sections.map(s => ({ ...s, widgets: [...s.widgets] })));
+  const [expanded, setExpanded] = useState(sections[0]?.id || '');
+
+  function removeSection(idx) { setDraft(d => d.filter((_,i) => i!==idx)); }
+  function moveSection(idx, dir) {
+    setDraft(d => { const n=[...d]; const j=idx+dir; if(j<0||j>=n.length) return n; [n[idx],n[j]]=[n[j],n[idx]]; return n; });
+  }
+  function addSection(secId) {
+    const sec = SECTIONS[secId]; if (!sec) return;
+    setDraft(d => [...d, { id: secId, widgets: [...sec.defaultWidgets] }]);
+    setExpanded(secId);
+  }
+  function toggleWidget(secIdx, widgetId) {
+    setDraft(d => { const n = d.map((s,i) => i===secIdx ? { ...s, widgets: s.widgets.includes(widgetId) ? s.widgets.filter(w=>w!==widgetId) : [...s.widgets, widgetId] } : s); return n; });
+  }
+  function moveWidget(secIdx, wIdx, dir) {
+    setDraft(d => d.map((s,i) => { if (i!==secIdx) return s; const w=[...s.widgets]; const j=wIdx+dir; if(j<0||j>=w.length) return s; [w[wIdx],w[j]]=[w[j],w[wIdx]]; return { ...s, widgets: w }; }));
+  }
+
+  const activeSectionIds = new Set(draft.map(s => s.id));
+  const availableSections = Object.values(SECTIONS).filter(s => !activeSectionIds.has(s.id));
 
   return (
-    <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <div className="modal-overlay" onClick={e => { if (e.target===e.currentTarget) onClose(); }}>
       <div className="modal-panel">
         <div className="modal-header">
-          <span className="modal-title">Edit Widgets</span>
+          <span className="modal-title">Edit Dashboard</span>
           <button className="modal-close" onClick={onClose}>{'\u2715'}</button>
         </div>
         <div className="modal-body">
-          <div className="modal-section-title">Active Widgets ({selected.length})</div>
-          {selected.map((id, idx) => {
-            const w = WIDGET_REGISTRY[id];
-            if (!w) return null;
+          {draft.map((sec, si) => {
+            const secDef = SECTIONS[sec.id]; if (!secDef) return null;
+            const isOpen = expanded === sec.id;
+            const poolWidgets = Object.entries(W).filter(([id,w]) => w.section===sec.id && !sec.widgets.includes(id));
             return (
-              <div key={id} className="widget-list-item">
-                <span className="widget-list-icon">{w.icon}</span>
-                <div className="widget-list-info">
-                  <div className="widget-list-name">{w.label}</div>
-                  <div className="widget-list-desc">{w.description}</div>
+              <div key={sec.id+si} className="edit-section">
+                <div className="edit-section-header" onClick={() => setExpanded(isOpen ? '' : sec.id)}>
+                  <span style={{fontSize:18}}>{secDef.icon}</span>
+                  <span className="edit-section-title">{secDef.label}</span>
+                  <span style={{fontSize:11,color:'var(--text-muted)'}}>{sec.widgets.length} widgets</span>
+                  <div style={{display:'flex',gap:3}}>
+                    <button className="btn btn-sm" onClick={e=>{e.stopPropagation();moveSection(si,-1);}} disabled={si===0}>{'\u25B2'}</button>
+                    <button className="btn btn-sm" onClick={e=>{e.stopPropagation();moveSection(si,1);}} disabled={si===draft.length-1}>{'\u25BC'}</button>
+                    <button className="btn btn-sm" style={{color:'#ef4444'}} onClick={e=>{e.stopPropagation();removeSection(si);}}>{'\u2715'}</button>
+                  </div>
                 </div>
-                <div className="widget-list-action" style={{ display: 'flex', gap: 4 }}>
-                  <button className="btn btn-sm" onClick={() => moveUp(idx)} disabled={idx === 0}>{'\u25B2'}</button>
-                  <button className="btn btn-sm" onClick={() => moveDown(idx)} disabled={idx >= selected.length - 1}>{'\u25BC'}</button>
-                  <button className="btn btn-sm" style={{ color: '#ef4444' }} onClick={() => toggle(id)}>{'\u2715'}</button>
-                </div>
+                {isOpen && (
+                  <div className="edit-section-body">
+                    <div className="mini-label">Active</div>
+                    {sec.widgets.map((wId, wi) => {
+                      const wd = W[wId]; if (!wd) return null;
+                      return (
+                        <div key={wId} className="widget-list-item">
+                          <span className="widget-list-icon">{wd.icon}</span>
+                          <div className="widget-list-info"><div className="widget-list-name">{wd.label}</div><div className="widget-list-desc">{wd.description}</div></div>
+                          <div style={{display:'flex',gap:3}}>
+                            <button className="btn btn-sm" onClick={()=>moveWidget(si,wi,-1)} disabled={wi===0}>{'\u25B2'}</button>
+                            <button className="btn btn-sm" onClick={()=>moveWidget(si,wi,1)} disabled={wi>=sec.widgets.length-1}>{'\u25BC'}</button>
+                            <button className="btn btn-sm" style={{color:'#ef4444'}} onClick={()=>toggleWidget(si,wId)}>{'\u2715'}</button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {poolWidgets.length > 0 && <>
+                      <div className="mini-label">Available</div>
+                      {poolWidgets.map(([id,wd]) => (
+                        <div key={id} className="widget-list-item">
+                          <span className="widget-list-icon">{wd.icon}</span>
+                          <div className="widget-list-info"><div className="widget-list-name">{wd.label}</div><div className="widget-list-desc">{wd.description}</div></div>
+                          <button className="btn btn-sm" style={{color:'var(--green)'}} onClick={()=>toggleWidget(si,id)}>+</button>
+                        </div>
+                      ))}
+                    </>}
+                  </div>
+                )}
               </div>
             );
           })}
-
-          {Object.entries(grouped).length > 0 && (
-            <div style={{ marginTop: 24 }}>
-              <div className="modal-section-title">Available Widgets</div>
-              {Object.entries(grouped).map(([rt, widgets]) => (
-                <div key={rt} style={{ marginBottom: 16 }}>
-                  <span className={`badge badge-${rt}`}>{rt}</span>
-                  <div style={{ marginTop: 6 }}>
-                    {widgets.map(w => (
-                      <div key={w.id} className="widget-list-item">
-                        <span className="widget-list-icon">{w.icon}</span>
-                        <div className="widget-list-info">
-                          <div className="widget-list-name">{w.label}</div>
-                          <div className="widget-list-desc">{w.description}</div>
-                        </div>
-                        <button className="btn btn-sm" style={{ color: 'var(--green)' }} onClick={() => toggle(w.id)}>+</button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+          {availableSections.length > 0 && <>
+            <div className="mini-label" style={{marginTop:16}}>Add a Section</div>
+            {availableSections.map(sec => (
+              <button key={sec.id} className="add-section-btn" onClick={() => addSection(sec.id)} style={{marginBottom:8}}>
+                <span style={{fontSize:20}}>{sec.icon}</span>
+                <div style={{textAlign:'left'}}><div style={{fontWeight:600}}>{sec.label}</div><div style={{fontSize:11,opacity:0.6}}>{sec.description}</div></div>
+              </button>
+            ))}
+          </>}
         </div>
         <div className="modal-footer">
           <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn btn-amber" onClick={() => onSave(selected)}>Save Layout</button>
+          <button className="btn btn-amber" onClick={() => onSave(draft)}>Save Layout</button>
         </div>
       </div>
     </div>
   );
 }
 
-// ═══════════════════════════════════════════
+// ═══════════════════════════════════════════════════════
 //  TEMPLATE CHOOSER
-// ═══════════════════════════════════════════
+// ═══════════════════════════════════════════════════════
 function TemplateChooser({ onSelect }) {
   return (
     <div className="template-overlay">
       <div className="template-container">
         <div className="template-heading">Build Your Dashboard</div>
-        <div className="template-sub">Pick a starting point — you can add, remove, and rearrange widgets anytime.</div>
+        <div className="template-sub">Pick a starting point — you can add, remove, and rearrange everything after.</div>
         <div className="template-grid">
-          {Object.entries(DASHBOARD_TEMPLATES).map(([key, tmpl]) => (
+          {Object.entries(TEMPLATES).map(([key, t]) => (
             <div key={key} className="template-card" onClick={() => onSelect(key)}>
-              <div className="template-card-icon">{tmpl.icon}</div>
-              <div className="template-card-name">{tmpl.label}</div>
-              <div className="template-card-desc">{tmpl.description}</div>
-              <div style={{ marginTop: 12, fontSize: 11, color: 'var(--text-muted)' }}>{tmpl.widgets.length} widgets</div>
+              <div className="template-card-icon">{t.icon}</div>
+              <div className="template-card-name">{t.label}</div>
+              <div className="template-card-desc">{t.description}</div>
+              <div style={{marginTop:12,fontSize:11,color:'var(--text-muted)'}}>{t.sections.length} sections · {t.sections.reduce((s,sec)=>s+sec.widgets.length,0)} widgets</div>
             </div>
           ))}
         </div>
@@ -658,33 +579,29 @@ function TemplateChooser({ onSelect }) {
   );
 }
 
-// ═══════════════════════════════════════════
-//  SETTINGS POPOVER
-// ═══════════════════════════════════════════
-function SettingsPopover({ cacheTTL, onCacheTTLChange, onClearCache, onClose }) {
+// ═══════════════════════════════════════════════════════
+//  SETTINGS
+// ═══════════════════════════════════════════════════════
+function SettingsPopover({ cacheTTL, onCacheTTLChange, onClearCache }) {
   return (
-    <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 6, background: 'var(--bg-modal)', border: '1px solid var(--border)',
-      borderRadius: 10, padding: 16, width: 260, zIndex: 60, boxShadow: '0 12px 32px rgba(0,0,0,0.5)' }} onClick={e => e.stopPropagation()}>
-      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Dashboard Settings</div>
-      <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 6 }}>Cache Duration</div>
-      <select value={cacheTTL} onChange={e => onCacheTTLChange(Number(e.target.value))}
-        style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-surface)', color: 'var(--text-primary)', fontSize: 13, marginBottom: 12 }}>
-        <option value={5}>5 minutes</option>
-        <option value={15}>15 minutes (default)</option>
-        <option value={30}>30 minutes</option>
-        <option value={60}>1 hour</option>
-        <option value={240}>4 hours</option>
+    <div style={{ position:'absolute',top:'100%',right:0,marginTop:6,background:'var(--bg-modal)',border:'1px solid var(--border)',
+      borderRadius:10,padding:16,width:260,zIndex:60,boxShadow:'0 12px 32px rgba(0,0,0,0.5)' }} onClick={e=>e.stopPropagation()}>
+      <div style={{fontSize:13,fontWeight:600,marginBottom:12}}>Dashboard Settings</div>
+      <div style={{fontSize:12,color:'var(--text-secondary)',marginBottom:6}}>Cache Duration</div>
+      <select value={cacheTTL} onChange={e=>onCacheTTLChange(Number(e.target.value))}
+        style={{width:'100%',padding:'6px 8px',borderRadius:6,border:'1px solid var(--border)',background:'var(--bg-surface)',color:'var(--text-primary)',fontSize:13,marginBottom:12}}>
+        <option value={5}>5 minutes</option><option value={15}>15 minutes</option><option value={30}>30 minutes</option><option value={60}>1 hour</option><option value={240}>4 hours</option>
       </select>
-      <button className="btn" style={{ width: '100%', fontSize: 12 }} onClick={onClearCache}>Clear Cache Now</button>
+      <button className="btn" style={{width:'100%',fontSize:12}} onClick={onClearCache}>Clear Cache Now</button>
     </div>
   );
 }
 
-// ═══════════════════════════════════════════
+// ═══════════════════════════════════════════════════════
 //  MAIN APP
-// ═══════════════════════════════════════════
+// ═══════════════════════════════════════════════════════
 function DashboardApp() {
-  const [config, setConfig] = useState(null);         // null = loading, 'new' = needs template
+  const [config, setConfig] = useState(null);
   const [orgMeta, setOrgMeta] = useState({});
   const [availableReports, setAvailableReports] = useState({});
   const [dateRange, setDateRange] = useState(getMonthRange(0));
@@ -695,181 +612,108 @@ function DashboardApp() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [lastRefresh, setLastRefresh] = useState(null);
 
-  // Load org config on mount
   useEffect(() => {
     (async () => {
       try {
-        const qs = new URLSearchParams({ token: TOKEN });
-        const resp = await fetch(`/${ORG_SLUG}/api/config?${qs}`);
+        const resp = await fetch(`/${ORG_SLUG}/api/config?token=${TOKEN}`);
         const json = await resp.json();
         setAvailableReports(json.availableReports || {});
         setOrgMeta({ name: json.orgName, logoUrl: json.logoUrl });
-        if (json.config && json.config.widgets && json.config.widgets.length > 0) {
+        if (json.config?.sections?.length > 0) {
           setConfig(json.config);
           if (json.config.datePreset) applyPreset(json.config.datePreset);
-        } else {
-          setConfig('new');
-        }
-      } catch (e) { console.error('Config load failed:', e); setConfig('new'); }
+        } else { setConfig('new'); }
+      } catch (e) { setConfig('new'); }
     })();
   }, []);
 
-  // Fetch data whenever config or dateRange changes
   useEffect(() => {
     if (!config || config === 'new') { setLoading(false); return; }
-    const widgetIds = config.widgets.map(w => typeof w === 'string' ? w : w.id);
-    const reportTypes = [...new Set(widgetIds.map(id => WIDGET_REGISTRY[id]?.reportType).filter(Boolean))];
-    if (reportTypes.length === 0) { setLoading(false); return; }
-
-    setLoading(true);
-    clearDataStore();
-    Promise.all(reportTypes.map(rt => fetchReportData(rt, dateRange).then(rows => [rt, rows]).catch(() => [rt, []])))
+    const allWidgetIds = config.sections.flatMap(s => s.widgets);
+    const rts = [...new Set(allWidgetIds.map(id => W[id]?.reportType).filter(Boolean))];
+    if (!rts.length) { setLoading(false); return; }
+    setLoading(true); clearDataStore();
+    Promise.all(rts.map(rt => fetchReportData(rt, dateRange).then(rows => [rt, rows]).catch(() => [rt, []])))
       .then(results => {
-        const rd = {};
-        results.forEach(([rt, rows]) => { rd[rt] = rows; });
-        setReportData(rd);
-        setLoading(false);
-        setLastRefresh(new Date());
+        const rd = {}; results.forEach(([rt, rows]) => { rd[rt] = rows; });
+        setReportData(rd); setLoading(false); setLastRefresh(new Date());
       });
   }, [config, dateRange]);
 
-  function applyPreset(preset) {
-    setDatePreset(preset);
-    if (preset === 'thisMonth') setDateRange(getMonthRange(0));
-    else if (preset === 'lastMonth') setDateRange(getMonthRange(-1));
-    else if (preset === 'last3') {
-      const r = getMonthRange(-2);
-      r.end = getMonthRange(0).end;
-      setDateRange(r);
-    } else if (preset === 'ytd') {
-      const now = new Date();
-      setDateRange({ start: `${now.getFullYear()}-01-01`, end: now.toISOString().split('T')[0] });
-    }
-  }
-
-  async function handleSelectTemplate(templateKey) {
-    const tmpl = DASHBOARD_TEMPLATES[templateKey];
-    const newConfig = {
-      template: templateKey,
-      widgets: tmpl.widgets.map((id, i) => ({ id, order: i })),
-      cacheTTL: 15,
-      datePreset: 'thisMonth'
-    };
-    setConfig(newConfig);
-    await saveConfig(newConfig);
-  }
-
-  async function handleSaveWidgets(widgetIds) {
-    const newConfig = {
-      ...config,
-      widgets: widgetIds.map((id, i) => ({ id, order: i }))
-    };
-    setConfig(newConfig);
-    setEditOpen(false);
-    await saveConfig(newConfig);
+  function applyPreset(p) {
+    setDatePreset(p);
+    if (p==='thisMonth') setDateRange(getMonthRange(0));
+    else if (p==='lastMonth') setDateRange(getMonthRange(-1));
+    else if (p==='last3') { const r=getMonthRange(-2); r.end=getMonthRange(0).end; setDateRange(r); }
+    else if (p==='ytd') { const now=new Date(); setDateRange({start:`${now.getFullYear()}-01-01`,end:now.toISOString().split('T')[0]}); }
   }
 
   async function saveConfig(cfg) {
-    try {
-      await fetch(`/${ORG_SLUG}/api/config?token=${TOKEN}`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(cfg)
-      });
-    } catch (e) { console.error('Save failed:', e); }
+    try { await fetch(`/${ORG_SLUG}/api/config?token=${TOKEN}`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(cfg) }); } catch(e) {}
+  }
+
+  async function handleSelectTemplate(key) {
+    const t = TEMPLATES[key];
+    const cfg = { template: key, sections: t.sections.map(s=>({...s, widgets:[...s.widgets]})), cacheTTL: 15, datePreset: 'thisMonth' };
+    setConfig(cfg); await saveConfig(cfg);
+  }
+
+  async function handleSaveSections(sections) {
+    const cfg = { ...config, sections }; setConfig(cfg); setEditOpen(false); await saveConfig(cfg);
   }
 
   async function handleClearCache() {
-    try {
-      await fetch(`/${ORG_SLUG}/api/cache/clear?token=${TOKEN}`, { method: 'POST' });
-      clearDataStore();
-      // Trigger re-fetch
-      setDateRange({ ...dateRange });
-      setSettingsOpen(false);
-    } catch (e) { console.error('Cache clear failed:', e); }
+    try { await fetch(`/${ORG_SLUG}/api/cache/clear?token=${TOKEN}`, {method:'POST'}); } catch(e) {}
+    clearDataStore(); setDateRange({...dateRange}); setSettingsOpen(false);
   }
 
-  async function handleCacheTTLChange(ttl) {
-    const newConfig = { ...config, cacheTTL: ttl };
-    setConfig(newConfig);
-    await saveConfig(newConfig);
-  }
+  async function handleCacheTTLChange(ttl) { const cfg={...config,cacheTTL:ttl}; setConfig(cfg); await saveConfig(cfg); }
+  function handleRefresh() { clearDataStore(); setDateRange({...dateRange}); }
 
-  function handleRefresh() {
-    clearDataStore();
-    setDateRange({ ...dateRange });
-  }
-
-  // Template chooser
   if (config === 'new') return <TemplateChooser onSelect={handleSelectTemplate} />;
-  if (config === null) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: 'var(--text-secondary)' }}>Loading...</div>;
+  if (!config) return <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',color:'var(--text-secondary)'}}>Loading...</div>;
 
-  const widgetIds = config.widgets.map(w => typeof w === 'string' ? w : w.id);
+  const totalWidgets = config.sections.reduce((s,sec) => s + sec.widgets.length, 0);
 
   return (
     <div>
-      {/* Header */}
       <div className="dash-header">
         <div className="dash-header-left">
           {orgMeta.logoUrl && <img src={orgMeta.logoUrl} className="dash-logo" alt="" />}
-          <div>
-            <div className="dash-title">{orgMeta.name || ORG_SLUG}</div>
-            <div className="dash-subtitle">Dashboard</div>
-          </div>
+          <div><div className="dash-title">{orgMeta.name || ORG_SLUG}</div><div className="dash-subtitle">Dashboard</div></div>
         </div>
         <div className="dash-header-center">
-          <input type="date" className="date-input" value={dateRange.start}
-            onChange={e => { setDatePreset(''); setDateRange(prev => ({ ...prev, start: e.target.value })); }} />
-          <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>to</span>
-          <input type="date" className="date-input" value={dateRange.end}
-            onChange={e => { setDatePreset(''); setDateRange(prev => ({ ...prev, end: e.target.value })); }} />
-          <button className={`btn-quick ${datePreset === 'lastMonth' ? 'active' : ''}`} onClick={() => applyPreset('lastMonth')}>Last Mo</button>
-          <button className={`btn-quick ${datePreset === 'thisMonth' ? 'active' : ''}`} onClick={() => applyPreset('thisMonth')}>This Mo</button>
-          <button className={`btn-quick ${datePreset === 'last3' ? 'active' : ''}`} onClick={() => applyPreset('last3')}>3 Mo</button>
-          <button className={`btn-quick ${datePreset === 'ytd' ? 'active' : ''}`} onClick={() => applyPreset('ytd')}>YTD</button>
+          <input type="date" className="date-input" value={dateRange.start} onChange={e=>{setDatePreset('');setDateRange(p=>({...p,start:e.target.value}));}} />
+          <span style={{color:'var(--text-muted)',fontSize:12}}>to</span>
+          <input type="date" className="date-input" value={dateRange.end} onChange={e=>{setDatePreset('');setDateRange(p=>({...p,end:e.target.value}));}} />
+          <button className={`btn-quick ${datePreset==='lastMonth'?'active':''}`} onClick={()=>applyPreset('lastMonth')}>Last Mo</button>
+          <button className={`btn-quick ${datePreset==='thisMonth'?'active':''}`} onClick={()=>applyPreset('thisMonth')}>This Mo</button>
+          <button className={`btn-quick ${datePreset==='last3'?'active':''}`} onClick={()=>applyPreset('last3')}>3 Mo</button>
+          <button className={`btn-quick ${datePreset==='ytd'?'active':''}`} onClick={()=>applyPreset('ytd')}>YTD</button>
         </div>
         <div className="dash-header-right">
           <button className="btn" onClick={handleRefresh}>{'\u21BB'} Refresh</button>
-          <button className="btn" onClick={() => setEditOpen(true)}>{'\u270E'} Edit Widgets</button>
-          <div style={{ position: 'relative' }}>
-            <button className="btn" onClick={() => setSettingsOpen(!settingsOpen)}>{'\u2699'}</button>
-            {settingsOpen && <SettingsPopover cacheTTL={config.cacheTTL || 15} onCacheTTLChange={handleCacheTTLChange} onClearCache={handleClearCache} onClose={() => setSettingsOpen(false)} />}
+          <button className="btn" onClick={()=>setEditOpen(true)}>{'\u270E'} Edit Dashboard</button>
+          <div style={{position:'relative'}}>
+            <button className="btn" onClick={()=>setSettingsOpen(!settingsOpen)}>{'\u2699'}</button>
+            {settingsOpen && <SettingsPopover cacheTTL={config.cacheTTL||15} onCacheTTLChange={handleCacheTTLChange} onClearCache={handleClearCache} />}
           </div>
         </div>
       </div>
-
-      {/* Settings bar */}
       <div className="settings-bar">
-        <div className="cache-label">
-          <span className="cache-dot" style={{ background: loading ? 'var(--amber)' : 'var(--green)' }} />
-          {loading ? 'Loading data...' : lastRefresh ? `Last refreshed ${lastRefresh.toLocaleTimeString()}` : 'Ready'}
-        </div>
-        <div>{widgetIds.length} widgets · cache {config.cacheTTL || 15}m</div>
+        <div><span className="cache-dot" style={{background:loading?'var(--amber)':'var(--green)'}} />
+          {loading ? 'Loading data...' : lastRefresh ? `Last refreshed ${lastRefresh.toLocaleTimeString()}` : 'Ready'}</div>
+        <div>{config.sections.length} sections · {totalWidgets} widgets · cache {config.cacheTTL||15}m</div>
       </div>
 
-      {/* Widget Grid */}
-      <div className="widget-grid">
-        {widgetIds.map(id => (
-          <WidgetCard key={id} widgetId={id} reportData={reportData} loading={loading} />
-        ))}
-      </div>
+      {config.sections.map((sec, i) => (
+        <SectionBlock key={sec.id+i} sectionId={sec.id} widgetIds={sec.widgets} reportData={reportData} loading={loading} />
+      ))}
 
-      {/* Edit Modal */}
-      {editOpen && (
-        <EditModal
-          activeIds={widgetIds}
-          availableReports={availableReports}
-          onSave={handleSaveWidgets}
-          onClose={() => setEditOpen(false)}
-        />
-      )}
+      {editOpen && <EditModal sections={config.sections} availableReports={availableReports} onSave={handleSaveSections} onClose={()=>setEditOpen(false)} />}
     </div>
   );
 }
-
-// Click outside to close settings
-document.addEventListener('click', () => {
-  // Settings popover closes via React state
-});
 
 ReactDOM.createRoot(document.getElementById('root')).render(<DashboardApp />);
 </script>
