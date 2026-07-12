@@ -169,37 +169,61 @@ async function fetchMetabaseData(orgSlug, reportType, query) {
 //  UPDATES LOG
 // ═══════════════════════════════════════════
 const UPDATES = [
-  { date: '2025-07-12', title: 'Widget Expansion: 70+ Widgets Across 10 Sections', items: [
-    'New sections: Courts, Fast Track, Users, Memberships, Products, Instructor Payout, Demographics',
-    'Table view widgets added to each section (program revenue, GL codes, bookings, instructors, memberships)',
-    'Widget limits: max 8 per section, max 20 per dashboard',
-    'Admin auth: HTTP Basic auth on admin routes'
+  { date: '2025-07-12', title: 'AI Insights + Maps + Heatmaps', items: [
+    'Rec Insights: AI-powered analysis per section via Claude Haiku, purple gradient panel with emoji-led bullet points',
+    'Admin AI toggle: enable/disable AI insights per org from admin panel',
+    'User Location Map: server-side geocoding via Nominatim proxy, cached to /data/geocache.json, CartoDB dark/light tiles',
+    'Court Locations Map: booking volume circles per court location with org city/state appended for geocoding',
+    'Facility Booking Heatmap: day of week x hour grid showing booking density',
+    'Court Booking Heatmap: day of week x court name reservation intensity',
+    'Retention metrics: Unique Families, Returning Families, Retention Rate, Avg Programs/Family from program-demographics',
+    'Widget targets: gear icon on metric cards, set goal number, progress ring donut with color-coded fill percentage',
+    'Contextual notes on all 75 widgets explaining what each metric measures',
+    'Loading state: amber progress bar + dim overlay when switching date ranges',
+    'Favicon: rec yellow icon on browser tab'
   ]},
-  { date: '2025-07-12', title: 'Light/Dark Theme + Reset', items: [
-    'Added dark/light theme toggle in settings, persists per-org',
-    'Fixed dashboard reset (inline confirm, no iframe-blocked confirm())',
-    'Event tracking for theme changes'
+  { date: '2025-07-12', title: 'Admin Dashboard + Org Management', items: [
+    'Admin page with SVG architecture diagram and collapsible sections',
+    'Org cards: sections, widgets, events, AI insights, dash views, layout saves',
+    'Admin toggles: AI Insights on/off, Report Linkage on/off per org',
+    'HTTP Basic auth on all admin routes (ADMIN_PASSWORD env var)',
+    'How It Works: caching layer, performance vs old dashboards, widget limits, roadmap documented',
+    'Event summary API: totals by org, by type, 7-day activity'
   ]},
-  { date: '2025-07-12', title: 'Event Tracking + Analytics', items: [
-    'Full event tracking pipeline: dashboard_view, template_selected, edit_opened, layout_saved, date_preset_changed, refresh, cache_cleared, dashboard_reset',
-    'Batched client-side events (2s debounce), server-side JSONL storage',
-    'GET /:org/api/events/stats endpoint for analytics'
+  { date: '2025-07-12', title: 'Widget Expansion: 75 Widgets Across 9 Sections', items: [
+    'New sections: Courts, Fast Track, Users and Demographics (merged), Memberships, Products, Instructor Payout',
+    'Table view widgets: GL codes, program revenue, facility bookings, instructor detail, membership summary',
+    'All shared UUIDs wired: products, instructor-payout, checkins added',
+    'Fast Track + Instructor Payout: date filters added to Metabase SQL, removed from NO_DATE_REPORTS',
+    'Column names fixed from Railway logs for all report types',
+    'Removed misleading headcount widgets',
+    'Users and Demographics merged into single section with data source notes'
+  ]},
+  { date: '2025-07-12', title: 'Pre-warm Caching + Performance', items: [
+    'Server pre-warms all report types on startup (2s between Metabase calls)',
+    'Dashboard loads instantly after warm completes',
+    'Smart data batching: one Metabase call per report type regardless of widget count',
+    'Theme toggle no longer triggers data refetch',
+    'Estimated 75%+ reduction in Metabase load vs old iframe dashboards'
+  ]},
+  { date: '2025-07-12', title: 'Light/Dark Theme + Reset + Tracking', items: [
+    'Dark/light theme toggle in settings, persists per-org',
+    'Light mode: polished buttons, borders, skeleton loading, modal styling',
+    'Dashboard reset with inline confirmation (no iframe-blocked confirm())',
+    'Full event tracking: dashboard_view, template_selected, edit_opened, layout_saved, date_preset_changed, refresh, cache_cleared, dashboard_reset, target_set, theme_changed, insight_requested'
   ]},
   { date: '2025-07-12', title: 'Sectioned Dashboard Architecture', items: [
-    'Replaced flat widget grid with section-based layout (Revenue Overview, Facility Rentals, Programs & Enrollment)',
-    'GL widgets: Total Revenue, Refunds, Net Revenue, Transactions, Revenue by GL Code, Payment Methods',
-    'Programs widgets: Enrollments, Revenue, Refunds, Fill Rate, Top Programs, Revenue by Program',
-    'Facility widgets renamed with rental- prefix for clarity',
-    'Edit modal redesigned for section-level + widget-level editing',
-    'Templates updated to section-based config'
+    'Section-based layout replacing flat widget grid',
+    'Edit modal redesigned: add/remove/reorder sections + widgets within sections',
+    'Templates: General Overview, Revenue Focus, Operations',
+    'GL revenue widgets match Rec admin transaction numbers'
   ]},
   { date: '2025-07-11', title: 'Initial Launch', items: [
     'Standalone Railway project with persistent volume',
-    'Widget registry with 12 facility-based widgets',
-    'Template chooser (General, Revenue Focus, Operations)',
-    'Edit Widgets modal with add/remove/reorder',
+    'Widget registry pattern: reportType + transform + component per widget',
     'Metabase data proxy with configurable cache TTL',
-    'Token-based auth, Watertown as pilot org'
+    'Token-based auth, Watertown as pilot org',
+    'Embedded in Metabase iframe alongside existing dashboards'
   ]},
 ];
 

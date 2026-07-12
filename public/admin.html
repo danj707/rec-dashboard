@@ -241,7 +241,7 @@ async function toggleOrg(slug, key, value) {
             <!-- Widget Engine -->
             <rect x="333" y="145" width="175" height="80" rx="8" fill="#1a1a1a" stroke="#262626" stroke-width="1"/>
             <text x="349" y="164" font-family="DM Sans,sans-serif" font-size="11" fill="#aaa" font-weight="600">Widget Engine</text>
-            <text x="349" y="182" font-family="Inter,sans-serif" font-size="10" fill="#666">69 widgets in registry</text>
+            <text x="349" y="182" font-family="Inter,sans-serif" font-size="10" fill="#666">75 widgets in registry</text>
             <text x="349" y="196" font-family="Inter,sans-serif" font-size="10" fill="#666">Section-based layout</text>
             <text x="349" y="210" font-family="Inter,sans-serif" font-size="10" fill="#666">Chart.js + React CDN</text>
 
@@ -326,7 +326,7 @@ async function toggleOrg(slug, key, value) {
           </div>
           <div class="arch-block">
             <h4>Adding a New Org</h4>
-            <p>Add 5 lines to the <code>ORGS</code> map in server.js: slug, orgId, token, logoUrl, and optional per-org report UUIDs. All shared report types light up automatically. Push to GitHub, Railway auto-deploys in ~60 seconds. The org's admin hits their URL, picks a template, and their dashboard is live. Total onboarding time: under 2 minutes.</p>
+            <p>Add 5 lines to the <code>ORGS</code> map in server.js: slug, orgId, token, logoUrl, and optional per-org report UUIDs. All 12 shared report types light up automatically. Push to GitHub, Railway auto-deploys in ~60 seconds. The org's admin hits their URL, picks a template, and their dashboard is live. Total onboarding time: under 2 minutes.</p>
           </div>
           <div class="arch-block">
             <h4>Caching Layer</h4>
@@ -342,7 +342,19 @@ async function toggleOrg(slug, key, value) {
           </div>
           <div class="arch-block">
             <h4>Roadmap</h4>
-            <p><strong>PDF Export:</strong> Puppeteer iframe capture for downloadable dashboard snapshots. <strong>Email Summaries:</strong> Resend integration for daily/weekly dashboard emails to org admins. <strong>Rec Insights:</strong> AI-powered analysis widgets per section — click to generate Claude-powered insights from the section's data. <strong>Schema Health Check:</strong> Automated column validation against expected schemas, flagging broken widgets after DB migrations. <strong>Goal Targets:</strong> Admin-editable targets on metric widgets with pace calculations and progress rings.</p>
+            <p><strong>PDF Export:</strong> Section picker for downloadable snapshots. <strong>Email Summaries:</strong> Resend integration for daily digests to @rec.us admins. <strong>Langfuse:</strong> Thumbs up/down on AI insights with feedback loop. <strong>Schema Health Check:</strong> Startup column validation, broken widget alerts. <strong>Goal Targets:</strong> Pace calculations with month-end projections. <strong>Multi-Dashboard:</strong> Per-user/role dashboards (finance, aquatics, etc). <strong>QoQ Comparison:</strong> Dual date picker with delta indicators. <strong>Drag-and-Drop:</strong> react-grid-layout for widget positioning. <strong>1-Click Org Add:</strong> Admin panel skill to onboard new orgs.</p>
+          </div>
+          <div class="arch-block">
+            <h4>AI Insights Engine</h4>
+            <p>Each section header has a <strong>Rec Insights</strong> button. Click it: the frontend builds a text summary from the section's widget data, POSTs to <code>/:org/api/insights/:section</code>, which calls Claude Haiku with a section-specific prompt. 4-5 emoji-led, metric-cited bullet points appear in a purple gradient panel. AI can be toggled on/off per org from the admin panel. Events tracked to measure adoption.</p>
+          </div>
+          <div class="arch-block">
+            <h4>Server-Side Geocoding</h4>
+            <p>Map widgets use a server-side geocoding proxy (<code>/:org/api/geocode</code>) instead of browser-direct Nominatim calls. Results cached to <code>/data/geocache.json</code> — each city is only geocoded once, ever. Org city/state auto-appended to generic location names (e.g. "Arsenal Park" becomes "Arsenal Park, Watertown, MA"). CartoDB tiles switch between dark and light to match the dashboard theme.</p>
+          </div>
+          <div class="arch-block">
+            <h4>Widget Targets</h4>
+            <p>Metric cards have a gear icon that opens an inline target editor. Set a goal number (e.g. $50K revenue) and the card transforms: value on the left, SVG progress ring on the right, percentage below. Ring color shifts green/amber/red based on progress. Targets persist per-org in the config. Value updates automatically when the date range changes — same target, different progress.</p>
           </div>
         </div>
 
