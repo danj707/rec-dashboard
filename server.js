@@ -18,7 +18,7 @@ const ORGS = {
     name: 'Watertown Recreation',
     orgId: 'd781690b-c5a0-43c5-8443-9ae43899528c',
     token: '7qNNXDFo4HGpOh5B',
-    logoUrl: 'https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-d781690b-c5a0-43c5-8443-9ae43899528c%2FfullLogo.png%3F1750270261391&w=1920&q=75',
+    logoUrl: 'https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/organization-d781690b-c5a0-43c5-8443-9ae43899528c/fullLogo.png',
     reports: {
       facility: '4b64af10-d57f-41af-aad8-b16d12a8f7b8',
       programs: 'd3a3554f-1232-4803-9cc7-5b0f611360b0'

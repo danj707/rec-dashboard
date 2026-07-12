@@ -45,7 +45,7 @@ a { color: var(--amber); text-decoration: none; }
   background: var(--bg-card); position: sticky; top: 0; z-index: 50;
 }
 .dash-header-left { display: flex; align-items: center; gap: 14px; }
-.dash-logo { width: 40px; height: 40px; border-radius: 8px; object-fit: cover; }
+.dash-logo { height: 36px; width: auto; max-width: 180px; border-radius: 6px; object-fit: contain; }
 .dash-title { font-family: var(--font-display); font-size: 20px; font-weight: 600; }
 .dash-subtitle { font-size: 12px; color: var(--text-secondary); margin-top: 1px; }
 .dash-header-center { display: flex; align-items: center; gap: 8px; }
@@ -363,19 +363,19 @@ const DASHBOARD_TEMPLATES = {
     label: 'General Overview',
     description: 'Broad view across bookings, revenue, and activity',
     icon: '\uD83D\uDCCA',
-    widgets: ['total-revenue','total-bookings','total-headcount','unique-locations','revenue-by-location','bookings-by-purpose','daily-bookings-trend','bookings-by-day-of-week']
+    widgets: ['total-revenue','total-bookings','total-headcount','unique-locations','revenue-by-location','revenue-by-site-type','daily-bookings-trend','bookings-by-day-of-week']
   },
   financial: {
     label: 'Revenue Focus',
     description: 'Deep dive into revenue metrics and trends',
     icon: '\uD83D\uDCB0',
-    widgets: ['total-revenue','avg-booking-value','total-bookings','total-headcount','revenue-by-location','revenue-trend','revenue-by-site-type','bookings-by-purpose']
+    widgets: ['total-revenue','avg-booking-value','total-bookings','total-headcount','revenue-by-location','revenue-trend','revenue-by-site-type','headcount-by-location']
   },
   operations: {
     label: 'Operations',
     description: 'Booking patterns, utilization, and capacity',
     icon: '\u2699\uFE0F',
-    widgets: ['total-bookings','unique-locations','total-headcount','avg-booking-value','bookings-by-day-of-week','daily-bookings-trend','headcount-by-location','bookings-by-purpose']
+    widgets: ['total-bookings','unique-locations','total-headcount','avg-booking-value','bookings-by-day-of-week','daily-bookings-trend','headcount-by-location','revenue-by-site-type']
   }
 };
 
