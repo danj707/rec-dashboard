@@ -8,6 +8,8 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -133,6 +135,8 @@ body { font-family: var(--font-body); background: var(--bg-page); color: var(--t
 .skeleton { background: linear-gradient(90deg, var(--bg-surface) 25%, #222 50%, var(--bg-surface) 75%);
   background-size: 200% 100%; animation: shimmer 1.5s infinite; border-radius: 8px; }
 @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+[data-theme="light"] .skeleton { background: linear-gradient(90deg, #f0f0f0 25%, #e8e8e8 50%, #f0f0f0 75%); background-size: 200% 100%; }
+[data-theme="light"] .sections-loading .dashboard-section { opacity: 0.5; }
 .skeleton-metric { height: 48px; width: 140px; margin-top: 12px; }
 .skeleton-chart { height: 200px; width: 100%; margin-top: 12px; }
 
@@ -197,6 +201,9 @@ body { font-family: var(--font-body); background: var(--bg-page); color: var(--t
 .settings-bar { display: flex; align-items: center; justify-content: space-between; padding: 8px 24px;
   font-size: 11px; color: var(--text-muted); border-bottom: 1px solid var(--border-subtle); }
 .cache-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; margin-right: 6px; }
+/* Map widget */
+.map-container { height: 280px; border-radius: 8px; overflow: hidden; z-index: 1; position: relative; }
+.map-container .leaflet-control-attribution { font-size: 9px; }
 </style>
 </head>
 <body>
@@ -239,13 +246,13 @@ const SECTIONS = {
     defaultWidgets: ['program-enrollments','program-revenue','program-cancellations','program-fill-rate','program-top'] },
   courts: { id: 'courts', label: 'Court Bookings', icon: '\uD83C\uDFBE', color: '#8b5cf6',
     description: 'Court reservations, utilization, and booking mix',
-    defaultWidgets: ['court-total','court-instant','court-managed','court-util-pct','court-by-court','court-by-location'] },
+    defaultWidgets: ['court-total','court-instant','court-managed','court-util-pct','court-by-court','court-by-location','court-map'] },
   fasttrack: { id: 'fasttrack', label: 'Fast Track', icon: '\uD83D\uDE80', color: '#f97316',
     description: 'Pre-registration demand and conversion metrics',
     defaultWidgets: ['ft-signups','ft-converted','ft-pending','ft-conv-rate','ft-top-programs'] },
   'users-demographics': { id: 'users-demographics', label: 'Users & Demographics', icon: '\uD83D\uDC65', color: '#06b6d4',
     description: 'User growth, age, gender, and location data',
-    defaultWidgets: ['user-total','user-new','user-by-city','user-by-zip','demo-age','demo-gender'] },
+    defaultWidgets: ['user-total','user-new','user-by-city','user-by-zip','user-map','demo-age','demo-gender'] },
   memberships: { id: 'memberships', label: 'Memberships', icon: '\uD83C\uDFAB', color: '#ec4899',
     description: 'Member counts, revenue, and check-ins',
     defaultWidgets: ['mem-active','mem-canceled','mem-revenue','mem-net','mem-type-donut'] },
@@ -438,6 +445,13 @@ const W = {
       let instant=0,managed=0; rows.forEach(r=>{const s=(r['booking_source']||r['Booking Source']||'').toLowerCase(); s==='instant'?instant++:managed++;});
       return { labels:['Instant','Leagues/Managed'], values:[instant,managed] };
     }},
+  'court-map': { label: 'Court Locations', description: 'Booking volume by location', note: 'Circle size reflects booking count', section: 'courts',
+    reportType: 'court-utilization', size: 'md', icon: '\uD83D\uDDFA\uFE0F', component: 'map',
+    transform: rows => {
+      const g={}; rows.forEach(r=>{const k=r['location_name']||'Unknown'; g[k]=(g[k]||0)+1;});
+      const sorted=Object.entries(g).sort((a,b)=>b[1]-a[1]).slice(0,15);
+      return { points: sorted.map(([k,v])=>({ query:k, label:k, count:v })), unit:'bookings' };
+    }},
 
   // ── Fast Track (filter Row Type !== 'user') ──
   'ft-signups': { label: 'FT Signups', description: 'Total Fast Track signups', note: 'Users who signed up via Fast Track pre-registration', section: 'fasttrack',
@@ -492,6 +506,16 @@ const W = {
       const g={}; rows.forEach(r=>{const k=r['Zip Code']||r['zip']||r['Zip']||''; if(k&&k!=='null')g[k]=(g[k]||0)+1;});
       const s=Object.entries(g).sort((a,b)=>b[1]-a[1]).slice(0,10);
       return { labels:s.map(e=>e[0]), values:s.map(e=>e[1]) };
+    }},
+  'user-map': { label: 'User Location Map', description: 'Geographic distribution of users', note: 'Top 20 cities by user count, geocoded', section: 'users-demographics',
+    reportType: 'users', size: 'md', icon: '\uD83D\uDDFA\uFE0F', component: 'map',
+    transform: rows => {
+      const g={}; rows.forEach(r=>{
+        const city=r['City']||''; const state=r['State']||'';
+        if(city&&city!=='null'){ const k=city+', '+state; g[k]=(g[k]||0)+1; }
+      });
+      const sorted=Object.entries(g).sort((a,b)=>b[1]-a[1]).slice(0,20);
+      return { points: sorted.map(([k,v])=>({ query:k, label:k, count:v })), unit:'users' };
     }},
 
   // ── Memberships ──
@@ -847,7 +871,70 @@ function TableWidget({ data }) {
   );
 }
 
-const COMP = { metric: MetricCard, bar: BarChartWidget, donut: DonutChartWidget, line: LineChartWidget, table: TableWidget };
+// ═══════════════════════════════════════════════════════
+//  MAP WIDGET (Leaflet)
+// ═══════════════════════════════════════════════════════
+const geoCache = {};
+async function geocode(query) {
+  if (geoCache[query]) return geoCache[query];
+  try {
+    const resp = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1&countrycodes=us`);
+    const data = await resp.json();
+    if (data.length) { geoCache[query] = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) }; return geoCache[query]; }
+  } catch(e) {}
+  return null;
+}
+
+function MapWidget({ data }) {
+  const mapRef = useRef(null);
+  const mapInst = useRef(null);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    if (!mapRef.current || !data?.points?.length) return;
+    if (mapInst.current) { mapInst.current.remove(); mapInst.current = null; }
+    setReady(false);
+
+    const isDark = document.documentElement.getAttribute('data-theme') !== 'light';
+    const tiles = isDark
+      ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+      : 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
+
+    const map = L.map(mapRef.current, { scrollWheelZoom: false }).setView([39.5, -98.5], 4);
+    L.tileLayer(tiles, { attribution: '\u00A9 OSM \u00A9 CARTO', maxZoom: 18 }).addTo(map);
+    mapInst.current = map;
+
+    (async () => {
+      const bounds = [];
+      for (let i = 0; i < Math.min(data.points.length, 20); i++) {
+        const pt = data.points[i];
+        const geo = await geocode(pt.query);
+        if (geo) {
+          const radius = Math.max(6, Math.min(30, Math.sqrt(pt.count) * 2.5));
+          L.circleMarker([geo.lat, geo.lng], {
+            radius, fillColor: '#f59e0b', fillOpacity: 0.7, color: '#f59e0b', weight: 1, opacity: 0.9
+          }).bindTooltip('<strong>' + pt.label + '</strong><br>' + pt.count.toLocaleString() + ' ' + (data.unit || 'users')).addTo(map);
+          bounds.push([geo.lat, geo.lng]);
+        }
+        if (i < data.points.length - 1) await new Promise(r => setTimeout(r, 200));
+      }
+      if (bounds.length > 1) map.fitBounds(bounds, { padding: [30, 30] });
+      else if (bounds.length === 1) map.setView(bounds[0], 10);
+      setReady(true);
+      setTimeout(() => map.invalidateSize(), 100);
+    })();
+
+    return () => { if (mapInst.current) { mapInst.current.remove(); mapInst.current = null; } };
+  }, [data]);
+
+  if (!data) return <div className="skeleton skeleton-chart" />;
+  return <div>
+    <div ref={mapRef} className="map-container" />
+    {!ready && <div style={{fontSize:11,color:'var(--text-muted)',marginTop:4,textAlign:'center'}}>Geocoding locations...</div>}
+  </div>;
+}
+
+const COMP = { metric: MetricCard, bar: BarChartWidget, donut: DonutChartWidget, line: LineChartWidget, table: TableWidget, map: MapWidget };
 
 function WidgetCard({ widgetId, reportData, loading, target, onTargetChange }) {
   const def = W[widgetId]; if (!def) return null;
