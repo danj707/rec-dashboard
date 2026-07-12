@@ -25,14 +25,26 @@
 }
 [data-theme="light"] {
   --bg-page: #f3f4f6; --bg-card: #ffffff; --bg-card-hover: #fafafa;
-  --bg-surface: #f0f0f0; --bg-modal: #ffffff;
-  --border: #e2e2e2; --border-subtle: #ebebeb;
+  --bg-surface: #ffffff; --bg-modal: #ffffff;
+  --border: #d4d4d4; --border-subtle: #e8e8e8;
   --text-primary: #111111; --text-secondary: #555555; --text-muted: #999999;
   --amber: #d97706; --amber-glow: rgba(217,119,6,0.08);
   --blue: #2563eb; --green: #16a34a; --red: #dc2626; --purple: #7c3aed;
   --pink: #db2777; --cyan: #0891b2;
   --chart-grid: #e5e5e5; --chart-text: #666;
 }
+[data-theme="light"] .btn { background: #fff; border-color: #d4d4d4; color: #333; }
+[data-theme="light"] .btn:hover { background: #f5f5f5; border-color: #bbb; }
+[data-theme="light"] .btn-amber { background: #d97706; color: #fff; border-color: #d97706; }
+[data-theme="light"] .btn-amber:hover { background: #b45309; }
+[data-theme="light"] .btn-quick { background: #fff; border-color: #d4d4d4; color: #666; }
+[data-theme="light"] .btn-quick:hover, [data-theme="light"] .btn-quick.active { background: #fffbeb; border-color: #d97706; color: #d97706; }
+[data-theme="light"] .date-input { background: #fff; border-color: #d4d4d4; color: #333; }
+[data-theme="light"] .dash-header { background: #fff; border-color: #e5e5e5; }
+[data-theme="light"] .settings-bar { border-color: #e5e5e5; }
+[data-theme="light"] .modal-panel { border-color: #e5e5e5; }
+[data-theme="light"] .edit-section-header { background: #f9f9f9; }
+[data-theme="light"] .edit-section-header:hover { background: #f0f0f0; }
 body { font-family: var(--font-body); background: var(--bg-page); color: var(--text-primary); min-height: 100vh; }
 
 /* Header */
@@ -1040,6 +1052,9 @@ function DashboardApp() {
     })();
   }, []);
 
+  // Only refetch when sections/widgets change or date range changes, NOT theme/cacheTTL
+  const dataKey = config && config !== 'new' ? JSON.stringify(config.sections.map(s=>s.id+':'+s.widgets.join(','))) : '';
+
   useEffect(() => {
     if (!config || config === 'new') { setLoading(false); return; }
     const allWidgetIds = config.sections.flatMap(s => s.widgets);
@@ -1052,7 +1067,7 @@ function DashboardApp() {
         setReportData(rd); setLoading(false); setLastRefresh(new Date());
         track('dashboard_view', { sections: config.sections.length, widgets: allWidgetIds.length, reportTypes: rts, dateRange });
       });
-  }, [config, dateRange]);
+  }, [dataKey, dateRange]);
 
   function applyPreset(p) {
     setDatePreset(p);
