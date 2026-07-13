@@ -24,6 +24,15 @@ const ORGS = {
     reports: {
       facility: '4b64af10-d57f-41af-aad8-b16d12a8f7b8'
     }
+  },
+  niagarafalls: {
+    name: 'City of Niagara Falls',
+    orgId: 'a976a11a-5303-4785-838a-1b281ca77678',
+    token: 'LjW1vF7eZJCyjWVN',
+    city: 'Niagara Falls',
+    state: 'NY',
+    logoUrl: 'https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/organization-a976a11a-5303-4785-838a-1b281ca77678/fullLogo.png',
+    reports: {}
   }
 };
 
@@ -169,6 +178,11 @@ async function fetchMetabaseData(orgSlug, reportType, query) {
 //  UPDATES LOG
 // ═══════════════════════════════════════════
 const UPDATES = [
+  {
+    date: "2026-07-13",
+    title: "Welcome, City of Niagara Falls!",
+    items: ["Niagara Falls is now live on the dashboard platform."],
+  },
   { date: '2025-07-12', title: 'AI Insights + Maps + Heatmaps', items: [
     'Rec Insights: AI-powered analysis per section via Claude Haiku, purple gradient panel with emoji-led bullet points',
     'Admin AI toggle: enable/disable AI insights per org from admin panel',
