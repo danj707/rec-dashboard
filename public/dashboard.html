@@ -1068,6 +1068,20 @@ function SectionBlock({ sectionId, widgetIds, reportData, loading, targets, onTa
   const [insight, setInsight] = useState(null);
   const [insightLoading, setInsightLoading] = useState(false);
   const [insightOpen, setInsightOpen] = useState(false);
+  const [traceId, setTraceId] = useState(null);
+  const [fbSent, setFbSent] = useState(false);
+  const [fbMode, setFbMode] = useState(null); // null | 'comment'
+  const [fbComment, setFbComment] = useState('');
+
+  function sendFeedback(score) {
+    if (!traceId) return;
+    fetch(`/${ORG_SLUG}/api/insights/${sectionId}/score?token=${TOKEN}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ traceId, score, comment: score === 0 ? fbComment : '' })
+    }).catch(() => {});
+    setFbSent(true); setFbMode(null);
+    track('insight_feedback', { section: sectionId, score });
+  }
 
   async function generateInsight() {
     setInsightLoading(true); setInsightOpen(true);
@@ -1094,6 +1108,8 @@ function SectionBlock({ sectionId, widgetIds, reportData, loading, targets, onTa
       });
       const json = await resp.json();
       setInsight(json.insight || json.error || 'No insights generated.');
+      setTraceId(json.traceId || null);
+      setFbSent(false); setFbMode(null); setFbComment('');
     } catch (e) { setInsight('Failed to generate insights.'); }
     setInsightLoading(false);
     track('insight_requested', { section: sectionId });
@@ -1129,6 +1145,40 @@ function SectionBlock({ sectionId, widgetIds, reportData, loading, targets, onTa
           ) : (
             <div style={{fontSize:12,color:'var(--text-secondary)',lineHeight:1.8}}
               dangerouslySetInnerHTML={{__html: (insight||'').replace(/\*\*([^*]+)\*\*/g,'<strong style="color:var(--text-primary)">$1</strong>').replace(/^[•\-]\s*/gm,'').replace(/\n/g,'<br/>')}} />
+          )}
+          {!insightLoading && insight && traceId && (
+            <div style={{marginTop:14,paddingTop:12,borderTop:'1px solid rgba(139,92,246,0.15)',display:'flex',alignItems:'center',gap:10}}>
+              {fbSent ? (
+                <span style={{fontSize:11,color:'var(--text-muted)',fontStyle:'italic'}}>{'\u2713'} Thanks for the feedback</span>
+              ) : fbMode === 'comment' ? (
+                <div style={{display:'flex',alignItems:'center',gap:8,flex:1}}>
+                  <input type="text" value={fbComment} onChange={e=>setFbComment(e.target.value)}
+                    placeholder="What was off? (optional)" autoFocus
+                    onKeyDown={e=>{if(e.key==='Enter')sendFeedback(0);}}
+                    style={{flex:1,maxWidth:320,background:'var(--bg-surface)',border:'1px solid rgba(139,92,246,0.3)',borderRadius:6,
+                      padding:'5px 10px',fontSize:11,color:'var(--text-primary)',fontFamily:'var(--font-body)'}} />
+                  <button onClick={()=>sendFeedback(0)}
+                    style={{background:'var(--purple)',border:'none',borderRadius:6,padding:'5px 12px',cursor:'pointer',
+                      fontSize:11,fontWeight:600,color:'#fff',fontFamily:'var(--font-body)'}}>Send</button>
+                </div>
+              ) : (
+                <React.Fragment>
+                  <span style={{fontSize:11,color:'var(--text-muted)'}}>Helpful?</span>
+                  <button onClick={()=>sendFeedback(1)} title="Helpful"
+                    style={{background:'transparent',border:'1px solid rgba(139,92,246,0.25)',borderRadius:6,width:28,height:26,cursor:'pointer',
+                      fontSize:13,lineHeight:1,transition:'all 0.15s'}}
+                    onMouseOver={e=>{e.currentTarget.style.background='rgba(34,197,94,0.15)';e.currentTarget.style.borderColor='#22c55e';}}
+                    onMouseOut={e=>{e.currentTarget.style.background='transparent';e.currentTarget.style.borderColor='rgba(139,92,246,0.25)';}}>
+                    {'\uD83D\uDC4D'}</button>
+                  <button onClick={()=>setFbMode('comment')} title="Not helpful"
+                    style={{background:'transparent',border:'1px solid rgba(139,92,246,0.25)',borderRadius:6,width:28,height:26,cursor:'pointer',
+                      fontSize:13,lineHeight:1,transition:'all 0.15s'}}
+                    onMouseOver={e=>{e.currentTarget.style.background='rgba(239,68,68,0.15)';e.currentTarget.style.borderColor='#ef4444';}}
+                    onMouseOut={e=>{e.currentTarget.style.background='transparent';e.currentTarget.style.borderColor='rgba(139,92,246,0.25)';}}>
+                    {'\uD83D\uDC4E'}</button>
+                </React.Fragment>
+              )}
+            </div>
           )}
         </div>
       )}

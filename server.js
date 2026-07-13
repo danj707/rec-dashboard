@@ -1,4 +1,28 @@
 // rec.us Dashboard Server
+
+// ── Langfuse + OpenTelemetry (must init BEFORE other imports) ────────
+const { NodeSDK } = require('@opentelemetry/sdk-node');
+const { LangfuseSpanProcessor, isDefaultExportSpan } = require('@langfuse/otel');
+const otelApi = require('@opentelemetry/api');
+
+const _langfuseEnabled = !!(process.env.LANGFUSE_PUBLIC_KEY && process.env.LANGFUSE_SECRET_KEY);
+let _otelSdk = null;
+let _langfuseProcessor = null;
+if (_langfuseEnabled) {
+  _langfuseProcessor = new LangfuseSpanProcessor({
+    publicKey: process.env.LANGFUSE_PUBLIC_KEY,
+    secretKey: process.env.LANGFUSE_SECRET_KEY,
+    baseUrl:   process.env.LANGFUSE_BASE_URL || 'https://us.cloud.langfuse.com',
+    shouldExportSpan: ({ otelSpan }) => isDefaultExportSpan(otelSpan),
+  });
+  _otelSdk = new NodeSDK({ spanProcessors: [_langfuseProcessor], instrumentations: [] });
+  _otelSdk.start();
+  console.log('[langfuse] OpenTelemetry tracing enabled — baseUrl:', process.env.LANGFUSE_BASE_URL || '(default US)');
+} else {
+  console.log('[langfuse] LANGFUSE keys not set — tracing disabled (AI insights still work)');
+}
+const _recTracer = otelApi.trace.getTracer('rec-dashboard');
+
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
@@ -178,6 +202,16 @@ async function fetchMetabaseData(orgSlug, reportType, query) {
 //  UPDATES LOG
 // ═══════════════════════════════════════════
 const UPDATES = [
+  {
+    date: "2026-07-13",
+    title: "AI Insights — thumbs up/down + Langfuse",
+    items: [
+      "Rec Insights panels now have thumbs up/down feedback. Thumbs-down opens an optional comment box.",
+      "Feedback flows to Langfuse as trace scores (name: user-feedback) via the /api/public/scores API, tagged by org + section.",
+      "Each insight generation is wrapped in an OpenTelemetry span (rec.insights) exported to Langfuse — the span's traceId links the feedback score to the exact generation.",
+      "Graceful no-op when LANGFUSE_* keys are absent: insights still work, feedback logs locally to events.jsonl only.",
+    ],
+  },
   {
     date: "2026-07-13",
     title: "Welcome, City of Niagara Falls!",
@@ -507,20 +541,69 @@ Respond with 4-5 punchy insights. Rules:
 - No headers, no intro text — jump straight into the insights`;
 
   try {
-    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    // Wrap in an OTel span so we can capture a traceId for user feedback → Langfuse
+    const parentSpan = _recTracer.startSpan('rec.insights', {
+      attributes: { 'rec.org': req.orgSlug, 'rec.section': sectionId },
+    });
+    const traceId = parentSpan.spanContext().traceId;
+    const spanCtx = otelApi.trace.setSpan(otelApi.context.active(), parentSpan);
+
+    const resp = await otelApi.context.with(spanCtx, () => fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
       body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 600,
         messages: [{ role: 'user', content: prompt }] })
-    });
+    }));
+    parentSpan.end();
     const data = await resp.json();
     const insight = data.content?.[0]?.text || 'No insights generated.';
-    track_server(req.orgSlug, 'insight_generated', { section: sectionId });
-    res.json({ insight });
+    track_server(req.orgSlug, 'insight_generated', { section: sectionId, traceId });
+    if (_langfuseProcessor) _langfuseProcessor.forceFlush().catch(() => {});
+    res.json({ insight, traceId });
   } catch (e) {
     console.error('[AI] Insight error:', e.message);
     res.status(500).json({ error: 'Failed to generate insights' });
   }
+});
+
+// ── POST /:org/api/insights/:sectionId/score — thumbs up/down → Langfuse ──
+app.post('/:org/api/insights/:sectionId/score', authMiddleware, (req, res) => {
+  const { sectionId } = req.params;
+  const { traceId, score, comment } = req.body || {};
+
+  if (!traceId || typeof traceId !== 'string') {
+    return res.status(400).json({ ok: false, error: 'traceId required' });
+  }
+  if (score !== 1 && score !== 0) {
+    return res.status(400).json({ ok: false, error: 'score must be 1 (up) or 0 (down)' });
+  }
+
+  // Log locally
+  track_server(req.orgSlug, 'insight_feedback', { section: sectionId, traceId, score, comment: (comment || '').slice(0, 500) });
+
+  // Send to Langfuse asynchronously (don't block the response)
+  if (process.env.LANGFUSE_PUBLIC_KEY && process.env.LANGFUSE_SECRET_KEY) {
+    const baseUrl = process.env.LANGFUSE_BASE_URL || 'https://us.cloud.langfuse.com';
+    const auth = Buffer.from(process.env.LANGFUSE_PUBLIC_KEY + ':' + process.env.LANGFUSE_SECRET_KEY).toString('base64');
+    fetch(baseUrl + '/api/public/scores', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Basic ' + auth },
+      body: JSON.stringify({
+        traceId,
+        name: 'user-feedback',
+        value: score,
+        comment: comment ? `[${req.orgSlug}/${sectionId}] ${comment}` : `[${req.orgSlug}/${sectionId}] ${score === 1 ? 'thumbs up' : 'thumbs down'}`,
+        metadata: { org: req.orgSlug, section: sectionId, userComment: comment || null },
+      }),
+    })
+    .then(r => {
+      if (!r.ok) r.text().then(t => console.error('[langfuse] score error:', r.status, t.slice(0, 200)));
+      else console.log('[langfuse] score sent:', traceId.slice(0, 8), score === 1 ? '\uD83D\uDC4D' : '\uD83D\uDC4E');
+    })
+    .catch(e => console.error('[langfuse] score error:', e.message));
+  }
+
+  res.json({ ok: true });
 });
 
 function track_server(org, event, props = {}) {
