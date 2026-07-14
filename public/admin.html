@@ -94,6 +94,27 @@ code { font-family: 'JetBrains Mono', monospace; font-size: 0.85em; background: 
 
 .loading { text-align: center; padding: 60px; color: #666; font-size: 14px; }
 .footer { border-top: 1px solid #1e1e1e; padding: 20px 0; margin-top: 20px; text-align: center; font-size: 11px; color: #444; }
+.add-org-btn { background: #22c55e; color: #fff; border: none; padding: 6px 14px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; letter-spacing: 0.02em; transition: background 0.2s; }
+.add-org-btn:hover { background: #16a34a; }
+.modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 1000; align-items: center; justify-content: center; }
+.modal-overlay.open { display: flex; }
+.modal { background: #1a1a1a; border: 1px solid #333; border-radius: 14px; padding: 28px 32px; width: 440px; max-width: 90vw; }
+.modal h2 { font-size: 18px; color: #f1f1f1; margin: 0 0 20px; font-family: 'DM Sans', sans-serif; }
+.modal label { display: block; font-size: 11px; color: #999; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; font-weight: 500; }
+.modal input { width: 100%; background: #111; border: 1px solid #333; border-radius: 6px; padding: 8px 10px; color: #eee; font-size: 13px; margin-bottom: 14px; box-sizing: border-box; font-family: 'Inter', sans-serif; outline: none; transition: border-color 0.2s; }
+.modal input:focus { border-color: #22c55e; }
+.modal .row { display: flex; gap: 12px; }
+.modal .row > div { flex: 1; }
+.modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 8px; }
+.modal-actions button { padding: 8px 18px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; border: none; }
+.modal-cancel { background: #333; color: #ccc; }
+.modal-cancel:hover { background: #444; }
+.modal-submit { background: #22c55e; color: #fff; }
+.modal-submit:hover { background: #16a34a; }
+.modal-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+.modal .error { color: #ef4444; font-size: 12px; margin-bottom: 10px; display: none; }
+.modal .success { background: #052e16; border: 1px solid #22c55e; border-radius: 8px; padding: 12px 16px; margin-bottom: 14px; }
+.modal .success .token { font-family: 'SF Mono', monospace; background: #111; padding: 4px 8px; border-radius: 4px; color: #22c55e; font-size: 13px; user-select: all; }
 </style>
 </head>
 <body>
@@ -105,6 +126,33 @@ code { font-family: 'JetBrains Mono', monospace; font-size: 0.85em; background: 
     </div>
   </div>
   <div id="content"><div class="loading">Loading admin data...</div></div>
+
+  <!-- Add Org Modal -->
+  <div class="modal-overlay" id="add-org-modal" onclick="if(event.target===this)this.classList.remove('open')">
+    <div class="modal">
+      <h2>Add New Organization</h2>
+      <div class="error" id="add-org-error"></div>
+      <div id="add-org-form">
+        <label>Org Slug (lowercase, URL-safe)</label>
+        <input id="ao-slug" placeholder="pflugerville" pattern="[a-z0-9-]+">
+        <label>Display Name</label>
+        <input id="ao-name" placeholder="City of Pflugerville">
+        <label>rec.us Org UUID</label>
+        <input id="ao-orgid" placeholder="460566d3-3a51-4387-a7a0-0b010923e40d">
+        <div class="row">
+          <div><label>City</label><input id="ao-city" placeholder="Pflugerville"></div>
+          <div><label>State</label><input id="ao-state" placeholder="TX" maxlength="2" style="text-transform:uppercase"></div>
+        </div>
+        <label>Logo URL (optional — auto-generated from UUID)</label>
+        <input id="ao-logo" placeholder="https://prod-rec-tech-img-bucket-...">
+        <div class="modal-actions">
+          <button class="modal-cancel" onclick="document.getElementById('add-org-modal').classList.remove('open')">Cancel</button>
+          <button class="modal-submit" id="ao-submit" onclick="submitAddOrg()">Add Organization</button>
+        </div>
+      </div>
+      <div id="add-org-success" class="success" style="display:none"></div>
+    </div>
+  </div>
   <div class="footer">rec.us Dashboard Platform &middot; Powered by shared Metabase cards, zero per-org duplication</div>
 </div>
 
@@ -142,6 +190,7 @@ async function toggleOrg(slug, key, value) {
         <span class="icon">\uD83C\uDFE2</span>
         <span class="flex">Organizations</span>
         <span style="font-size:12px;color:#666;font-weight:400">${orgs.length} org${orgs.length !== 1 ? 's' : ''}</span>
+        <button class="add-org-btn" onclick="event.stopPropagation(); document.getElementById('add-org-modal').classList.add('open')">+ Add Org</button>
         <span class="chevron">\u25BC</span>
       </div>
       <div class="collapsible-body"><div class="collapsible-inner">
@@ -393,6 +442,53 @@ async function toggleOrg(slug, key, value) {
     </div>
   `;
 })();
+
+async function submitAddOrg() {
+  const errEl = document.getElementById('add-org-error');
+  const btn = document.getElementById('ao-submit');
+  errEl.style.display = 'none';
+  btn.disabled = true;
+  btn.textContent = 'Adding...';
+
+  const slug = document.getElementById('ao-slug').value.trim().toLowerCase();
+  const name = document.getElementById('ao-name').value.trim();
+  const orgId = document.getElementById('ao-orgid').value.trim();
+  const city = document.getElementById('ao-city').value.trim();
+  const state = document.getElementById('ao-state').value.trim().toUpperCase();
+  const logoUrl = document.getElementById('ao-logo').value.trim();
+
+  if (!slug || !orgId) {
+    errEl.textContent = 'Slug and Org UUID are required';
+    errEl.style.display = 'block';
+    btn.disabled = false;
+    btn.textContent = 'Add Organization';
+    return;
+  }
+
+  try {
+    const resp = await fetch('/admin/api/orgs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ slug, name: name || slug, orgId, city, state, logoUrl })
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Failed');
+
+    document.getElementById('add-org-form').style.display = 'none';
+    const successEl = document.getElementById('add-org-success');
+    successEl.innerHTML = '<div style="color:#22c55e;font-weight:600;margin-bottom:8px">\u2705 ' + data.slug + ' added!</div>' +
+      '<div style="margin-bottom:8px"><span style="color:#999;font-size:11px">ACCESS TOKEN (save this):</span><br><span class="token">' + data.token + '</span></div>' +
+      '<div style="font-size:12px;color:#999;margin-bottom:12px">Dashboard URL:<br><a href="/' + data.slug + '?token=' + data.token + '" style="color:#60a5fa" target="_blank">' + window.location.origin + '/' + data.slug + '?token=' + data.token + '</a></div>' +
+      '<div style="font-size:11px;color:#666">All shared reports are live. Reload this page to see the new org card.</div>' +
+      '<div class="modal-actions" style="margin-top:14px"><button class="modal-submit" onclick="window.location.reload()">Reload Admin</button></div>';
+    successEl.style.display = 'block';
+  } catch(e) {
+    errEl.textContent = e.message;
+    errEl.style.display = 'block';
+    btn.disabled = false;
+    btn.textContent = 'Add Organization';
+  }
+}
 </script>
 </body>
 </html>
