@@ -233,6 +233,14 @@ async function fetchMetabaseData(orgSlug, reportType, query) {
 const UPDATES = [
   {
     date: "2026-07-14",
+    title: "AI Insights: Schema-Aware Context",
+    items: [
+      "Every AI insight prompt now includes a SCHEMA_CONTEXT block explaining the rec.us data model, column semantics, revenue recognition rules, and known data patterns.",
+      "Eliminates hallucinations where the model misinterprets column meanings (e.g. customer_user_id vs participant_user_id, listed price vs charged amount).",
+    ],
+  },
+  {
+    date: "2026-07-14",
     title: "Admin Panel: Add Org Button",
     items: [
       "New Add Org button in the admin panel header opens a form to onboard orgs without touching code.",
@@ -588,6 +596,20 @@ app.get('/:org/api/events/stats', authMiddleware, (req, res) => {
 // ═══════════════════════════════════════════
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
 
+// ── Schema Context for AI Insights ──────────────────────────────────
+const SCHEMA_CONTEXT = `
+DATA MODEL REFERENCE (rec.us platform):
+- program (template) -> section (schedulable instance) -> session (individual meeting)
+- booking = enrollment. customer_user_id = payer/parent, participant_user_id = actual attendee (often a child for youth programs)
+- Revenue: applied_pricing->'result'->>'finalCents' = actual charged cents. order_item.price = listed price (may differ from charged).
+- booking.status: confirmed = active, planned = Fast Track pre-reg, pending = mid-checkout.
+- booking.is_fast_track: true = pre-registration that promotes when registration opens.
+- reservation timestamps are LOCAL time. All money amounts are cents (divide by 100 for dollars).
+- Payment date != booking date. 30-40% of monthly payments cover bookings from prior months (season passes, payment plans).
+- Canceled records use soft delete: canceled_at IS NOT NULL. Filter with canceled_at IS NULL for active.
+- Household bookings (20-30%): parent pays, child attends.
+- payment_method_type values: card-online, card-present, check, cash, organization-credit, scholarship, free.`;
+
 const INSIGHT_PROMPTS = {
   revenue: 'Analyze these revenue/GL metrics. Focus on: revenue health, refund rates, payment method trends, and any GL codes that stand out.',
   facility: 'Analyze these facility rental metrics. Focus on: booking volume trends, top/underperforming locations, revenue per booking, and headcount patterns.',
@@ -606,7 +628,9 @@ app.post('/:org/api/insights/:sectionId', authMiddleware, async (req, res) => {
   const { summary, dateRange } = req.body;
 
   const sectionPrompt = INSIGHT_PROMPTS[sectionId] || 'Analyze these metrics and provide actionable insights.';
-  const prompt = `You are a sharp, data-driven parks and recreation analytics advisor helping ${req.org.name}. Date range: ${dateRange || 'current month'}.
+  const prompt = `You are a sharp, data-driven parks and recreation analytics advisor helping ${req.org.name}.
+
+${SCHEMA_CONTEXT} Date range: ${dateRange || 'current month'}.
 
 ${sectionPrompt}
 
