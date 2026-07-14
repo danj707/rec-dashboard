@@ -13,7 +13,9 @@ if (_langfuseEnabled) {
     publicKey: process.env.LANGFUSE_PUBLIC_KEY,
     secretKey: process.env.LANGFUSE_SECRET_KEY,
     baseUrl:   process.env.LANGFUSE_BASE_URL || 'https://us.cloud.langfuse.com',
-    shouldExportSpan: ({ otelSpan }) => isDefaultExportSpan(otelSpan),
+    shouldExportSpan: ({ otelSpan }) =>
+      isDefaultExportSpan(otelSpan) ||
+      otelSpan.instrumentationScope?.name === 'rec-dashboard',
   });
   _otelSdk = new NodeSDK({ spanProcessors: [_langfuseProcessor], instrumentations: [] });
   _otelSdk.start();
@@ -209,6 +211,7 @@ const UPDATES = [
       "Rec Insights panels now have thumbs up/down feedback. Thumbs-down opens an optional comment box.",
       "Feedback flows to Langfuse as trace scores (name: user-feedback) via the /api/public/scores API, tagged by org + section.",
       "Each insight generation is wrapped in an OpenTelemetry span (rec.insights) exported to Langfuse — the span's traceId links the feedback score to the exact generation.",
+      "Trace bodies carry the full prompt and generated insight (langfuse.observation input/output + model + token usage), so each score is reviewable in context.",
       "Graceful no-op when LANGFUSE_* keys are absent: insights still work, feedback logs locally to events.jsonl only.",
     ],
   },
@@ -542,8 +545,19 @@ Respond with 4-5 punchy insights. Rules:
 
   try {
     // Wrap in an OTel span so we can capture a traceId for user feedback → Langfuse
+    // Wrap in an OTel span so we can capture a traceId for user feedback → Langfuse.
+    // Set Langfuse semantic attributes so the trace shows the prompt + generated text.
     const parentSpan = _recTracer.startSpan('rec.insights', {
-      attributes: { 'rec.org': req.orgSlug, 'rec.section': sectionId },
+      attributes: {
+        'rec.org': req.orgSlug,
+        'rec.section': sectionId,
+        'langfuse.trace.name': 'rec-insights',
+        'langfuse.trace.input': prompt,
+        'langfuse.trace.metadata': JSON.stringify({ org: req.orgSlug, section: sectionId, dateRange: dateRange || 'current month' }),
+        'langfuse.observation.type': 'generation',
+        'langfuse.observation.model.name': 'claude-haiku-4-5-20251001',
+        'langfuse.observation.input': JSON.stringify([{ role: 'user', content: prompt }]),
+      },
     });
     const traceId = parentSpan.spanContext().traceId;
     const spanCtx = otelApi.trace.setSpan(otelApi.context.active(), parentSpan);
@@ -554,9 +568,15 @@ Respond with 4-5 punchy insights. Rules:
       body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 600,
         messages: [{ role: 'user', content: prompt }] })
     }));
-    parentSpan.end();
     const data = await resp.json();
     const insight = data.content?.[0]?.text || 'No insights generated.';
+    const u = data.usage || {};
+    parentSpan.setAttribute('langfuse.observation.output', insight);
+    parentSpan.setAttribute('langfuse.trace.output', insight);
+    if (u.input_tokens != null) {
+      parentSpan.setAttribute('langfuse.observation.usage_details', JSON.stringify({ input: u.input_tokens, output: u.output_tokens || 0 }));
+    }
+    parentSpan.end();
     track_server(req.orgSlug, 'insight_generated', { section: sectionId, traceId });
     if (_langfuseProcessor) _langfuseProcessor.forceFlush().catch(() => {});
     res.json({ insight, traceId });
