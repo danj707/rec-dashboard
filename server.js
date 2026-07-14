@@ -209,7 +209,7 @@ const UPDATES = [
     date: "2026-07-13",
     title: "Programs section: Session Check-In widgets",
     items: [
-      "New widgets in the Programs & Enrollment section: Session Check-Ins, Session Check-Outs, Attendees Checked In, Check-Out Rate, and Check-Ins by Section.",
+      "New widgets in the Programs & Enrollment section: Session Check-Ins, Attendees Checked In, Visits / Attendee (attendance frequency), and Check-Ins by Section.",
       "Backed by the shared program-checkins Metabase card (attendance_event, session check-ins), date-scoped to the dashboard's range.",
       "Added to the Programs default layout; existing dashboards can add them from the widget picker or reset to defaults.",
     ],
