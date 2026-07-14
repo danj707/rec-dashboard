@@ -62,6 +62,32 @@ const ORGS = {
   }
 };
 
+// ── Dynamic Orgs (added via admin panel, persisted to data/) ─────────
+const DYNAMIC_ORGS_FILE = path.join(DATA_DIR, 'dashboard-orgs.json');
+function loadDynamicOrgs() {
+  try {
+    if (fs.existsSync(DYNAMIC_ORGS_FILE)) {
+      const orgs = JSON.parse(fs.readFileSync(DYNAMIC_ORGS_FILE, 'utf8'));
+      let count = 0;
+      for (const [slug, org] of Object.entries(orgs)) {
+        if (!ORGS[slug]) { ORGS[slug] = org; count++; }
+      }
+      if (count > 0) console.log(`[orgs] Loaded ${count} dynamic org(s) from ${DYNAMIC_ORGS_FILE}`);
+    }
+  } catch (e) { console.warn('[orgs] Failed to load dynamic orgs:', e.message); }
+}
+function saveDynamicOrgs() {
+  // Only save orgs that aren't hardcoded (i.e. were added dynamically)
+  const hardcoded = new Set(['watertown', 'niagarafalls']);
+  const dynamic = {};
+  for (const [slug, org] of Object.entries(ORGS)) {
+    if (!hardcoded.has(slug) && org._dynamic) dynamic[slug] = org;
+  }
+  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+  fs.writeFileSync(DYNAMIC_ORGS_FILE, JSON.stringify(dynamic, null, 2));
+}
+loadDynamicOrgs();
+
 // Reports available to ALL orgs via shared Metabase cards (need org_id param)
 const SHARED_UUIDS = {
   facility: 'f6787f45-3a36-4501-8a5f-b0f647451a85',
@@ -205,6 +231,16 @@ async function fetchMetabaseData(orgSlug, reportType, query) {
 //  UPDATES LOG
 // ═══════════════════════════════════════════
 const UPDATES = [
+  {
+    date: "2026-07-14",
+    title: "Admin Panel: Add Org Button",
+    items: [
+      "New Add Org button in the admin panel header opens a form to onboard orgs without touching code.",
+      "Collects slug, name, org UUID, city, state, logo URL. Token is auto-generated server-side.",
+      "Dynamic orgs persist to data/dashboard-orgs.json and merge into ORGS at startup.",
+      "All shared reports light up automatically for new orgs. No Metabase UUIDs needed.",
+    ],
+  },
   {
     date: "2026-07-13",
     title: "Programs section: Session Check-In widgets",
@@ -414,6 +450,38 @@ app.post('/admin/api/orgs/:slug/toggles', adminAuth, (req, res) => {
   dashboardConfigs[slug].updatedAt = new Date().toISOString();
   saveAllConfigs(dashboardConfigs);
   res.json({ ok: true, toggles: dashboardConfigs[slug].toggles });
+});
+
+// ── POST /admin/api/orgs — add new org via admin panel ───────────────
+app.post('/admin/api/orgs', adminAuth, (req, res) => {
+  const { slug, name, orgId, city, state, logoUrl } = req.body;
+  if (!slug || !orgId) return res.status(400).json({ error: 'slug and orgId are required' });
+  if (ORGS[slug]) return res.status(409).json({ error: `Org "${slug}" already exists` });
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) return res.status(400).json({ error: 'Slug must be lowercase alphanumeric with hyphens' });
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(orgId)) return res.status(400).json({ error: 'Invalid org UUID format' });
+
+  // Generate 16-char base62 token
+  const crypto = require('crypto');
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  let token = '';
+  for (let i = 0; i < 16; i++) token += chars[crypto.randomInt(chars.length)];
+
+  const org = {
+    name: name || slug,
+    orgId,
+    token,
+    city: city || '',
+    state: state || '',
+    logoUrl: logoUrl || `https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/organization-${orgId}/fullLogo.png`,
+    reports: {},
+    _dynamic: true,
+  };
+
+  ORGS[slug] = org;
+  saveDynamicOrgs();
+  console.log(`[orgs] Added new org: ${slug} (${orgId})`);
+
+  res.json({ ok: true, slug, token, org: { ...org, _dynamic: undefined } });
 });
 
 // ── Org dashboard routes ──
