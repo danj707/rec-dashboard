@@ -75,7 +75,8 @@ const SHARED_UUIDS = {
   retention: '3cfc9cfa-b1db-41e9-83fd-01fb90a5b0c8',
   products: 'b9678f5f-b5fb-48f7-96da-f22a1b4e8d8a',
   'instructor-payout': 'a8db6d86-eddc-4511-a28c-ad4bf636859e',
-  checkins: '574324e0-b5a1-46c5-8770-8c466631fdcf'
+  checkins: '574324e0-b5a1-46c5-8770-8c466631fdcf',
+  'program-checkins': 'cb6fd909-72d3-446b-930b-c0382da02d62'
 };
 
 // Reports that don't accept date parameters
@@ -204,6 +205,15 @@ async function fetchMetabaseData(orgSlug, reportType, query) {
 //  UPDATES LOG
 // ═══════════════════════════════════════════
 const UPDATES = [
+  {
+    date: "2026-07-13",
+    title: "Programs section: Session Check-In widgets",
+    items: [
+      "New widgets in the Programs & Enrollment section: Session Check-Ins, Session Check-Outs, Attendees Checked In, Check-Out Rate, and Check-Ins by Section.",
+      "Backed by the shared program-checkins Metabase card (attendance_event, session check-ins), date-scoped to the dashboard's range.",
+      "Added to the Programs default layout; existing dashboards can add them from the widget picker or reset to defaults.",
+    ],
+  },
   {
     date: "2026-07-13",
     title: "AI Insights — thumbs up/down + Langfuse",

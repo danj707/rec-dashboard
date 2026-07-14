@@ -252,7 +252,7 @@ const SECTIONS = {
     defaultWidgets: ['rental-count','rental-revenue','rental-locations','rental-by-location','rental-daily-trend','rental-day-of-week'] },
   programs: { id: 'programs', label: 'Programs & Enrollment', icon: '\uD83D\uDCDA', color: '#3b82f6',
     description: 'Enrollment, capacity, and program revenue',
-    defaultWidgets: ['program-enrollments','program-revenue','program-cancellations','program-fill-rate','program-top'] },
+    defaultWidgets: ['program-enrollments','program-revenue','program-cancellations','program-fill-rate','program-checkins-total','program-checkouts-total','program-checkout-rate','program-top','program-checkins-by-section'] },
   courts: { id: 'courts', label: 'Court Bookings', icon: '\uD83C\uDFBE', color: '#8b5cf6',
     description: 'Court reservations, utilization, and booking mix',
     defaultWidgets: ['court-total','court-instant','court-managed','court-util-pct','court-by-court','court-by-location','court-map'] },
@@ -392,6 +392,29 @@ const W = {
       const s = Object.entries(g).sort((a,b)=>b[1].revenue-a[1].revenue).slice(0,15);
       return { columns:['Program','Enrolled','Capacity','Fill %','Revenue','Refunds'],
         data: s.map(([k,v])=>[k, v.enrolled, v.capacity, v.capacity>0?Math.round(v.enrolled/v.capacity*100)+'%':'-', '$'+Math.round(v.revenue).toLocaleString(), '$'+Math.round(v.refunds).toLocaleString()]) };
+    }},
+  'program-checkins-total': { label: 'Session Check-Ins', description: 'Total program session check-ins', note: 'Total check-in scans across program sessions in range', section: 'programs',
+    reportType: 'program-checkins', size: 'sm', icon: '\\u2705', component: 'metric',
+    transform: rows => ({ value: rows.reduce((s,r) => s + (parseInt(r['Check Ins'])||0), 0), format: 'number', colorClass: 'metric-green' }) },
+  'program-checkouts-total': { label: 'Session Check-Outs', description: 'Total program session check-outs', note: 'Total check-out scans across program sessions in range', section: 'programs',
+    reportType: 'program-checkins', size: 'sm', icon: '\\uD83D\\uDEAA', component: 'metric',
+    transform: rows => ({ value: rows.reduce((s,r) => s + (parseInt(r['Check Outs'])||0), 0), format: 'number' }) },
+  'program-checkin-attendees': { label: 'Attendees Checked In', description: 'Distinct attendees checked into sessions', note: 'Sum of distinct attendees checked in, per section', section: 'programs',
+    reportType: 'program-checkins', size: 'sm', icon: '\\uD83D\\uDC64', component: 'metric',
+    transform: rows => ({ value: rows.reduce((s,r) => s + (parseInt(r['Attendees In'])||0), 0), format: 'number' }) },
+  'program-checkout-rate': { label: 'Check-Out Rate', description: 'Attendees checked out vs. checked in', note: 'Distinct checked out / distinct checked in', section: 'programs',
+    reportType: 'program-checkins', size: 'sm', icon: '\\uD83D\\uDD01', component: 'metric',
+    transform: rows => {
+      const inn = rows.reduce((s,r) => s + (parseInt(r['Attendees In'])||0), 0);
+      const out = rows.reduce((s,r) => s + (parseInt(r['Attendees Out'])||0), 0);
+      return { value: inn > 0 ? Math.round(out / inn * 1000) / 10 : 0, format: 'percent' };
+    }},
+  'program-checkins-by-section': { label: 'Check-Ins by Section', description: 'Sections ranked by check-in volume', note: 'Sections ranked by total check-in scans', section: 'programs',
+    reportType: 'program-checkins', size: 'md', icon: '\\uD83D\\uDCCA', component: 'bar',
+    transform: rows => {
+      const g = {}; rows.forEach(r => { const k = r['Section'] || r['Program'] || 'Unknown'; g[k] = (g[k]||0) + (parseInt(r['Check Ins'])||0); });
+      const s = Object.entries(g).filter(e=>e[1]>0).sort((a,b)=>b[1]-a[1]).slice(0,10);
+      return { labels: s.map(e=>e[0]), values: s.map(e=>e[1]) };
     }},
 
   // ── Courts ──
