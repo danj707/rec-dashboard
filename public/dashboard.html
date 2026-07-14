@@ -394,20 +394,20 @@ const W = {
         data: s.map(([k,v])=>[k, v.enrolled, v.capacity, v.capacity>0?Math.round(v.enrolled/v.capacity*100)+'%':'-', '$'+Math.round(v.revenue).toLocaleString(), '$'+Math.round(v.refunds).toLocaleString()]) };
     }},
   'program-checkins-total': { label: 'Session Check-Ins', description: 'Total program session check-ins', note: 'Total check-in scans across program sessions in range', section: 'programs',
-    reportType: 'program-checkins', size: 'sm', icon: '\\u2705', component: 'metric',
+    reportType: 'program-checkins', size: 'sm', icon: '✅', component: 'metric',
     transform: rows => ({ value: rows.reduce((s,r) => s + (parseInt(r['Check Ins'])||0), 0), format: 'number', colorClass: 'metric-green' }) },
   'program-checkin-attendees': { label: 'Attendees Checked In', description: 'Distinct attendees checked into sessions', note: 'Sum of distinct attendees checked in, per section', section: 'programs',
-    reportType: 'program-checkins', size: 'sm', icon: '\\uD83D\\uDC64', component: 'metric',
+    reportType: 'program-checkins', size: 'sm', icon: '👤', component: 'metric',
     transform: rows => ({ value: rows.reduce((s,r) => s + (parseInt(r['Attendees In'])||0), 0), format: 'number' }) },
   'program-checkin-frequency': { label: 'Visits / Attendee', description: 'Average check-ins per attendee', note: 'Total check-ins / distinct attendees — attendance frequency', section: 'programs',
-    reportType: 'program-checkins', size: 'sm', icon: '\\uD83D\\uDD01', component: 'metric',
+    reportType: 'program-checkins', size: 'sm', icon: '🔁', component: 'metric',
     transform: rows => {
       const ins = rows.reduce((s,r) => s + (parseInt(r['Check Ins'])||0), 0);
       const att = rows.reduce((s,r) => s + (parseInt(r['Attendees In'])||0), 0);
       return { value: att > 0 ? Math.round(ins / att * 10) / 10 : 0, format: 'number', sub: 'avg sessions attended' };
     }},
   'program-checkins-by-section': { label: 'Check-Ins by Section', description: 'Sections ranked by check-in volume', note: 'Sections ranked by total check-in scans', section: 'programs',
-    reportType: 'program-checkins', size: 'md', icon: '\\uD83D\\uDCCA', component: 'bar',
+    reportType: 'program-checkins', size: 'md', icon: '📊', component: 'bar',
     transform: rows => {
       const g = {}; rows.forEach(r => { const k = r['Section'] || r['Program'] || 'Unknown'; g[k] = (g[k]||0) + (parseInt(r['Check Ins'])||0); });
       const s = Object.entries(g).filter(e=>e[1]>0).sort((a,b)=>b[1]-a[1]).slice(0,10);
