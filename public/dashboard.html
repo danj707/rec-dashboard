@@ -1199,7 +1199,7 @@ function BriefingSection({ reportData, loading, dateRange }) {
             <span style={{color:'var(--text-muted)',fontSize:13}}>Analyzing dashboard data...</span>
           </div>
         ) : briefing ? (
-          <div style={{fontSize:12,lineHeight:1.8,color:'var(--text-primary)',fontFamily:'Georgia, "Times New Roman", serif',
+          <div style={{fontSize:12,lineHeight:1.8,color:'var(--text-primary)',fontFamily:'var(--font-body)',
             letterSpacing:'0.01em'}}
             dangerouslySetInnerHTML={{__html: briefing
               .replace(/\*\*([^*]+)\*\*/g, '<strong style="color:var(--amber);font-family:var(--font-body);font-weight:600">$1</strong>')
@@ -1822,6 +1822,13 @@ function DashboardApp() {
   }
   function handleRefresh() { clearDataStore(); setDateRange({...dateRange}); track('refresh_clicked'); }
 
+  // Auto-print in print mode (must be before early returns to maintain hook order)
+  useEffect(() => {
+    if (IS_PRINT && !loading && lastRefresh) {
+      setTimeout(() => window.print(), 500);
+    }
+  }, [loading, lastRefresh]);
+
   if (config === 'new') return <TemplateChooser onSelect={handleSelectTemplate} />;
   if (!config) return <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',color:'var(--text-secondary)'}}>Loading...</div>;
 
@@ -1837,13 +1844,6 @@ function DashboardApp() {
     if (!vis) return true;
     return vis.visible;
   });
-
-  // Auto-print in print mode
-  useEffect(() => {
-    if (IS_PRINT && !loading && lastRefresh) {
-      setTimeout(() => window.print(), 500);
-    }
-  }, [loading, lastRefresh]);
 
   return (
     <div>
