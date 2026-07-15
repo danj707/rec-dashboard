@@ -543,16 +543,26 @@ app.get('/:org/api/data/:reportType', authMiddleware, async (req, res) => {
 });
 
 // --- Dashboard config ---
-app.get('/:org/api/config', authMiddleware, (req, res) => {
+app.get('/:org/api/config', authMiddleware, async (req, res) => {
   const config = dashboardConfigs[req.orgSlug] || null;
   // Also send available report types for this org
   const availableReports = {};
   const org = ORGS[req.orgSlug];
   for (const [r, uuid] of Object.entries(org.reports || {})) availableReports[r] = true;
   for (const [r, uuid] of Object.entries(SHARED_UUIDS)) availableReports[r] = true;
+  // Fetch report visibility from rental-report
+  let reportVisibility = null;
+  try {
+    const visResp = await fetch(`${REPORTING_BASE_URL}/api/org-visibility/${req.orgSlug}`);
+    if (visResp.ok) reportVisibility = await visResp.json();
+  } catch (e) {
+    console.error(`[config] Failed to fetch report visibility for ${req.orgSlug}:`, e.message);
+  }
+
   res.json({ config, availableReports, orgName: org.name, logoUrl: org.logoUrl, city: org.city, state: org.state,
     toggles: config?.toggles || { ai: true, reportLinks: false },
-    reportingBaseUrl: REPORTING_BASE_URL });
+    reportingBaseUrl: REPORTING_BASE_URL,
+    reportVisibility: reportVisibility?.available || null });
 });
 
 app.post('/:org/api/config', authMiddleware, (req, res) => {
