@@ -213,6 +213,7 @@ body { font-family: var(--font-body); background: var(--bg-page); color: var(--t
 .heatmap-cell:hover { color: var(--text-primary); transform: scale(1.08); z-index: 2; box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
 .heatmap-label { font-size: 10px; color: var(--text-muted); display: flex; align-items: center; justify-content: flex-end; padding-right: 6px; }
 .heatmap-col-label { font-size: 9px; color: var(--text-muted); text-align: center; }
+@keyframes spin { to { transform: rotate(360deg); } }
 </style>
 </head>
 <body>
@@ -1164,112 +1165,52 @@ function BriefingSection({ reportData, loading, dateRange }) {
 
   return (
     <div className="dashboard-section">
-      <div style={{background:'linear-gradient(135deg, rgba(168,85,247,0.12), rgba(59,130,246,0.06))',
-        border:'1px solid rgba(168,85,247,0.2)',borderRadius:12,padding:'20px 24px'}}>
-        <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14}}>
-          <div style={{width:36,height:36,borderRadius:8,background:'rgba(168,85,247,0.15)',
-            display:'flex',alignItems:'center',justifyContent:'center',fontSize:18}}>{'\u2728'}</div>
-          <div>
-            <div style={{fontSize:15,fontWeight:600,color:'var(--text-primary)',fontFamily:'var(--font-heading)'}}>AI executive briefing</div>
-            <div style={{fontSize:11,color:'var(--text-muted)'}}>Synthesized from all dashboard sections</div>
-          </div>
-          <div style={{flex:1}} />
-          <button onClick={generateBriefing} className="btn btn-sm"
-            style={{fontSize:11,opacity:briefingLoading?0.5:1}} disabled={briefingLoading}>
-            {'\u21BB'} Regenerate
-          </button>
-        </div>
+      <div className="section-header">
+        <span className="section-icon">{'\u2728'}</span>
+        <span className="section-label">AI Executive Briefing</span>
+        <div className="section-line" />
+        <button onClick={generateBriefing} className="btn btn-sm"
+          style={{fontSize:11,opacity:briefingLoading?0.5:1}} disabled={briefingLoading}>
+          {'\u21BB'} Regenerate
+        </button>
+      </div>
+      <div style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:12,padding:'20px 24px'}}>
         {briefingLoading ? (
-          <div style={{color:'var(--text-muted)',fontSize:13,fontStyle:'italic',padding:'8px 0'}}>
-            Analyzing all dashboard data...
+          <div style={{display:'flex',alignItems:'center',gap:10,padding:'4px 0'}}>
+            <div style={{width:14,height:14,border:'2px solid var(--purple)',borderTopColor:'transparent',borderRadius:'50%',
+              animation:'spin 0.8s linear infinite'}} />
+            <span style={{color:'var(--text-muted)',fontSize:13}}>Analyzing dashboard data...</span>
           </div>
         ) : briefing ? (
-          <div style={{fontSize:14,lineHeight:1.7,color:'var(--text-primary)',fontFamily:'Georgia, serif'}}>
-            {briefing}
-          </div>
+          <div style={{fontSize:14,lineHeight:1.8,color:'var(--text-primary)',fontFamily:'Georgia, "Times New Roman", serif',
+            letterSpacing:'0.01em'}}
+            dangerouslySetInnerHTML={{__html: briefing
+              .replace(/\*\*([^*]+)\*\*/g, '<strong style="color:var(--amber);font-family:var(--font-body);font-weight:600">$1</strong>')
+              .replace(/\n/g, '<br/>')}} />
         ) : null}
         {!briefingLoading && briefing && traceId && (
-          <div style={{marginTop:14,paddingTop:10,borderTop:'1px solid rgba(168,85,247,0.12)',display:'flex',alignItems:'center',gap:10}}>
+          <div style={{marginTop:16,paddingTop:12,borderTop:'1px solid var(--border-subtle)',display:'flex',alignItems:'center',gap:10}}>
             {fbSent ? (
               <span style={{fontSize:11,color:'var(--text-muted)',fontStyle:'italic'}}>{'\u2713'} Thanks for the feedback</span>
             ) : (
               <React.Fragment>
                 <span style={{fontSize:11,color:'var(--text-muted)'}}>Helpful?</span>
                 <button onClick={()=>sendFeedback(1)} title="Helpful"
-                  style={{background:'transparent',border:'1px solid rgba(168,85,247,0.25)',borderRadius:6,width:28,height:26,cursor:'pointer',fontSize:13,lineHeight:1}}>
+                  style={{background:'transparent',border:'1px solid var(--border)',borderRadius:6,width:28,height:26,cursor:'pointer',
+                    fontSize:13,lineHeight:1,transition:'all 0.15s'}}
+                  onMouseOver={e=>{e.currentTarget.style.background='rgba(34,197,94,0.15)';e.currentTarget.style.borderColor='var(--green)';}}
+                  onMouseOut={e=>{e.currentTarget.style.background='transparent';e.currentTarget.style.borderColor='var(--border)';}}>
                   {'\uD83D\uDC4D'}</button>
                 <button onClick={()=>sendFeedback(0)} title="Not helpful"
-                  style={{background:'transparent',border:'1px solid rgba(168,85,247,0.25)',borderRadius:6,width:28,height:26,cursor:'pointer',fontSize:13,lineHeight:1}}>
+                  style={{background:'transparent',border:'1px solid var(--border)',borderRadius:6,width:28,height:26,cursor:'pointer',
+                    fontSize:13,lineHeight:1,transition:'all 0.15s'}}
+                  onMouseOver={e=>{e.currentTarget.style.background='rgba(239,68,68,0.15)';e.currentTarget.style.borderColor='var(--red)';}}
+                  onMouseOut={e=>{e.currentTarget.style.background='transparent';e.currentTarget.style.borderColor='var(--border)';}}>
                   {'\uD83D\uDC4E'}</button>
               </React.Fragment>
             )}
           </div>
         )}
-      </div>
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════
-//  EMAIL SUBSCRIBE PANEL
-// ═══════════════════════════════════════════════════════
-function EmailSubscribePanel() {
-  const [email, setEmail] = useState('');
-  const [freq, setFreq] = useState('weekly');
-  const [status, setStatus] = useState(null); // null | 'saving' | 'success' | 'error'
-  const [msg, setMsg] = useState('');
-
-  async function handleSubscribe() {
-    if (!email || !email.includes('@')) { setMsg('Enter a valid email address.'); setStatus('error'); return; }
-    setStatus('saving');
-    try {
-      const resp = await fetch('/' + ORG_SLUG + '/api/email-subscribe?token=' + TOKEN, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, frequency: freq })
-      });
-      const json = await resp.json();
-      if (json.ok) { setStatus('success'); setMsg('Subscribed! You will receive dashboard summaries at ' + email + '.'); track('email_subscribed', { frequency: freq }); }
-      else { setStatus('error'); setMsg(json.error || 'Failed to subscribe.'); }
-    } catch(e) { setStatus('error'); setMsg('Network error. Try again.'); }
-  }
-
-  return (
-    <div className="dashboard-section">
-      <div style={{background:'linear-gradient(135deg, rgba(6,182,212,0.08), rgba(59,130,246,0.04))',
-        border:'1px solid rgba(6,182,212,0.2)',borderRadius:12,padding:'20px 24px'}}>
-        <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14}}>
-          <div style={{width:36,height:36,borderRadius:8,background:'rgba(6,182,212,0.15)',
-            display:'flex',alignItems:'center',justifyContent:'center',fontSize:18}}>{'\uD83D\uDCE7'}</div>
-          <div>
-            <div style={{fontSize:15,fontWeight:600,color:'var(--text-primary)',fontFamily:'var(--font-heading)'}}>Email dashboard summary</div>
-            <div style={{fontSize:11,color:'var(--text-muted)'}}>Get KPIs, trends, and AI briefing delivered to your inbox</div>
-          </div>
-        </div>
-        {status === 'success' ? (
-          <div style={{fontSize:13,color:'#22c55e',padding:'8px 0'}}>{'\u2713'} {msg}</div>
-        ) : (
-          <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
-            <input type="email" value={email} onChange={e=>setEmail(e.target.value)}
-              placeholder="you@example.com"
-              onKeyDown={e=>{if(e.key==='Enter')handleSubscribe();}}
-              style={{flex:'1 1 200px',minWidth:180,background:'var(--bg-surface)',border:'1px solid rgba(6,182,212,0.3)',borderRadius:8,
-                padding:'8px 12px',fontSize:13,color:'var(--text-primary)',fontFamily:'var(--font-body)',outline:'none'}} />
-            <select value={freq} onChange={e=>setFreq(e.target.value)}
-              style={{background:'var(--bg-surface)',border:'1px solid rgba(6,182,212,0.3)',borderRadius:8,
-                padding:'8px 12px',fontSize:12,color:'var(--text-primary)',fontFamily:'var(--font-body)',cursor:'pointer'}}>
-              <option value="daily">Daily</option>
-              <option value="weekly">Weekly</option>
-              <option value="monthly">Monthly</option>
-            </select>
-            <button onClick={handleSubscribe} disabled={status==='saving'}
-              style={{background:'linear-gradient(135deg,#06b6d4,#0891b2)',border:'none',borderRadius:8,
-                padding:'8px 20px',cursor:'pointer',fontSize:13,fontWeight:600,color:'#fff',
-                fontFamily:'var(--font-body)',opacity:status==='saving'?0.6:1}}>
-              {status === 'saving' ? 'Subscribing...' : 'Subscribe'}
-            </button>
-          </div>
-        )}
-        {status === 'error' && <div style={{fontSize:12,color:'#ef4444',marginTop:8}}>{msg}</div>}
       </div>
     </div>
   );
@@ -1565,8 +1506,26 @@ function TemplateChooser({ onSelect }) {
 // ═══════════════════════════════════════════════════════
 //  SETTINGS
 // ═══════════════════════════════════════════════════════
-function SettingsPopover({ cacheTTL, onCacheTTLChange, onClearCache, onReset, theme, onThemeChange }) {
+function SettingsPopover({ cacheTTL, onCacheTTLChange, onClearCache, onReset, theme, onThemeChange, emailDigestEnabled }) {
   const [confirmReset, setConfirmReset] = useState(false);
+  const [subEmail, setSubEmail] = useState('');
+  const [subFreq, setSubFreq] = useState('weekly');
+  const [subStatus, setSubStatus] = useState(null);
+
+  async function handleSubscribe() {
+    if (!subEmail || !subEmail.includes('@')) { setSubStatus('error'); return; }
+    setSubStatus('saving');
+    try {
+      const resp = await fetch('/' + ORG_SLUG + '/api/email-subscribe?token=' + TOKEN, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: subEmail, frequency: subFreq })
+      });
+      const json = await resp.json();
+      setSubStatus(json.ok ? 'success' : 'error');
+      if (json.ok) track('email_subscribed', { frequency: subFreq });
+    } catch(e) { setSubStatus('error'); }
+  }
+
   return (
     <div style={{ position:'absolute',top:'100%',right:0,marginTop:6,background:'var(--bg-modal)',border:'1px solid var(--border)',
       borderRadius:10,padding:16,width:280,zIndex:60,boxShadow:'0 12px 32px rgba(0,0,0,0.5)' }} onClick={e=>e.stopPropagation()}>
@@ -1584,6 +1543,40 @@ function SettingsPopover({ cacheTTL, onCacheTTLChange, onClearCache, onReset, th
         <option value={5}>5 minutes</option><option value={15}>15 minutes</option><option value={30}>30 minutes</option><option value={60}>1 hour</option><option value={240}>4 hours</option>
       </select>
       <button className="btn" style={{width:'100%',fontSize:12,marginBottom:10}} onClick={onClearCache}>Clear Cache Now</button>
+
+      {emailDigestEnabled && (
+        <div style={{borderTop:'1px solid var(--border)',paddingTop:12,marginTop:4,marginBottom:10}}>
+          <div style={{fontSize:12,color:'var(--text-secondary)',marginBottom:8,display:'flex',alignItems:'center',gap:5}}>
+            {'\uD83D\uDCE7'} Email Summary
+          </div>
+          {subStatus === 'success' ? (
+            <div style={{fontSize:11,color:'var(--green)',padding:'4px 0'}}>{'\u2713'} Subscribed!</div>
+          ) : (
+            <React.Fragment>
+              <input type="email" value={subEmail} onChange={e=>setSubEmail(e.target.value)}
+                placeholder="you@example.com"
+                onKeyDown={e=>{if(e.key==='Enter')handleSubscribe();}}
+                style={{width:'100%',padding:'6px 8px',borderRadius:6,border:'1px solid var(--border)',
+                  background:'var(--bg-surface)',color:'var(--text-primary)',fontSize:12,marginBottom:6,
+                  fontFamily:'var(--font-body)',outline:'none',boxSizing:'border-box'}} />
+              <div style={{display:'flex',gap:6}}>
+                <select value={subFreq} onChange={e=>setSubFreq(e.target.value)}
+                  style={{flex:1,padding:'6px 8px',borderRadius:6,border:'1px solid var(--border)',
+                    background:'var(--bg-surface)',color:'var(--text-primary)',fontSize:11,fontFamily:'var(--font-body)'}}>
+                  <option value="daily">Daily</option>
+                  <option value="weekly">Weekly</option>
+                  <option value="monthly">Monthly</option>
+                </select>
+                <button className="btn btn-sm" style={{fontSize:11,fontWeight:600,background:'var(--blue)',color:'#fff',borderColor:'var(--blue)'}}
+                  onClick={handleSubscribe} disabled={subStatus==='saving'}>
+                  {subStatus === 'saving' ? '...' : 'Subscribe'}
+                </button>
+              </div>
+              {subStatus === 'error' && <div style={{fontSize:10,color:'var(--red)',marginTop:4}}>Enter a valid email</div>}
+            </React.Fragment>
+          )}
+        </div>
+      )}
 
       <div style={{borderTop:'1px solid var(--border)',paddingTop:10,marginTop:4}}>
         {!confirmReset ? (
@@ -1747,7 +1740,7 @@ function DashboardApp() {
           <button className="btn" onClick={()=>{setEditOpen(true);track('edit_opened');}}>{'\u270E'} Edit Dashboard</button>
           <div style={{position:'relative'}}>
             <button className="btn" onClick={()=>setSettingsOpen(!settingsOpen)}>{'\u2699'}</button>
-            {settingsOpen && <SettingsPopover cacheTTL={config.cacheTTL||15} onCacheTTLChange={handleCacheTTLChange} onClearCache={handleClearCache} onReset={handleReset} theme={theme} onThemeChange={handleThemeChange} />}
+            {settingsOpen && <SettingsPopover cacheTTL={config.cacheTTL||15} onCacheTTLChange={handleCacheTTLChange} onClearCache={handleClearCache} onReset={handleReset} theme={theme} onThemeChange={handleThemeChange} emailDigestEnabled={orgMeta.toggles?.emailDigest === true} />}
           </div>
         </div>
       </div>
@@ -1776,7 +1769,6 @@ function DashboardApp() {
             targets={targets} onTargetChange={handleTargetChange} dateRange={dateRange} aiEnabled={orgMeta.toggles?.ai !== false}
             reportLinksEnabled={orgMeta.toggles?.reportLinks === true} reportingBaseUrl={orgMeta.reportingBaseUrl || ''} />
         ))}
-        {orgMeta.toggles?.emailDigest && <EmailSubscribePanel />}
       </div>
 
       {editOpen && <EditModal sections={config.sections.filter(sec => {
