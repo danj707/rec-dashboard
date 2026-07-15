@@ -234,19 +234,15 @@ async function fetchMetabaseData(orgSlug, reportType, query) {
 const UPDATES = [
   {
     date: "2026-07-15",
-    title: "Cross-Project Org Sync",
+    title: "Cross-Project Integration Suite",
     items: [
-      "Adding an org in the dashboard now automatically syncs it to the rental-report project with the same token.",
-      "Report links from dashboard sections now work for dynamically-added orgs (token mismatch fixed).",
-    ],
-  },
-  {
-    date: "2026-07-15",
-    title: "Report Linking Toggle",
-    items: [
-      "Admin toggle to enable/disable report links on dashboard section cards.",
-      "When enabled, each section shows a View Detailed Report link to the corresponding report in the reporting project.",
-      "REPORTING_BASE_URL env var controls the target (defaults to rental-report Railway deployment).",
+      "Add Org auto-syncs to rental-report with matching token (no more token mismatches).",
+      "Report Linking toggle: admin ON/OFF, per-section colored View Report links with auth tokens.",
+      "Report Visibility sync: dashboard sections filtered by rental-report hidden-report toggles.",
+      "Hidden reports excluded from dashboard render, Edit Dashboard modal, and Add Section list.",
+      "Early Access banner at top of every dashboard (matches reporting project style).",
+      "Next Mo date preset button for forward-looking date ranges.",
+      "REPORTING_BASE_URL env var controls the target reporting project URL.",
     ],
   },
   {
