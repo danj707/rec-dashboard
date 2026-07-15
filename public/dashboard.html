@@ -1148,7 +1148,10 @@ function BriefingSection({ reportData, loading, dateRange }) {
     if (!summary) { setBriefing('Not enough data loaded yet. Try refreshing.'); setBriefingLoading(false); return; }
     const dr = dateRange ? dateRange.start + ' to ' + dateRange.end : 'current month';
     try {
-      const resp = await fetch('/' + ORG_SLUG + '/api/insights/executive-briefing?token=' + TOKEN, {
+      const insightUrl = IS_SHARE
+        ? '/share/' + SHARE_TOKEN + '/insights/executive-briefing'
+        : '/' + ORG_SLUG + '/api/insights/executive-briefing?token=' + TOKEN;
+      const resp = await fetch(insightUrl, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ summary, dateRange: dr })
       });
@@ -1170,7 +1173,7 @@ function BriefingSection({ reportData, loading, dateRange }) {
   }, [loading, reportData]);
 
   function sendFeedback(score) {
-    if (!traceId) return;
+    if (!traceId || IS_SHARE) return;
     fetch('/' + ORG_SLUG + '/api/insights/executive-briefing/score?token=' + TOKEN, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ traceId, score })

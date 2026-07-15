@@ -586,6 +586,7 @@ app.get('/share/:shareToken/config', (req, res) => {
   if (!org) return res.status(404).json({ error: 'Org not found' });
   const availableReports = { ...SHARED_UUIDS };
   for (const r of Object.keys(org.reports || {})) availableReports[r] = true;
+  const orgToggles = dashboardConfigs[share.orgSlug]?.toggles || {};
   res.json({
     config: share.config,
     availableReports,
@@ -593,10 +594,11 @@ app.get('/share/:shareToken/config', (req, res) => {
     logoUrl: share.logoUrl,
     city: org.city,
     state: org.state,
-    toggles: share.config?.toggles || { ai: false, reportLinks: false, aiBriefing: false, emailDigest: false },
+    toggles: { ai: false, reportLinks: false, aiBriefing: !!orgToggles.aiBriefing, emailDigest: false },
     dateRange: share.dateRange,
     readOnly: true,
     expiresAt: share.expiresAt,
+    orgSlug: share.orgSlug,
   });
 });
 
@@ -610,6 +612,35 @@ app.get('/share/:shareToken/data/:reportType', async (req, res) => {
     res.json({ rows, meta: { count: rows.length } });
   } catch (e) {
     res.status(502).json({ error: 'Failed to fetch data', detail: e.message });
+  }
+});
+
+// Share insights proxy (no auth — share token is auth)
+app.post('/share/:shareToken/insights/:sectionId', async (req, res) => {
+  const share = shares[req.params.shareToken];
+  if (!share || new Date(share.expiresAt) < new Date()) return res.status(404).json({ error: 'Expired' });
+  if (!ANTHROPIC_API_KEY) return res.status(503).json({ error: 'AI not configured' });
+  const org = ORGS[share.orgSlug];
+  if (!org) return res.status(404).json({ error: 'Org not found' });
+  const { sectionId } = req.params;
+  const { summary, dateRange } = req.body;
+  const sectionPrompt = INSIGHT_PROMPTS[sectionId] || 'Analyze these metrics and provide actionable insights.';
+  const prompt = `You are a sharp, data-driven parks and recreation analytics advisor helping ${org.name}.\n\n${SCHEMA_CONTEXT} Date range: ${dateRange || 'current month'}.\n\n${sectionPrompt}\n\nData:\n${summary}\n\nRespond with 4-5 punchy insights. Rules:\n- Start each insight with a relevant emoji\n- Use **bold** for key numbers and metrics\n- Each insight should be 1-2 sentences max\n- Mix positive callouts with actionable warnings\n- Reference specific numbers from the data\n- No headers, no intro text`;
+  try {
+    const parentSpan = _recTracer.startSpan('rec.insights', { attributes: { 'rec.org': share.orgSlug, 'rec.section': sectionId, 'langfuse.trace.name': 'rec-insights-share' } });
+    const traceId = parentSpan.spanContext().traceId;
+    const spanCtx = otelApi.trace.setSpan(otelApi.context.active(), parentSpan);
+    const resp = await otelApi.context.with(spanCtx, () => fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 600, messages: [{ role: 'user', content: prompt }] })
+    }));
+    const data = await resp.json();
+    const insight = data.content?.[0]?.text || 'No insights generated.';
+    parentSpan.end();
+    if (_langfuseProcessor) _langfuseProcessor.forceFlush().catch(() => {});
+    res.json({ insight, traceId });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to generate insights' });
   }
 });
 
