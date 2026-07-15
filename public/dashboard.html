@@ -214,6 +214,14 @@ body { font-family: var(--font-body); background: var(--bg-page); color: var(--t
 .heatmap-label { font-size: 10px; color: var(--text-muted); display: flex; align-items: center; justify-content: flex-end; padding-right: 6px; }
 .heatmap-col-label { font-size: 9px; color: var(--text-muted); text-align: center; }
 @keyframes spin { to { transform: rotate(360deg); } }
+@media print {
+  body { background: #fff !important; color: #000 !important; }
+  .dash-header { position: static !important; border: none !important; }
+  .settings-bar, .loading-bar, .section-badge, .btn, .btn-quick, .date-input { display: none !important; }
+  .widget-card { break-inside: avoid; box-shadow: none !important; border: 1px solid #ddd !important; }
+  .dashboard-section { break-inside: avoid; }
+}
+.print-header .dash-header-center, .print-header .dash-header-right { display: none !important; }
 </style>
 </head>
 <body>
@@ -222,7 +230,12 @@ body { font-family: var(--font-body); background: var(--bg-page); color: var(--t
 const { useState, useEffect, useRef, useCallback } = React;
 const params = new URLSearchParams(window.location.search);
 const TOKEN = params.get('token') || '';
-const ORG_SLUG = window.location.pathname.replace(/^\//, '').replace(/\/.*/, '');
+const _pathParts = window.location.pathname.replace(/^\//, '').split('/');
+const IS_SHARE = _pathParts[0] === 'share';
+const SHARE_TOKEN = IS_SHARE ? _pathParts[1] : null;
+const ORG_SLUG = IS_SHARE ? '' : _pathParts[0];
+const IS_PRINT = params.get('_print') === '1';
+const PRINT_SECTIONS = params.get('sections') ? params.get('sections').split(',') : null;
 const CHART_COLORS = ['#f59e0b','#3b82f6','#22c55e','#ef4444','#8b5cf6','#ec4899','#06b6d4','#84cc16','#14b8a6','#f97316'];
 const pf = v => parseFloat(v) || 0;
 
@@ -792,8 +805,11 @@ const dataStore = {};
 async function fetchReportData(rt, dr) {
   const key = `${rt}:${dr.start}:${dr.end}`;
   if (dataStore[key]) return dataStore[key];
-  const qs = new URLSearchParams({ token: TOKEN, start: dr.start, end: dr.end });
-  const resp = await fetch(`/${ORG_SLUG}/api/data/${rt}?${qs}`);
+  const qs = new URLSearchParams({ start: dr.start, end: dr.end });
+  const url = IS_SHARE
+    ? `/share/${SHARE_TOKEN}/data/${rt}?${qs}`
+    : `/${ORG_SLUG}/api/data/${rt}?token=${TOKEN}&${qs}`;
+  const resp = await fetch(url);
   if (!resp.ok) return [];
   const json = await resp.json();
   dataStore[key] = json.rows || [];
@@ -1507,11 +1523,16 @@ function TemplateChooser({ onSelect }) {
 // ═══════════════════════════════════════════════════════
 //  SETTINGS
 // ═══════════════════════════════════════════════════════
-function SettingsPopover({ cacheTTL, onCacheTTLChange, onClearCache, onReset, theme, onThemeChange, emailDigestEnabled }) {
+function SettingsPopover({ cacheTTL, onCacheTTLChange, onClearCache, onReset, theme, onThemeChange, emailDigestEnabled, sections, dateRange }) {
   const [confirmReset, setConfirmReset] = useState(false);
   const [subEmail, setSubEmail] = useState('');
   const [subFreq, setSubFreq] = useState('weekly');
   const [subStatus, setSubStatus] = useState(null);
+  const [pdfOpen, setPdfOpen] = useState(false);
+  const [pdfSections, setPdfSections] = useState(() => (sections || []).map(s => s.id));
+  const [shareUrl, setShareUrl] = useState(null);
+  const [shareLoading, setShareLoading] = useState(false);
+  const [shareCopied, setShareCopied] = useState(false);
 
   async function handleSubscribe() {
     if (!subEmail || !subEmail.includes('@')) { setSubStatus('error'); return; }
@@ -1527,9 +1548,38 @@ function SettingsPopover({ cacheTTL, onCacheTTLChange, onClearCache, onReset, th
     } catch(e) { setSubStatus('error'); }
   }
 
+  function handlePdfExport() {
+    if (!pdfSections.length) return;
+    const qs = new URLSearchParams({ token: TOKEN, start: dateRange.start, end: dateRange.end, _print: '1', sections: pdfSections.join(',') });
+    window.open('/' + ORG_SLUG + '?' + qs.toString(), '_blank');
+    track('pdf_exported', { sections: pdfSections.length });
+  }
+
+  function togglePdfSection(id) {
+    setPdfSections(prev => prev.includes(id) ? prev.filter(s => s !== id) : [...prev, id]);
+  }
+
+  async function handleShare() {
+    setShareLoading(true);
+    try {
+      const resp = await fetch('/' + ORG_SLUG + '/api/share?token=' + TOKEN, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dateRange })
+      });
+      const json = await resp.json();
+      if (json.ok) { setShareUrl(json.url); track('dashboard_shared'); }
+    } catch(e) {}
+    setShareLoading(false);
+  }
+
+  function copyShareUrl() {
+    if (!shareUrl) return;
+    navigator.clipboard.writeText(shareUrl).then(() => { setShareCopied(true); setTimeout(() => setShareCopied(false), 2000); });
+  }
+
   return (
     <div style={{ position:'absolute',top:'100%',right:0,marginTop:6,background:'var(--bg-modal)',border:'1px solid var(--border)',
-      borderRadius:10,padding:16,width:280,zIndex:60,boxShadow:'0 12px 32px rgba(0,0,0,0.5)' }} onClick={e=>e.stopPropagation()}>
+      borderRadius:10,padding:16,width:300,zIndex:60,boxShadow:'0 12px 32px rgba(0,0,0,0.5)',maxHeight:'80vh',overflowY:'auto' }} onClick={e=>e.stopPropagation()}>
       <div style={{fontSize:13,fontWeight:600,marginBottom:14}}>Dashboard Settings</div>
 
       <div style={{fontSize:12,color:'var(--text-secondary)',marginBottom:6}}>Theme</div>
@@ -1544,6 +1594,64 @@ function SettingsPopover({ cacheTTL, onCacheTTLChange, onClearCache, onReset, th
         <option value={5}>5 minutes</option><option value={15}>15 minutes</option><option value={30}>30 minutes</option><option value={60}>1 hour</option><option value={240}>4 hours</option>
       </select>
       <button className="btn" style={{width:'100%',fontSize:12,marginBottom:10}} onClick={onClearCache}>Clear Cache Now</button>
+
+      <div style={{borderTop:'1px solid var(--border)',paddingTop:12,marginTop:4,marginBottom:10}}>
+        <div style={{fontSize:12,color:'var(--text-secondary)',marginBottom:8,display:'flex',alignItems:'center',gap:5}}>
+          {'\uD83D\uDCC4'} PDF Export
+        </div>
+        {!pdfOpen ? (
+          <button className="btn" style={{width:'100%',fontSize:12}} onClick={()=>setPdfOpen(true)}>Choose Sections...</button>
+        ) : (
+          <div>
+            <div style={{maxHeight:140,overflowY:'auto',marginBottom:8}}>
+              {(sections || []).map(sec => {
+                const def = SECTIONS[sec.id];
+                if (!def || sec.id === 'ai-briefing') return null;
+                return (
+                  <label key={sec.id} style={{display:'flex',alignItems:'center',gap:6,fontSize:11,color:'var(--text-secondary)',
+                    cursor:'pointer',padding:'3px 0'}}>
+                    <input type="checkbox" checked={pdfSections.includes(sec.id)}
+                      onChange={()=>togglePdfSection(sec.id)}
+                      style={{accentColor:'var(--amber)',width:14,height:14}} />
+                    <span>{def.icon} {def.label}</span>
+                  </label>
+                );
+              })}
+            </div>
+            <div style={{display:'flex',gap:6}}>
+              <button className="btn btn-sm" style={{flex:1}} onClick={()=>setPdfOpen(false)}>Cancel</button>
+              <button className="btn btn-sm btn-amber" style={{flex:1}} onClick={handlePdfExport}
+                disabled={!pdfSections.length}>
+                Export {pdfSections.length} section{pdfSections.length !== 1 ? 's' : ''}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div style={{borderTop:'1px solid var(--border)',paddingTop:12,marginTop:4,marginBottom:10}}>
+        <div style={{fontSize:12,color:'var(--text-secondary)',marginBottom:8,display:'flex',alignItems:'center',gap:5}}>
+          {'\uD83D\uDD17'} Share Dashboard
+        </div>
+        {shareUrl ? (
+          <div>
+            <div style={{display:'flex',gap:6,marginBottom:6}}>
+              <input type="text" readOnly value={shareUrl}
+                style={{flex:1,padding:'6px 8px',borderRadius:6,border:'1px solid var(--border)',
+                  background:'var(--bg-surface)',color:'var(--text-primary)',fontSize:10,
+                  fontFamily:'var(--font-body)',outline:'none',boxSizing:'border-box'}} />
+              <button className="btn btn-sm" style={{fontSize:11,whiteSpace:'nowrap'}} onClick={copyShareUrl}>
+                {shareCopied ? '\u2713 Copied' : 'Copy'}
+              </button>
+            </div>
+            <div style={{fontSize:10,color:'var(--text-muted)'}}>Read-only, expires in 72 hours. No login required.</div>
+          </div>
+        ) : (
+          <button className="btn" style={{width:'100%',fontSize:12}} onClick={handleShare} disabled={shareLoading}>
+            {shareLoading ? 'Generating...' : 'Generate Share Link'}
+          </button>
+        )}
+      </div>
 
       {emailDigestEnabled && (
         <div style={{borderTop:'1px solid var(--border)',paddingTop:12,marginTop:4,marginBottom:10}}>
@@ -1623,15 +1731,19 @@ function DashboardApp() {
   useEffect(() => {
     (async () => {
       try {
-        const resp = await fetch(`/${ORG_SLUG}/api/config?token=${TOKEN}`);
+        const configUrl = IS_SHARE
+          ? `/share/${SHARE_TOKEN}/config`
+          : `/${ORG_SLUG}/api/config?token=${TOKEN}`;
+        const resp = await fetch(configUrl);
         const json = await resp.json();
         setAvailableReports(json.availableReports || {});
-        setOrgMeta({ name: json.orgName, logoUrl: json.logoUrl, city: json.city, state: json.state, toggles: json.toggles || {}, reportingBaseUrl: json.reportingBaseUrl || '', reportVisibility: json.reportVisibility || null });
+        setOrgMeta({ name: json.orgName, logoUrl: json.logoUrl, city: json.city, state: json.state, toggles: json.toggles || {}, reportingBaseUrl: json.reportingBaseUrl || '', reportVisibility: json.reportVisibility || null, readOnly: json.readOnly || false, expiresAt: json.expiresAt || null });
         window._orgGeo = json.city && json.state ? `${json.city}, ${json.state}` : '';
         window._reportVisibility = json.reportVisibility || null;
+        if (json.dateRange) { setDateRange(json.dateRange); setDatePreset(''); }
         if (json.config?.sections?.length > 0) {
           setConfig(json.config);
-          if (json.config.datePreset) applyPreset(json.config.datePreset);
+          if (!json.dateRange && json.config.datePreset) applyPreset(json.config.datePreset);
           if (json.config.theme) { setTheme(json.config.theme); document.documentElement.setAttribute('data-theme', json.config.theme); applyChartTheme(json.config.theme); }
           if (json.config.targets) setTargets(json.config.targets);
         } else { setConfig('new'); }
@@ -1713,66 +1825,95 @@ function DashboardApp() {
   if (config === 'new') return <TemplateChooser onSelect={handleSelectTemplate} />;
   if (!config) return <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',color:'var(--text-secondary)'}}>Loading...</div>;
 
+  const isReadOnly = orgMeta.readOnly || IS_SHARE;
   const totalWidgets = config.sections.reduce((s,sec) => s + sec.widgets.length, 0);
+  const displaySections = config.sections.filter(sec => {
+    if (sec.id === 'ai-briefing') return false;
+    if (PRINT_SECTIONS && !PRINT_SECTIONS.includes(sec.id)) return false;
+    if (!orgMeta.reportVisibility) return true;
+    const reportType = SECTION_REPORT_MAP[sec.id];
+    if (!reportType) return true;
+    const vis = orgMeta.reportVisibility.find(v => v.type === reportType);
+    if (!vis) return true;
+    return vis.visible;
+  });
+
+  // Auto-print in print mode
+  useEffect(() => {
+    if (IS_PRINT && !loading && lastRefresh) {
+      setTimeout(() => window.print(), 500);
+    }
+  }, [loading, lastRefresh]);
 
   return (
     <div>
-      <div style={{background:'linear-gradient(135deg,#ea580c,#f97316)',padding:'8px 24px',textAlign:'center',
-        fontSize:13,fontWeight:600,color:'#fff',fontFamily:'var(--font-body)',letterSpacing:'0.02em'}}>
-        Enhanced Reports in Early Access — Contact <a href="mailto:dan@rec.us" style={{color:'#fff',textDecoration:'underline'}}>dan@rec.us</a> with Feedback or Questions
-      </div>
-      <div className="dash-header">
+      {!IS_PRINT && !isReadOnly && (
+        <div style={{background:'linear-gradient(135deg,#ea580c,#f97316)',padding:'8px 24px',textAlign:'center',
+          fontSize:13,fontWeight:600,color:'#fff',fontFamily:'var(--font-body)',letterSpacing:'0.02em'}}>
+          Enhanced Reports in Early Access — Contact <a href="mailto:dan@rec.us" style={{color:'#fff',textDecoration:'underline'}}>dan@rec.us</a> with Feedback or Questions
+        </div>
+      )}
+      {isReadOnly && !IS_PRINT && (
+        <div style={{background:'linear-gradient(135deg,#3b82f6,#2563eb)',padding:'8px 24px',textAlign:'center',
+          fontSize:12,fontWeight:500,color:'#fff',fontFamily:'var(--font-body)'}}>
+          Shared Dashboard {orgMeta.expiresAt ? '\u00B7 View-only link' : ''} — Powered by <span style={{fontWeight:700}}>rec.us</span>
+        </div>
+      )}
+      <div className={`dash-header ${IS_PRINT ? 'print-header' : ''}`}>
         <div className="dash-header-left">
           {orgMeta.logoUrl && <img src={orgMeta.logoUrl} className="dash-logo" alt="" />}
-          <div><div className="dash-title">{orgMeta.name || ORG_SLUG}</div><div className="dash-subtitle">Dashboard</div></div>
+          <div><div className="dash-title">{orgMeta.name || ORG_SLUG}</div><div className="dash-subtitle">Dashboard{isReadOnly ? ' (shared view)' : ''}</div></div>
         </div>
-        <div className="dash-header-center">
-          <input type="date" className="date-input" value={dateRange.start} onChange={e=>{setDatePreset('');setDateRange(p=>({...p,start:e.target.value}));}} />
-          <span style={{color:'var(--text-muted)',fontSize:12}}>to</span>
-          <input type="date" className="date-input" value={dateRange.end} onChange={e=>{setDatePreset('');setDateRange(p=>({...p,end:e.target.value}));}} />
-          <button className={`btn-quick ${datePreset==='lastMonth'?'active':''}`} onClick={()=>applyPreset('lastMonth')}>Last Mo</button>
-          <button className={`btn-quick ${datePreset==='thisMonth'?'active':''}`} onClick={()=>applyPreset('thisMonth')}>This Mo</button>
-          <button className={`btn-quick ${datePreset==='nextMonth'?'active':''}`} onClick={()=>applyPreset('nextMonth')}>Next Mo</button>
-          <button className={`btn-quick ${datePreset==='last3'?'active':''}`} onClick={()=>applyPreset('last3')}>3 Mo</button>
-          <button className={`btn-quick ${datePreset==='ytd'?'active':''}`} onClick={()=>applyPreset('ytd')}>YTD</button>
-        </div>
-        <div className="dash-header-right">
-          <button className="btn" onClick={handleRefresh}>{'\u21BB'} Refresh</button>
-          <button className="btn" onClick={()=>{setEditOpen(true);track('edit_opened');}}>{'\u270E'} Edit Dashboard</button>
-          <div style={{position:'relative'}}>
-            <button className="btn" onClick={()=>setSettingsOpen(!settingsOpen)}>{'\u2699'}</button>
-            {settingsOpen && <SettingsPopover cacheTTL={config.cacheTTL||15} onCacheTTLChange={handleCacheTTLChange} onClearCache={handleClearCache} onReset={handleReset} theme={theme} onThemeChange={handleThemeChange} emailDigestEnabled={orgMeta.toggles?.emailDigest === true} />}
+        {!IS_PRINT && (
+          <div className="dash-header-center">
+            {isReadOnly ? (
+              <span style={{fontSize:12,color:'var(--text-muted)'}}>{dateRange.start} to {dateRange.end}</span>
+            ) : (
+              <React.Fragment>
+                <input type="date" className="date-input" value={dateRange.start} onChange={e=>{setDatePreset('');setDateRange(p=>({...p,start:e.target.value}));}} />
+                <span style={{color:'var(--text-muted)',fontSize:12}}>to</span>
+                <input type="date" className="date-input" value={dateRange.end} onChange={e=>{setDatePreset('');setDateRange(p=>({...p,end:e.target.value}));}} />
+                <button className={`btn-quick ${datePreset==='lastMonth'?'active':''}`} onClick={()=>applyPreset('lastMonth')}>Last Mo</button>
+                <button className={`btn-quick ${datePreset==='thisMonth'?'active':''}`} onClick={()=>applyPreset('thisMonth')}>This Mo</button>
+                <button className={`btn-quick ${datePreset==='nextMonth'?'active':''}`} onClick={()=>applyPreset('nextMonth')}>Next Mo</button>
+                <button className={`btn-quick ${datePreset==='last3'?'active':''}`} onClick={()=>applyPreset('last3')}>3 Mo</button>
+                <button className={`btn-quick ${datePreset==='ytd'?'active':''}`} onClick={()=>applyPreset('ytd')}>YTD</button>
+              </React.Fragment>
+            )}
           </div>
+        )}
+        {!IS_PRINT && !isReadOnly && (
+          <div className="dash-header-right">
+            <button className="btn" onClick={handleRefresh}>{'\u21BB'} Refresh</button>
+            <button className="btn" onClick={()=>{setEditOpen(true);track('edit_opened');}}>{'\u270E'} Edit Dashboard</button>
+            <div style={{position:'relative'}}>
+              <button className="btn" onClick={()=>setSettingsOpen(!settingsOpen)}>{'\u2699'}</button>
+              {settingsOpen && <SettingsPopover cacheTTL={config.cacheTTL||15} onCacheTTLChange={handleCacheTTLChange} onClearCache={handleClearCache} onReset={handleReset} theme={theme} onThemeChange={handleThemeChange} emailDigestEnabled={orgMeta.toggles?.emailDigest === true} sections={config.sections} dateRange={dateRange} />}
+            </div>
+          </div>
+        )}
+      </div>
+      {!IS_PRINT && (
+        <div className="settings-bar">
+          <div><span className="cache-dot" style={{background:loading?'var(--amber)':'var(--green)'}} />
+            {loading ? 'Loading data...' : lastRefresh ? `Last refreshed ${lastRefresh.toLocaleTimeString()}` : 'Ready'}</div>
+          <div>{config.sections.length} sections {'\u00B7'} {totalWidgets} widgets{!isReadOnly ? ` \u00B7 cache ${config.cacheTTL||15}m` : ''}</div>
         </div>
-      </div>
-      <div className="settings-bar">
-        <div><span className="cache-dot" style={{background:loading?'var(--amber)':'var(--green)'}} />
-          {loading ? 'Loading data...' : lastRefresh ? `Last refreshed ${lastRefresh.toLocaleTimeString()}` : 'Ready'}</div>
-        <div>{config.sections.length} sections · {totalWidgets} widgets · cache {config.cacheTTL||15}m</div>
-      </div>
+      )}
       <div className={`loading-bar ${loading ? 'active' : ''}`}><div className="loading-bar-inner" /></div>
 
       <div className={loading && lastRefresh ? 'sections-loading' : ''}>
-        {orgMeta.toggles?.aiBriefing && config.sections.some(s => s.id === 'ai-briefing') && (
+        {!IS_PRINT && orgMeta.toggles?.aiBriefing && config.sections.some(s => s.id === 'ai-briefing') && (
           <BriefingSection reportData={reportData} loading={loading} dateRange={dateRange} />
         )}
-        {config.sections.filter(sec => {
-          if (sec.id === 'ai-briefing') return false; // rendered above
-          // Filter out sections whose corresponding report is hidden on the reporting side
-          if (!orgMeta.reportVisibility) return true; // no visibility data = show all
-          const reportType = SECTION_REPORT_MAP[sec.id];
-          if (!reportType) return true; // no mapping = always show
-          const vis = orgMeta.reportVisibility.find(v => v.type === reportType);
-          if (!vis) return true; // report not in visibility list = show
-          return vis.visible;
-        }).map((sec, i) => (
+        {displaySections.map((sec, i) => (
           <SectionBlock key={sec.id+i+theme} sectionId={sec.id} widgetIds={sec.widgets} reportData={reportData} loading={loading}
-            targets={targets} onTargetChange={handleTargetChange} dateRange={dateRange} aiEnabled={orgMeta.toggles?.ai !== false}
-            reportLinksEnabled={orgMeta.toggles?.reportLinks === true} reportingBaseUrl={orgMeta.reportingBaseUrl || ''} />
+            targets={targets} onTargetChange={handleTargetChange} dateRange={dateRange} aiEnabled={!isReadOnly && orgMeta.toggles?.ai !== false}
+            reportLinksEnabled={!isReadOnly && orgMeta.toggles?.reportLinks === true} reportingBaseUrl={orgMeta.reportingBaseUrl || ''} />
         ))}
       </div>
 
-      {editOpen && <EditModal sections={config.sections.filter(sec => {
+      {!isReadOnly && editOpen && <EditModal sections={config.sections.filter(sec => {
           if (!orgMeta.reportVisibility) return true;
           const rt = SECTION_REPORT_MAP[sec.id];
           if (!rt) return true;

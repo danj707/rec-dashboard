@@ -234,6 +234,15 @@ async function fetchMetabaseData(orgSlug, reportType, query) {
 const UPDATES = [
   {
     date: "2026-07-15",
+    title: "PDF Export + Dashboard Sharing",
+    items: [
+      "PDF Export in settings: section picker lets you choose which sections to include, opens a print-optimized view. Works with any browser PDF printer.",
+      "Share Dashboard: generates a read-only link (72hr expiry) that anyone can view without a token. Directors can share with city council, board members, or stakeholders.",
+      "Share links serve live data through the same cache layer, no token required. Expired links auto-clean.",
+    ],
+  },
+  {
+    date: "2026-07-15",
     title: "Admin Feature Gates: AI Briefing + Email Digest",
     items: [
       "New admin toggles per org: AI Executive Briefing and Email Digest, alongside existing AI Insights and Report Linkage.",
@@ -527,6 +536,81 @@ app.post('/admin/api/orgs', adminAuth, (req, res) => {
   }
 
   res.json({ ok: true, slug, token, org: { ...org, _dynamic: undefined } });
+});
+
+// ═══════════════════════════════════════════
+//  DASHBOARD SHARING (read-only links)
+// ═══════════════════════════════════════════
+const SHARES_FILE = path.join(DATA_DIR, 'shares.json');
+function loadShares() { try { if (fs.existsSync(SHARES_FILE)) return JSON.parse(fs.readFileSync(SHARES_FILE, 'utf8')); } catch(e){} return {}; }
+function saveShares(s) { ensureDataDir(); fs.writeFileSync(SHARES_FILE, JSON.stringify(s, null, 2)); }
+let shares = loadShares();
+
+app.post('/:org/api/share', authMiddleware, (req, res) => {
+  const crypto = require('crypto');
+  const shareToken = crypto.randomBytes(24).toString('base64url');
+  const expiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString(); // 72 hours
+  shares[shareToken] = {
+    orgSlug: req.orgSlug,
+    orgName: req.org.name,
+    logoUrl: req.org.logoUrl,
+    config: dashboardConfigs[req.orgSlug] || null,
+    dateRange: req.body.dateRange || null,
+    createdAt: new Date().toISOString(),
+    expiresAt,
+  };
+  saveShares(shares);
+  track_server(req.orgSlug, 'dashboard_shared', { shareToken: shareToken.slice(0, 8) });
+  console.log(`[SHARE] ${req.orgSlug}: created share ${shareToken.slice(0, 8)}... expires ${expiresAt}`);
+  const baseUrl = process.env.BASE_URL || `${req.protocol}://${req.get('host')}`;
+  res.json({ ok: true, url: `${baseUrl}/share/${shareToken}`, expiresAt });
+});
+
+app.get('/share/:shareToken', (req, res) => {
+  const share = shares[req.params.shareToken];
+  if (!share) return res.status(404).send('Share link not found or expired.');
+  if (new Date(share.expiresAt) < new Date()) {
+    delete shares[req.params.shareToken];
+    saveShares(shares);
+    return res.status(410).send('This share link has expired.');
+  }
+  // Serve dashboard.html — the client will detect share mode via injected config
+  res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
+});
+
+// Share config API (no auth — the share token IS the auth)
+app.get('/share/:shareToken/config', (req, res) => {
+  const share = shares[req.params.shareToken];
+  if (!share || new Date(share.expiresAt) < new Date()) return res.status(404).json({ error: 'Expired' });
+  const org = ORGS[share.orgSlug];
+  if (!org) return res.status(404).json({ error: 'Org not found' });
+  const availableReports = { ...SHARED_UUIDS };
+  for (const r of Object.keys(org.reports || {})) availableReports[r] = true;
+  res.json({
+    config: share.config,
+    availableReports,
+    orgName: share.orgName,
+    logoUrl: share.logoUrl,
+    city: org.city,
+    state: org.state,
+    toggles: share.config?.toggles || { ai: false, reportLinks: false, aiBriefing: false, emailDigest: false },
+    dateRange: share.dateRange,
+    readOnly: true,
+    expiresAt: share.expiresAt,
+  });
+});
+
+// Share data proxy (no auth — share token is auth)
+app.get('/share/:shareToken/data/:reportType', async (req, res) => {
+  const share = shares[req.params.shareToken];
+  if (!share || new Date(share.expiresAt) < new Date()) return res.status(404).json({ error: 'Expired' });
+  try {
+    const rows = await fetchMetabaseData(share.orgSlug, req.params.reportType, req.query);
+    if (rows === null) return res.status(404).json({ error: 'Report not available' });
+    res.json({ rows, meta: { count: rows.length } });
+  } catch (e) {
+    res.status(502).json({ error: 'Failed to fetch data', detail: e.message });
+  }
 });
 
 // ── Org dashboard routes ──
