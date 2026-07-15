@@ -1264,7 +1264,18 @@ function EditModal({ sections, onSave, onClose, availableReports }) {
   }
 
   const activeSectionIds = new Set(draft.map(s => s.id));
-  const availableSections = Object.values(SECTIONS).filter(s => !activeSectionIds.has(s.id));
+  const availableSections = Object.values(SECTIONS).filter(s => {
+      if (activeSectionIds.has(s.id)) return false;
+      // Also hide sections whose report is hidden on the reporting side (from window._reportVisibility)
+      if (window._reportVisibility) {
+        const rt = SECTION_REPORT_MAP[s.id];
+        if (rt) {
+          const vis = window._reportVisibility.find(v => v.type === rt);
+          if (vis && !vis.visible) return false;
+        }
+      }
+      return true;
+    });
 
   return (
     <div className="modal-overlay" onClick={e => { if (e.target===e.currentTarget) onClose(); }}>
@@ -1437,8 +1448,9 @@ function DashboardApp() {
         const resp = await fetch(`/${ORG_SLUG}/api/config?token=${TOKEN}`);
         const json = await resp.json();
         setAvailableReports(json.availableReports || {});
-        setOrgMeta({ name: json.orgName, logoUrl: json.logoUrl, city: json.city, state: json.state, toggles: json.toggles || {}, reportingBaseUrl: json.reportingBaseUrl || '' });
+        setOrgMeta({ name: json.orgName, logoUrl: json.logoUrl, city: json.city, state: json.state, toggles: json.toggles || {}, reportingBaseUrl: json.reportingBaseUrl || '', reportVisibility: json.reportVisibility || null });
         window._orgGeo = json.city && json.state ? `${json.city}, ${json.state}` : '';
+        window._reportVisibility = json.reportVisibility || null;
         if (json.config?.sections?.length > 0) {
           setConfig(json.config);
           if (json.config.datePreset) applyPreset(json.config.datePreset);
@@ -1557,7 +1569,15 @@ function DashboardApp() {
       <div className={`loading-bar ${loading ? 'active' : ''}`}><div className="loading-bar-inner" /></div>
 
       <div className={loading && lastRefresh ? 'sections-loading' : ''}>
-        {config.sections.map((sec, i) => (
+        {config.sections.filter(sec => {
+          // Filter out sections whose corresponding report is hidden on the reporting side
+          if (!orgMeta.reportVisibility) return true; // no visibility data = show all
+          const reportType = SECTION_REPORT_MAP[sec.id];
+          if (!reportType) return true; // no mapping = always show
+          const vis = orgMeta.reportVisibility.find(v => v.type === reportType);
+          if (!vis) return true; // report not in visibility list = show
+          return vis.visible;
+        }).map((sec, i) => (
           <SectionBlock key={sec.id+i+theme} sectionId={sec.id} widgetIds={sec.widgets} reportData={reportData} loading={loading}
             targets={targets} onTargetChange={handleTargetChange} dateRange={dateRange} aiEnabled={orgMeta.toggles?.ai !== false}
             reportLinksEnabled={orgMeta.toggles?.reportLinks === true} reportingBaseUrl={orgMeta.reportingBaseUrl || ''} />
