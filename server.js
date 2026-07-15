@@ -234,6 +234,14 @@ async function fetchMetabaseData(orgSlug, reportType, query) {
 const UPDATES = [
   {
     date: "2026-07-15",
+    title: "Cross-Project Org Sync",
+    items: [
+      "Adding an org in the dashboard now automatically syncs it to the rental-report project with the same token.",
+      "Report links from dashboard sections now work for dynamically-added orgs (token mismatch fixed).",
+    ],
+  },
+  {
+    date: "2026-07-15",
     title: "Report Linking Toggle",
     items: [
       "Admin toggle to enable/disable report links on dashboard section cards.",
@@ -498,6 +506,19 @@ app.post('/admin/api/orgs', adminAuth, (req, res) => {
   ORGS[slug] = org;
   saveDynamicOrgs();
   console.log(`[orgs] Added new org: ${slug} (${orgId})`);
+
+  // Sync to rental-report so report links work with the same token
+  if (REPORTING_BASE_URL) {
+    fetch(`${REPORTING_BASE_URL}/api/admin/add-org`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ slug, token, orgId, logoUrl: org.logoUrl, displayName: name || slug }),
+    }).then(r => r.json()).then(j => {
+      console.log(`[orgs] Synced ${slug} to rental-report: ${j.action || j.error || 'ok'}`);
+    }).catch(e => {
+      console.error(`[orgs] Failed to sync ${slug} to rental-report:`, e.message);
+    });
+  }
 
   res.json({ ok: true, slug, token, org: { ...org, _dynamic: undefined } });
 });
