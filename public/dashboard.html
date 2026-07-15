@@ -1590,7 +1590,13 @@ function DashboardApp() {
         ))}
       </div>
 
-      {editOpen && <EditModal sections={config.sections} availableReports={availableReports} onSave={handleSaveSections} onClose={()=>setEditOpen(false)} />}
+      {editOpen && <EditModal sections={config.sections.filter(sec => {
+          if (!orgMeta.reportVisibility) return true;
+          const rt = SECTION_REPORT_MAP[sec.id];
+          if (!rt) return true;
+          const vis = orgMeta.reportVisibility.find(v => v.type === rt);
+          return !vis || vis.visible;
+        })} availableReports={availableReports} onSave={handleSaveSections} onClose={()=>setEditOpen(false)} />}
     </div>
   );
 }
