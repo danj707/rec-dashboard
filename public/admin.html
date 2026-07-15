@@ -394,6 +394,13 @@ async function toggleOrg(slug, key, value) {
             <p><strong>PDF Export:</strong> Section picker for downloadable snapshots. <strong>Email Summaries:</strong> Resend integration for daily digests to @rec.us admins. <strong>Langfuse:</strong> Thumbs up/down on AI insights with feedback loop. <strong>Schema Health Check:</strong> Startup column validation, broken widget alerts. <strong>Goal Targets:</strong> Pace calculations with month-end projections. <strong>Multi-Dashboard:</strong> Per-user/role dashboards (finance, aquatics, etc). <strong>QoQ Comparison:</strong> Dual date picker with delta indicators. <strong>Drag-and-Drop:</strong> react-grid-layout for widget positioning. <strong>1-Click Org Add:</strong> Admin panel skill to onboard new orgs.</p>
           </div>
           <div class="arch-block">
+            <h4>Cross-Project Integration</h4>
+            <p>The dashboard syncs with the rental-report project (the detailed reporting tool):</p>
+            <ul>
+              <li><strong>Org Sync</strong> &#8212; adding an org auto-creates it on the reporting side with the same token.</li>
+              <li><strong>Report Links</strong> &#8212; toggle ON per org to show View Report buttons on section headers, linking to detailed reports.</li>
+              <li><strong>Report Visibility</strong> &#8212; sections respect the reporting project hidden-report toggles. Disabled reports auto-hide from dashboard + editor.</li>
+            </ul>
             <h4>AI Insights Engine</h4>
             <p>Each section header has a <strong>Rec Insights</strong> button. Click it: the frontend builds a text summary from the section's widget data, POSTs to <code>/:org/api/insights/:section</code>, which calls Claude Haiku with a section-specific prompt. 4-5 emoji-led, metric-cited bullet points appear in a purple gradient panel. AI can be toggled on/off per org from the admin panel. Events tracked to measure adoption.</p>
           </div>
