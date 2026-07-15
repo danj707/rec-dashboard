@@ -35,6 +35,7 @@ app.use(express.json());
 const PORT = process.env.PORT || 3200;
 const DATA_DIR = process.env.DATA_DIR || './data';
 const METABASE_URL = process.env.METABASE_URL || 'https://rec.metabaseapp.com';
+const REPORTING_BASE_URL = process.env.REPORTING_BASE_URL || 'https://rental-report-production-a046.up.railway.app';
 
 // ═══════════════════════════════════════════
 //  ORG CONFIG
@@ -231,6 +232,15 @@ async function fetchMetabaseData(orgSlug, reportType, query) {
 //  UPDATES LOG
 // ═══════════════════════════════════════════
 const UPDATES = [
+  {
+    date: "2026-07-15",
+    title: "Report Linking Toggle",
+    items: [
+      "Admin toggle to enable/disable report links on dashboard section cards.",
+      "When enabled, each section shows a View Detailed Report link to the corresponding report in the reporting project.",
+      "REPORTING_BASE_URL env var controls the target (defaults to rental-report Railway deployment).",
+    ],
+  },
   {
     date: "2026-07-14",
     title: "AI Insights: Schema-Aware Context",
@@ -520,7 +530,8 @@ app.get('/:org/api/config', authMiddleware, (req, res) => {
   for (const [r, uuid] of Object.entries(org.reports || {})) availableReports[r] = true;
   for (const [r, uuid] of Object.entries(SHARED_UUIDS)) availableReports[r] = true;
   res.json({ config, availableReports, orgName: org.name, logoUrl: org.logoUrl, city: org.city, state: org.state,
-    toggles: config?.toggles || { ai: true, reportLinks: false } });
+    toggles: config?.toggles || { ai: true, reportLinks: false },
+    reportingBaseUrl: REPORTING_BASE_URL });
 });
 
 app.post('/:org/api/config', authMiddleware, (req, res) => {
