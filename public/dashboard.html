@@ -274,6 +274,19 @@ const SECTIONS = {
 
 };
 
+// Map dashboard section IDs to report types on the reporting project
+const SECTION_REPORT_MAP = {
+  revenue: 'gl',
+  facility: 'facility',
+  programs: 'programs',
+  courts: 'court-utilization',
+  fasttrack: 'fasttrack',
+  'users-demographics': 'users',
+  memberships: 'memberships',
+  products: 'products',
+  instructors: 'instructor-payout',
+};
+
 // Reports that show all-time data regardless of date picker
 const ALL_TIME_REPORTS = new Set(['fasttrack', 'memberships', 'users', 'program-demographics', 'retention', 'checkins']);
 
@@ -1083,7 +1096,7 @@ function WidgetCard({ widgetId, reportData, loading, target, onTargetChange, dat
 // ═══════════════════════════════════════════════════════
 //  SECTION BLOCK
 // ═══════════════════════════════════════════════════════
-function SectionBlock({ sectionId, widgetIds, reportData, loading, targets, onTargetChange, dateRange, aiEnabled }) {
+function SectionBlock({ sectionId, widgetIds, reportData, loading, targets, onTargetChange, dateRange, aiEnabled, reportLinksEnabled, reportingBaseUrl }) {
   const sec = SECTIONS[sectionId]; if (!sec) return null;
   const [insight, setInsight] = useState(null);
   const [insightLoading, setInsightLoading] = useState(false);
@@ -1151,6 +1164,17 @@ function SectionBlock({ sectionId, widgetIds, reportData, loading, targets, onTa
           {'\u2728'} {insightLoading ? 'Analyzing...' : insightOpen ? 'Hide Insights' : 'Rec Insights'}
         </button>}
         <span className="section-badge">{widgetIds.length} widgets</span>
+        {reportLinksEnabled && SECTION_REPORT_MAP[sectionId] && reportingBaseUrl && (
+          <a href={`${reportingBaseUrl}/${ORG_SLUG}/${SECTION_REPORT_MAP[sectionId]}`} target="_blank" rel="noopener noreferrer"
+            style={{fontSize:11,fontWeight:600,color:sec.color||'var(--amber)',textDecoration:'none',
+              padding:'4px 12px',borderRadius:6,border:`1px solid ${sec.color||'var(--amber)'}33`,
+              background:`${sec.color||'var(--amber)'}0d`,transition:'all 0.2s',display:'flex',alignItems:'center',gap:4,
+              fontFamily:'var(--font-body)',whiteSpace:'nowrap'}}
+            onMouseOver={e=>{e.currentTarget.style.background=`${sec.color||'var(--amber)'}1a`;e.currentTarget.style.borderColor=`${sec.color||'var(--amber)'}66`;}}
+            onMouseOut={e=>{e.currentTarget.style.background=`${sec.color||'var(--amber)'}0d`;e.currentTarget.style.borderColor=`${sec.color||'var(--amber)'}33`;}}>
+            View Report {String.fromCharCode(8594)}
+          </a>
+        )}
       </div>
       {insightOpen && (
         <div style={{background:'linear-gradient(135deg, rgba(139,92,246,0.1), rgba(245,158,11,0.06))',
@@ -1413,7 +1437,7 @@ function DashboardApp() {
         const resp = await fetch(`/${ORG_SLUG}/api/config?token=${TOKEN}`);
         const json = await resp.json();
         setAvailableReports(json.availableReports || {});
-        setOrgMeta({ name: json.orgName, logoUrl: json.logoUrl, city: json.city, state: json.state, toggles: json.toggles || {} });
+        setOrgMeta({ name: json.orgName, logoUrl: json.logoUrl, city: json.city, state: json.state, toggles: json.toggles || {}, reportingBaseUrl: json.reportingBaseUrl || '' });
         window._orgGeo = json.city && json.state ? `${json.city}, ${json.state}` : '';
         if (json.config?.sections?.length > 0) {
           setConfig(json.config);
@@ -1535,7 +1559,8 @@ function DashboardApp() {
       <div className={loading && lastRefresh ? 'sections-loading' : ''}>
         {config.sections.map((sec, i) => (
           <SectionBlock key={sec.id+i+theme} sectionId={sec.id} widgetIds={sec.widgets} reportData={reportData} loading={loading}
-            targets={targets} onTargetChange={handleTargetChange} dateRange={dateRange} aiEnabled={orgMeta.toggles?.ai !== false} />
+            targets={targets} onTargetChange={handleTargetChange} dateRange={dateRange} aiEnabled={orgMeta.toggles?.ai !== false}
+            reportLinksEnabled={orgMeta.toggles?.reportLinks === true} reportingBaseUrl={orgMeta.reportingBaseUrl || ''} />
         ))}
       </div>
 
