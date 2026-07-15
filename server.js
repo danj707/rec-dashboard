@@ -234,6 +234,16 @@ async function fetchMetabaseData(orgSlug, reportType, query) {
 const UPDATES = [
   {
     date: "2026-07-15",
+    title: "Admin Feature Gates: AI Briefing + Email Digest",
+    items: [
+      "New admin toggles per org: AI Executive Briefing and Email Digest, alongside existing AI Insights and Report Linkage.",
+      "AI Executive Briefing: when enabled, orgs see a new section option that renders a 3-sentence AI narrative summary at the top of their dashboard, synthesized from all widget data.",
+      "Email Digest: when enabled, orgs see a subscribe panel in their dashboard settings where they can enter an email and receive periodic dashboard summaries via Resend.",
+      "Both features are OFF by default and only appear to orgs when the admin checks the corresponding box.",
+    ],
+  },
+  {
+    date: "2026-07-15",
     title: "Cross-Project Integration Suite",
     items: [
       "Add Org auto-syncs to rental-report with matching token (no more token mismatches).",
@@ -399,7 +409,7 @@ app.get('/admin/api/orgs', adminAuth, (req, res) => {
       widgetCount: config?.sections?.reduce((s, sec) => s + sec.widgets.length, 0) || 0,
       theme: config?.theme || 'dark',
       cacheTTL: config?.cacheTTL || 15,
-      toggles: config?.toggles || { ai: true, reportLinks: false },
+      toggles: config?.toggles || { ai: true, reportLinks: false, aiBriefing: false, emailDigest: false },
       updatedAt: config?.updatedAt || null,
     };
   });
@@ -556,7 +566,7 @@ app.get('/:org/api/config', authMiddleware, async (req, res) => {
   }
 
   res.json({ config, availableReports, orgName: org.name, logoUrl: org.logoUrl, city: org.city, state: org.state,
-    toggles: config?.toggles || { ai: true, reportLinks: false },
+    toggles: config?.toggles || { ai: true, reportLinks: false, aiBriefing: false, emailDigest: false },
     reportingBaseUrl: REPORTING_BASE_URL,
     reportVisibility: reportVisibility?.available || null });
 });
@@ -658,7 +668,35 @@ const INSIGHT_PROMPTS = {
   memberships: 'Analyze these membership metrics. Focus on: active vs canceled ratio, revenue per member, renewal patterns, and retention opportunities.',
   products: 'Analyze these product/POS sales metrics. Focus on: top sellers, revenue trends, refund rates, and sales volume patterns.',
   instructors: 'Analyze these instructor payout metrics. Focus on: revenue per instructor, section coverage, top performers, and refund exposure.',
+  'executive-briefing': 'You are writing an executive briefing for a parks and recreation director. Synthesize ALL the data below into exactly 3 concise sentences. Sentence 1: the headline number and whether things are trending up or down. Sentence 2: the most notable positive signal. Sentence 3: the single biggest risk or thing that needs attention. Be specific with numbers. No bullets, no headers, no emoji — just 3 clean sentences a director can read in 10 seconds.',
 };
+
+// ── Email Digest Subscribe (stub — persists to data/) ─────────────
+const EMAIL_SUBS_FILE = path.join(DATA_DIR, 'email-subscriptions.json');
+function loadEmailSubs() { try { if (fs.existsSync(EMAIL_SUBS_FILE)) return JSON.parse(fs.readFileSync(EMAIL_SUBS_FILE, 'utf8')); } catch(e){} return {}; }
+function saveEmailSubs(subs) { ensureDataDir(); fs.writeFileSync(EMAIL_SUBS_FILE, JSON.stringify(subs, null, 2)); }
+let emailSubs = loadEmailSubs();
+
+app.post('/:org/api/email-subscribe', authMiddleware, (req, res) => {
+  const { email, frequency } = req.body;
+  if (!email || !email.includes('@')) return res.status(400).json({ ok: false, error: 'Valid email required' });
+  const validFreqs = ['daily', 'weekly', 'monthly'];
+  const freq = validFreqs.includes(frequency) ? frequency : 'weekly';
+
+  if (!emailSubs[req.orgSlug]) emailSubs[req.orgSlug] = [];
+  // Upsert by email
+  const existing = emailSubs[req.orgSlug].find(s => s.email === email);
+  if (existing) {
+    existing.frequency = freq;
+    existing.updatedAt = new Date().toISOString();
+  } else {
+    emailSubs[req.orgSlug].push({ email, frequency: freq, subscribedAt: new Date().toISOString() });
+  }
+  saveEmailSubs(emailSubs);
+  track_server(req.orgSlug, 'email_subscribed', { email, frequency: freq });
+  console.log(`[EMAIL] ${req.orgSlug}: ${email} subscribed (${freq})`);
+  res.json({ ok: true });
+});
 
 app.post('/:org/api/insights/:sectionId', authMiddleware, async (req, res) => {
   if (!ANTHROPIC_API_KEY) return res.status(503).json({ error: 'AI insights not configured (missing ANTHROPIC_API_KEY)' });

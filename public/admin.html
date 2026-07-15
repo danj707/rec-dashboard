@@ -231,6 +231,14 @@ async function toggleOrg(slug, key, value) {
                   <input type="checkbox" ${o.toggles.reportLinks ? 'checked' : ''} onchange="toggleOrg('${o.slug}','reportLinks',this.checked)" style="accent-color:#f59e0b;width:16px;height:16px">
                   <span>\uD83D\uDD17 Report Linkage</span>
                 </label>
+                <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:#aaa;cursor:pointer">
+                  <input type="checkbox" ${o.toggles.aiBriefing ? 'checked' : ''} onchange="toggleOrg('${o.slug}','aiBriefing',this.checked)" style="accent-color:#a855f7;width:16px;height:16px">
+                  <span>\uD83D\uDCCB AI Briefing</span>
+                </label>
+                <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:#aaa;cursor:pointer">
+                  <input type="checkbox" ${o.toggles.emailDigest ? 'checked' : ''} onchange="toggleOrg('${o.slug}','emailDigest',this.checked)" style="accent-color:#06b6d4;width:16px;height:16px">
+                  <span>\uD83D\uDCE7 Email Digest</span>
+                </label>
               </div>
               ${o.updatedAt ? '<div class="org-updated">Last updated: ' + new Date(o.updatedAt).toLocaleString() + '</div>' : ''}
             </div>
