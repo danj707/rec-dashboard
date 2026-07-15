@@ -1165,7 +1165,7 @@ function SectionBlock({ sectionId, widgetIds, reportData, loading, targets, onTa
         </button>}
         <span className="section-badge">{widgetIds.length} widgets</span>
         {reportLinksEnabled && SECTION_REPORT_MAP[sectionId] && reportingBaseUrl && (
-          <a href={`${reportingBaseUrl}/${ORG_SLUG}/${SECTION_REPORT_MAP[sectionId]}`} target="_blank" rel="noopener noreferrer"
+          <a href={`${reportingBaseUrl}/${ORG_SLUG}/${SECTION_REPORT_MAP[sectionId]}?token=${TOKEN}`} target="_blank" rel="noopener noreferrer"
             style={{fontSize:11,fontWeight:600,color:sec.color||'var(--amber)',textDecoration:'none',
               padding:'4px 12px',borderRadius:6,border:`1px solid ${sec.color||'var(--amber)'}33`,
               background:`${sec.color||'var(--amber)'}0d`,transition:'all 0.2s',display:'flex',alignItems:'center',gap:4,
