@@ -1174,7 +1174,8 @@ function BriefingSection({ reportData, loading, dateRange }) {
           {'\u21BB'} Regenerate
         </button>
       </div>
-      <div style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:12,padding:'20px 24px'}}>
+      <div style={{background:'linear-gradient(135deg, rgba(124,58,237,0.08), rgba(139,92,246,0.04))',
+        border:'1px solid rgba(139,92,246,0.2)',borderRadius:12,padding:'20px 24px'}}>
         {briefingLoading ? (
           <div style={{display:'flex',alignItems:'center',gap:10,padding:'4px 0'}}>
             <div style={{width:14,height:14,border:'2px solid var(--purple)',borderTopColor:'transparent',borderRadius:'50%',
@@ -1182,14 +1183,14 @@ function BriefingSection({ reportData, loading, dateRange }) {
             <span style={{color:'var(--text-muted)',fontSize:13}}>Analyzing dashboard data...</span>
           </div>
         ) : briefing ? (
-          <div style={{fontSize:14,lineHeight:1.8,color:'var(--text-primary)',fontFamily:'Georgia, "Times New Roman", serif',
+          <div style={{fontSize:12,lineHeight:1.8,color:'var(--text-primary)',fontFamily:'Georgia, "Times New Roman", serif',
             letterSpacing:'0.01em'}}
             dangerouslySetInnerHTML={{__html: briefing
               .replace(/\*\*([^*]+)\*\*/g, '<strong style="color:var(--amber);font-family:var(--font-body);font-weight:600">$1</strong>')
               .replace(/\n/g, '<br/>')}} />
         ) : null}
         {!briefingLoading && briefing && traceId && (
-          <div style={{marginTop:16,paddingTop:12,borderTop:'1px solid var(--border-subtle)',display:'flex',alignItems:'center',gap:10}}>
+          <div style={{marginTop:16,paddingTop:12,borderTop:'1px solid rgba(139,92,246,0.15)',display:'flex',alignItems:'center',gap:10}}>
             {fbSent ? (
               <span style={{fontSize:11,color:'var(--text-muted)',fontStyle:'italic'}}>{'\u2713'} Thanks for the feedback</span>
             ) : (
