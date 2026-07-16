@@ -232,6 +232,7 @@ async function fetchMetabaseData(orgSlug, reportType, query) {
 //  UPDATES LOG
 // ═══════════════════════════════════════════
 const UPDATES = [
+  { date: '2026-07-15', title: 'Platform usage scoping + Send Now digest', items: ['Fixed admin org cards showing global event counts instead of per-org (AI Insights, Dash Views, Layout Saves)', 'Added POST /:org/api/send-digest endpoint — renders dashboard data as inline HTML email and sends via Resend API', 'New env vars: RESEND_API_KEY, FROM_EMAIL, FROM_NAME'] },
   {
     date: "2026-07-15",
     title: "PDF Export + Dashboard Sharing",
@@ -430,10 +431,14 @@ app.get('/admin/api/events/summary', adminAuth, (req, res) => {
     if (!fs.existsSync(EVENTS_FILE)) return res.json({ total: 0, byOrg: {}, byType: {} });
     const lines = fs.readFileSync(EVENTS_FILE, 'utf8').trim().split('\n').filter(Boolean);
     const events = lines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
-    const byOrg = {}, byType = {};
+    const byOrg = {}, byType = {}, byOrgType = {};
     events.forEach(e => {
       byOrg[e.org] = (byOrg[e.org] || 0) + 1;
       byType[e.event] = (byType[e.event] || 0) + 1;
+      if (e.org) {
+        if (!byOrgType[e.org]) byOrgType[e.org] = {};
+        byOrgType[e.org][e.event] = (byOrgType[e.org][e.event] || 0) + 1;
+      }
     });
     const last7 = {};
     const now = Date.now();
@@ -441,7 +446,7 @@ app.get('/admin/api/events/summary', adminAuth, (req, res) => {
       const day = e.ts?.split('T')[0];
       if (day && (now - new Date(e.ts).getTime()) < 7 * 86400000) last7[day] = (last7[day] || 0) + 1;
     });
-    res.json({ total: events.length, byOrg, byType, last7Days: last7 });
+    res.json({ total: events.length, byOrg, byType, byOrgType, last7Days: last7 });
   } catch (e) { res.json({ total: 0, error: e.message }); }
 });
 
@@ -758,6 +763,9 @@ app.get('/:org/api/events/stats', authMiddleware, (req, res) => {
 //  AI INSIGHTS
 // ═══════════════════════════════════════════
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
+const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
+const FROM_EMAIL = process.env.FROM_EMAIL || 'reports@rec.us';
+const FROM_NAME = process.env.FROM_NAME || 'Rec Dashboard';
 
 // ── Schema Context for AI Insights ──────────────────────────────────
 const SCHEMA_CONTEXT = `
@@ -785,6 +793,90 @@ const INSIGHT_PROMPTS = {
   instructors: 'Analyze these instructor payout metrics. Focus on: revenue per instructor, section coverage, top performers, and refund exposure.',
   'executive-briefing': 'You are writing an executive briefing for a parks and recreation director. The data below is organized by dashboard section. IMPORTANT: "Revenue Overview" (GL data) is the authoritative financial revenue — use those numbers for headline revenue. "Programs & Enrollment" revenue is enrollment-specific and should be called "program revenue" not just "revenue." Do not conflate the two. Synthesize ALL sections into exactly 3 concise sentences. Sentence 1: the headline financial picture from Revenue Overview. Sentence 2: the most notable positive signal across any section. Sentence 3: the single biggest risk or item needing attention. Be specific with numbers. No bullets, no headers, no emoji — just 3 clean sentences a director can read in 10 seconds.',
 };
+
+// ── Send Dashboard Digest Now ─────────────────────────
+app.post('/:org/api/send-digest', authMiddleware, async (req, res) => {
+  if (!RESEND_API_KEY) return res.status(503).json({ ok: false, error: 'RESEND_API_KEY not configured' });
+  const { email, sections, dateRange, orgName, briefing } = req.body;
+  if (!email || !email.includes('@')) return res.status(400).json({ ok: false, error: 'Valid email required' });
+  if (!sections || !sections.length) return res.status(400).json({ ok: false, error: 'No dashboard data provided' });
+
+  // Build HTML email from dashboard data
+  const html = buildDigestEmail({ sections, dateRange, orgName, orgSlug: req.orgSlug, briefing });
+
+  try {
+    const resp = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        from: `${FROM_NAME} <${FROM_EMAIL}>`,
+        to: [email],
+        subject: `${orgName || req.orgSlug} Dashboard Digest \u2014 ${dateRange || 'Current Period'}`,
+        html: html,
+      }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.message || JSON.stringify(data));
+    track_server(req.orgSlug, 'digest_sent', { email, sectionCount: sections.length });
+    console.log(`[EMAIL] Digest sent to ${email} for ${req.orgSlug} (${data.id})`);
+    res.json({ ok: true, emailId: data.id });
+  } catch (e) {
+    console.error('[EMAIL] Send failed:', e.message);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+function buildDigestEmail({ sections, dateRange, orgName, orgSlug, briefing }) {
+  const header = `
+    <div style="background:linear-gradient(135deg,#f97316,#ea580c);padding:24px 28px;border-radius:8px 8px 0 0">
+      <div style="font-size:22px;font-weight:700;color:#fff">${orgName || orgSlug}</div>
+      <div style="font-size:13px;color:rgba(255,255,255,.8);margin-top:4px">Dashboard Digest &mdash; ${dateRange || 'Current Period'}</div>
+    </div>`;
+
+  let briefingHtml = '';
+  if (briefing) {
+    briefingHtml = `
+    <div style="background:linear-gradient(135deg,#7c3aed,#6d28d9);padding:16px 20px;border-radius:6px;margin:16px 0">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:rgba(255,255,255,.7);margin-bottom:8px">AI Executive Briefing</div>
+      <div style="font-size:13px;color:#fff;line-height:1.6">${briefing}</div>
+    </div>`;
+  }
+
+  const sectionHtml = sections.map(sec => {
+    const widgetRows = (sec.widgets || []).map(w => {
+      const val = w.value != null ? w.value : '';
+      const delta = w.delta ? ` <span style="font-size:11px;color:${w.delta > 0 ? '#16a34a' : w.delta < 0 ? '#dc2626' : '#888'}">${w.delta > 0 ? '\u2191' : w.delta < 0 ? '\u2193' : ''}${w.delta}%</span>` : '';
+      return `<tr>
+        <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:13px;color:#333">${w.label || w.title || ''}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:15px;font-weight:600;color:#111;text-align:right">${val}${delta}</td>
+      </tr>`;
+    }).join('');
+
+    return `
+    <div style="margin:16px 0">
+      <div style="font-size:14px;font-weight:700;color:#333;padding:10px 0;border-bottom:2px solid #f97316">${sec.icon || ''} ${sec.title || sec.name || 'Section'}</div>
+      <table style="width:100%;border-collapse:collapse;margin-top:4px">
+        ${widgetRows}
+      </table>
+    </div>`;
+  }).join('');
+
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f5f5f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif">
+  <div style="max-width:600px;margin:20px auto;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.08)">
+    ${header}
+    <div style="padding:20px 28px">
+      ${briefingHtml}
+      ${sectionHtml}
+      <div style="margin-top:24px;padding-top:16px;border-top:1px solid #eee;text-align:center">
+        <a href="${process.env.BASE_URL || 'https://rec-dashboard-production.up.railway.app'}/${orgSlug}" style="display:inline-block;padding:10px 24px;background:#f97316;color:#fff;text-decoration:none;border-radius:5px;font-size:13px;font-weight:600">Open Full Dashboard</a>
+      </div>
+      <div style="margin-top:16px;text-align:center;font-size:11px;color:#999">Powered by rec.us &mdash; Parks & Recreation Intelligence</div>
+    </div>
+  </div>
+</body></html>`;
+}
 
 // ── Email Digest Subscribe (stub — persists to data/) ─────────────
 const EMAIL_SUBS_FILE = path.join(DATA_DIR, 'email-subscriptions.json');
