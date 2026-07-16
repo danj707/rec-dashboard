@@ -1112,7 +1112,7 @@ function WidgetCard({ widgetId, reportData, loading, target, onTargetChange, dat
       {loading && !data ? <div className={isMetric?'skeleton skeleton-metric':'skeleton skeleton-chart'} />
         : isMetric ? <MetricCard data={data} target={target} /> : <Comp data={data} onBarClick={
           (def.component === 'bar' || def.component === 'table') && def.reportType === 'programs' && reportingBaseUrl
-            ? (label) => { var u = reportingBaseUrl + '/' + ORG_SLUG + '/programs?token=' + TOKEN + '&program=' + encodeURIComponent(label); if (dateRange) { u += '&start_date=' + dateRange.start + '&end_date=' + dateRange.end; } window.open(u, '_blank'); }
+            ? (label) => { var u = reportingBaseUrl + '/' + ORG_SLUG + '/programs?token=' + TOKEN + '&tab=revenue&program=' + encodeURIComponent(label); if (dateRange) { u += '&start_date=' + dateRange.start + '&end_date=' + dateRange.end; } window.open(u, '_blank'); }
             : undefined
         } />}
     </div>
