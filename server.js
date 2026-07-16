@@ -827,52 +827,125 @@ app.post('/:org/api/send-digest', authMiddleware, async (req, res) => {
 });
 
 function buildDigestEmail({ sections, dateRange, orgName, orgSlug, briefing }) {
-  const header = `
-    <div style="background:linear-gradient(135deg,#f97316,#ea580c);padding:24px 28px;border-radius:8px 8px 0 0">
-      <div style="font-size:22px;font-weight:700;color:#fff">${orgName || orgSlug}</div>
-      <div style="font-size:13px;color:rgba(255,255,255,.8);margin-top:4px">Dashboard Digest &mdash; ${dateRange || 'Current Period'}</div>
-    </div>`;
+  const ACCENT = '#f97316';
+  const SECTION_COLORS = ['#f97316','#3b82f6','#7c3aed','#059669','#d97706','#0891b2','#dc2626','#6366f1'];
 
+  function kpiCard(label, value, idx) {
+    const bg = idx % 2 === 0 ? '#fff7ed' : '#f0f9ff';
+    const color = idx % 2 === 0 ? '#c2410c' : '#1d4ed8';
+    return `<td style="width:50%;padding:8px">
+      <div style="background:${bg};border-radius:8px;padding:16px;text-align:center">
+        <div style="font-size:11px;color:#666;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">${label}</div>
+        <div style="font-size:24px;font-weight:700;color:${color}">${value}</div>
+      </div>
+    </td>`;
+  }
+
+  // Extract hero KPIs (first 4 metric widgets from first section)
+  let heroCards = '';
+  const firstSec = sections[0];
+  if (firstSec && firstSec.widgets) {
+    const metrics = firstSec.widgets.filter(w => !w.value?.includes(':') && !w.value?.includes(',')).slice(0, 4);
+    if (metrics.length) {
+      const rows = [];
+      for (let i = 0; i < metrics.length; i += 2) {
+        rows.push('<tr>' + kpiCard(metrics[i].label, metrics[i].value, i) +
+          (metrics[i+1] ? kpiCard(metrics[i+1].label, metrics[i+1].value, i+1) : '<td></td>') + '</tr>');
+      }
+      heroCards = `<table style="width:100%;border-collapse:separate;border-spacing:0;margin:0 0 8px 0">${rows.join('')}</table>`;
+    }
+  }
+
+  // AI Briefing block
   let briefingHtml = '';
   if (briefing) {
     briefingHtml = `
-    <div style="background:linear-gradient(135deg,#7c3aed,#6d28d9);padding:16px 20px;border-radius:6px;margin:16px 0">
-      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:rgba(255,255,255,.7);margin-bottom:8px">AI Executive Briefing</div>
-      <div style="font-size:13px;color:#fff;line-height:1.6">${briefing}</div>
+    <div style="background:linear-gradient(135deg,#7c3aed,#6d28d9);padding:18px 22px;border-radius:8px;margin:16px 0">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:rgba(255,255,255,.6);margin-bottom:10px">&#x2728; AI Executive Briefing</div>
+      <div style="font-size:13px;color:#fff;line-height:1.7">${briefing}</div>
     </div>`;
   }
 
-  const sectionHtml = sections.map(sec => {
-    const widgetRows = (sec.widgets || []).map(w => {
-      const val = w.value != null ? w.value : '';
-      const delta = w.delta ? ` <span style="font-size:11px;color:${w.delta > 0 ? '#16a34a' : w.delta < 0 ? '#dc2626' : '#888'}">${w.delta > 0 ? '\u2191' : w.delta < 0 ? '\u2193' : ''}${w.delta}%</span>` : '';
-      return `<tr>
-        <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:13px;color:#333">${w.label || w.title || ''}</td>
-        <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:15px;font-weight:600;color:#111;text-align:right">${val}${delta}</td>
-      </tr>`;
-    }).join('');
+  // Section blocks
+  const sectionHtml = sections.map((sec, si) => {
+    const color = SECTION_COLORS[si % SECTION_COLORS.length];
+    const widgets = sec.widgets || [];
+
+    // Separate simple metrics from breakdown widgets
+    const simpleMetrics = widgets.filter(w => w.value && !String(w.value).includes(':'));
+    const breakdowns = widgets.filter(w => w.value && String(w.value).includes(':'));
+
+    let metricsHtml = '';
+    if (simpleMetrics.length) {
+      metricsHtml = simpleMetrics.map(w => {
+        const deltaHtml = w.delta ? ` <span style="font-size:11px;font-weight:600;color:${w.delta > 0 ? '#16a34a' : '#dc2626'}">${w.delta > 0 ? '&#x2191;' : '&#x2193;'}${Math.abs(w.delta)}%</span>` : '';
+        return `<tr>
+          <td style="padding:10px 14px;border-bottom:1px solid #f3f4f6;font-size:13px;color:#555">${w.label}</td>
+          <td style="padding:10px 14px;border-bottom:1px solid #f3f4f6;font-size:16px;font-weight:700;color:#111;text-align:right">${w.value}${deltaHtml}</td>
+        </tr>`;
+      }).join('');
+      metricsHtml = `<table style="width:100%;border-collapse:collapse">${metricsHtml}</table>`;
+    }
+
+    let breakdownHtml = '';
+    if (breakdowns.length) {
+      breakdownHtml = breakdowns.map(w => {
+        const items = String(w.value).split(', ').slice(0, 5);
+        const itemsHtml = items.map((item, ii) => {
+          const parts = item.split(': ');
+          const label = parts[0] || '';
+          const val = parts[1] || '';
+          const numVal = parseFloat(val.replace(/[^0-9.-]/g, '')) || 0;
+          const maxVal = Math.max(...items.map(it => parseFloat((it.split(': ')[1] || '0').replace(/[^0-9.-]/g, '')) || 0), 1);
+          const pct = Math.min(Math.round((numVal / maxVal) * 100), 100);
+          return `<tr>
+            <td style="padding:4px 14px;font-size:12px;color:#555;width:40%">${label}</td>
+            <td style="padding:4px 14px;width:40%">
+              <div style="background:#f3f4f6;border-radius:4px;height:14px;overflow:hidden">
+                <div style="background:${color};height:100%;width:${pct}%;border-radius:4px"></div>
+              </div>
+            </td>
+            <td style="padding:4px 14px;font-size:12px;font-weight:600;color:#333;text-align:right;white-space:nowrap">${val}</td>
+          </tr>`;
+        }).join('');
+        return `<div style="margin-top:12px">
+          <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:0.5px;padding:0 14px;margin-bottom:6px">${w.label}</div>
+          <table style="width:100%;border-collapse:collapse">${itemsHtml}</table>
+        </div>`;
+      }).join('');
+    }
+
+    // Skip first section hero metrics (already shown as cards)
+    const skipHero = si === 0;
+    const filteredMetricsHtml = skipHero ? '' : metricsHtml;
 
     return `
-    <div style="margin:16px 0">
-      <div style="font-size:14px;font-weight:700;color:#333;padding:10px 0;border-bottom:2px solid #f97316">${sec.icon || ''} ${sec.title || sec.name || 'Section'}</div>
-      <table style="width:100%;border-collapse:collapse;margin-top:4px">
-        ${widgetRows}
-      </table>
+    <div style="margin:20px 0">
+      <div style="display:flex;align-items:center;gap:8px;padding-bottom:10px;border-bottom:3px solid ${color}">
+        <span style="font-size:16px">${sec.icon || ''}</span>
+        <span style="font-size:15px;font-weight:700;color:#111">${sec.title || 'Section'}</span>
+      </div>
+      ${filteredMetricsHtml}
+      ${breakdownHtml}
     </div>`;
   }).join('');
 
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:0;background:#f5f5f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif">
-  <div style="max-width:600px;margin:20px auto;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.08)">
-    ${header}
-    <div style="padding:20px 28px">
+<body style="margin:0;padding:0;background:#f5f5f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
+  <div style="max-width:600px;margin:20px auto;background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,.08)">
+    <div style="background:linear-gradient(135deg,#f97316,#ea580c);padding:28px 28px 20px">
+      <div style="font-size:24px;font-weight:800;color:#fff">${orgName || orgSlug}</div>
+      <div style="font-size:13px;color:rgba(255,255,255,.85);margin-top:4px">Dashboard Digest &mdash; ${dateRange || 'Current Period'}</div>
+    </div>
+    <div style="padding:20px 24px">
+      ${heroCards}
       ${briefingHtml}
       ${sectionHtml}
-      <div style="margin-top:24px;padding-top:16px;border-top:1px solid #eee;text-align:center">
-        <a href="${process.env.BASE_URL || 'https://rec-dashboard-production.up.railway.app'}/${orgSlug}" style="display:inline-block;padding:10px 24px;background:#f97316;color:#fff;text-decoration:none;border-radius:5px;font-size:13px;font-weight:600">Open Full Dashboard</a>
+      <div style="margin-top:28px;padding-top:20px;border-top:1px solid #eee;text-align:center">
+        <a href="${process.env.BASE_URL || 'https://rec-dashboard-production.up.railway.app'}/${orgSlug}" style="display:inline-block;padding:12px 32px;background:linear-gradient(135deg,#f97316,#ea580c);color:#fff;text-decoration:none;border-radius:6px;font-size:14px;font-weight:700">Open Full Dashboard &#x2192;</a>
       </div>
-      <div style="margin-top:16px;text-align:center;font-size:11px;color:#999">Powered by rec.us &mdash; Parks & Recreation Intelligence</div>
+      <div style="margin-top:16px;text-align:center;font-size:11px;color:#bbb">Powered by rec.us &mdash; Parks & Recreation Intelligence</div>
     </div>
   </div>
 </body></html>`;
