@@ -907,7 +907,7 @@ function MetricCard({ data, target }) {
   </div>;
 }
 
-function BarChartWidget({ data }) {
+function BarChartWidget({ data, onBarClick }) {
   const ref = useRef(null), chart = useRef(null);
   useEffect(() => {
     if (chart.current) chart.current.destroy();
@@ -916,12 +916,14 @@ function BarChartWidget({ data }) {
     chart.current = new Chart(ref.current, { type: 'bar',
       data: { labels: data.labels, datasets: [{ data: data.values, backgroundColor: CHART_COLORS.slice(0, data.values.length), borderRadius: 4, maxBarThickness: 40 }] },
       options: { indexAxis: horiz?'y':'x', responsive: true, maintainAspectRatio: false,
-        plugins: { tooltip: { callbacks: { label: ctx => fmtTooltip(ctx.raw, data.format) } } },
+        onClick: onBarClick ? (evt, elements) => { if (elements.length > 0) { onBarClick(data.labels[elements[0].index]); } } : undefined,
+        onHover: onBarClick ? (evt, elements) => { evt.native.target.style.cursor = elements.length > 0 ? 'pointer' : 'default'; } : undefined,
+        plugins: { tooltip: { callbacks: { label: ctx => fmtTooltip(ctx.raw, data.format) + (onBarClick ? '  \u2197 View details' : '') } } },
         scales: { x: { grid: { display: !horiz }, ticks: { callback: v => data.format==='currency' ? '$'+(v>=1000?(v/1000).toFixed(0)+'k':v) : v } },
                   y: { grid: { display: horiz }, ticks: horiz ? {} : { callback: v => data.format==='currency' ? '$'+(v>=1000?(v/1000).toFixed(0)+'k':v) : v } } } }
     });
     return () => { if (chart.current) chart.current.destroy(); };
-  }, [data]);
+  }, [data, onBarClick]);
   if (!data) return <div className="skeleton skeleton-chart" />;
   return <div className="chart-container"><canvas ref={ref} /></div>;
 }
@@ -962,7 +964,7 @@ function LineChartWidget({ data }) {
   return <div className="chart-container"><canvas ref={ref} /></div>;
 }
 
-function TableWidget({ data }) {
+function TableWidget({ data, onBarClick }) {
   if (!data) return <div className="skeleton skeleton-chart" />;
   const numCols = new Set();
   if (data.data.length) data.data[0].forEach((v,i) => { if (typeof v==='number'||String(v).startsWith('$')||String(v).endsWith('%')) numCols.add(i); });
@@ -970,7 +972,7 @@ function TableWidget({ data }) {
     <div className="widget-table">
       <table>
         <thead><tr>{data.columns.map((c,i) => <th key={i} className={numCols.has(i)?'num':''}>{c}</th>)}</tr></thead>
-        <tbody>{data.data.map((row,ri) => <tr key={ri}>{row.map((v,ci) => <td key={ci} className={numCols.has(ci)?'num':''}>{v}</td>)}</tr>)}</tbody>
+        <tbody>{data.data.map((row,ri) => <tr key={ri} style={onBarClick?{cursor:'pointer'}:{}} onClick={onBarClick?()=>onBarClick(row[0]):undefined} title={onBarClick?'Click to view details':''}>{row.map((v,ci) => <td key={ci} className={numCols.has(ci)?'num':''}>{v}</td>)}</tr>)}</tbody>
       </table>
     </div>
   );
@@ -1066,7 +1068,7 @@ function HeatmapWidget({ data }) {
 
 const COMP = { metric: MetricCard, bar: BarChartWidget, donut: DonutChartWidget, line: LineChartWidget, table: TableWidget, map: MapWidget, heatmap: HeatmapWidget };
 
-function WidgetCard({ widgetId, reportData, loading, target, onTargetChange, dateRange }) {
+function WidgetCard({ widgetId, reportData, loading, target, onTargetChange, dateRange, reportingBaseUrl }) {
   const def = W[widgetId]; if (!def) return null;
   const Comp = COMP[def.component]; if (!Comp) return null;
   const raw = reportData[def.reportType];
@@ -1108,7 +1110,11 @@ function WidgetCard({ widgetId, reportData, loading, target, onTargetChange, dat
         </div>
       )}
       {loading && !data ? <div className={isMetric?'skeleton skeleton-metric':'skeleton skeleton-chart'} />
-        : isMetric ? <MetricCard data={data} target={target} /> : <Comp data={data} />}
+        : isMetric ? <MetricCard data={data} target={target} /> : <Comp data={data} onBarClick={
+          (def.component === 'bar' || def.component === 'table') && def.reportType === 'programs' && reportingBaseUrl
+            ? (label) => window.open(reportingBaseUrl + '/' + ORG_SLUG + '/programs?token=' + TOKEN + '&program=' + encodeURIComponent(label), '_blank')
+            : undefined
+        } />}
     </div>
   );
 }
@@ -1374,7 +1380,7 @@ function SectionBlock({ sectionId, widgetIds, reportData, loading, targets, onTa
         </div>
       )}
       <div className="widget-grid">
-        {widgetIds.map(id => <WidgetCard key={id} widgetId={id} reportData={reportData} loading={loading}
+        {widgetIds.map(id => <WidgetCard key={id} widgetId={id} reportData={reportData} loading={loading} reportingBaseUrl={reportingBaseUrl}
           target={targets?.[id]} onTargetChange={onTargetChange} dateRange={dateRange} />)}
       </div>
     </div>
