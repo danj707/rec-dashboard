@@ -208,9 +208,9 @@ async function toggleOrg(slug, key, value) {
                 <div class="org-stat"><div class="org-stat-label">Sections</div><div class="org-stat-value">${o.sectionCount}</div></div>
                 <div class="org-stat"><div class="org-stat-label">Widgets</div><div class="org-stat-value">${o.widgetCount}</div></div>
                 <div class="org-stat"><div class="org-stat-label">Events</div><div class="org-stat-value">${evtData.byOrg[o.slug] || 0}</div></div>
-                <div class="org-stat"><div class="org-stat-label">AI Insights</div><div class="org-stat-value">${(evtData.byType['insight_generated'] || 0)}</div></div>
-                <div class="org-stat"><div class="org-stat-label">Dash Views</div><div class="org-stat-value">${(evtData.byType['dashboard_view'] || 0)}</div></div>
-                <div class="org-stat"><div class="org-stat-label">Layout Saves</div><div class="org-stat-value">${(evtData.byType['layout_saved'] || 0)}</div></div>
+                <div class="org-stat"><div class="org-stat-label">AI Insights</div><div class="org-stat-value">${(evtData.byOrgType?.[o.slug]?.['insight_generated'] || 0)}</div></div>
+                <div class="org-stat"><div class="org-stat-label">Dash Views</div><div class="org-stat-value">${(evtData.byOrgType?.[o.slug]?.['dashboard_view'] || 0)}</div></div>
+                <div class="org-stat"><div class="org-stat-label">Layout Saves</div><div class="org-stat-value">${(evtData.byOrgType?.[o.slug]?.['layout_saved'] || 0)}</div></div>
               </div>
               <div class="org-badges">
                 <span class="badge ${o.configured ? 'badge-green' : 'badge-gray'}">${o.configured ? 'Configured' : 'Not configured'}</span>
