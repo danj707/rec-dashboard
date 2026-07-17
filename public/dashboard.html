@@ -83,6 +83,16 @@ body { font-family: var(--font-body); background: var(--bg-page); color: var(--t
 .section-badge { font-size: 10px; color: var(--text-muted); padding: 3px 8px; border: 1px solid var(--border); border-radius: 4px; }
 
 /* Widget Grid */
+
+.kpi-strip { display: flex; gap: 1px; background: var(--border); border-radius: 10px; overflow: hidden; margin-bottom: 14px; }
+.kpi-strip-item { flex: 1; background: var(--bg-surface); padding: 14px 18px; text-align: center; min-width: 0; }
+.kpi-strip-item:first-child { border-radius: 10px 0 0 10px; }
+.kpi-strip-item:last-child { border-radius: 0 10px 10px 0; }
+.kpi-strip-value { display: block; font-size: 26px; font-weight: 700; color: var(--text-primary); font-family: var(--font-display); letter-spacing: -0.02em; }
+.kpi-strip-label { display: block; font-size: 11px; font-weight: 600; color: var(--text-secondary); margin-top: 2px; text-transform: uppercase; letter-spacing: 0.04em; }
+.kpi-strip-note { display: block; font-size: 10px; color: var(--text-muted); margin-top: 2px; }
+@media (max-width: 600px) { .kpi-strip { flex-wrap: wrap; } .kpi-strip-item { flex: 1 1 45%; } .kpi-strip-value { font-size: 20px; } }
+@media print { .kpi-strip { break-inside: avoid; } }
 .widget-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
 @media (max-width: 1100px) { .widget-grid { grid-template-columns: repeat(3, 1fr); } }
 @media (max-width: 800px) { .widget-grid { grid-template-columns: repeat(2, 1fr); } }
@@ -1379,10 +1389,33 @@ function SectionBlock({ sectionId, widgetIds, reportData, loading, targets, onTa
           )}
         </div>
       )}
-      <div className="widget-grid">
-        {widgetIds.map(id => <WidgetCard key={id} widgetId={id} reportData={reportData} loading={loading} reportingBaseUrl={reportingBaseUrl}
-          target={targets?.[id]} onTargetChange={onTargetChange} dateRange={dateRange} />)}
-      </div>
+      {sectionId === 'users-demographics' ? (() => {
+        const metricIds = widgetIds.filter(id => W[id] && W[id].component === 'metric');
+        const chartIds = widgetIds.filter(id => W[id] && W[id].component !== 'metric');
+        return <React.Fragment>
+          {metricIds.length > 0 && <div className="kpi-strip">
+            {metricIds.map(id => {
+              const def = W[id]; if (!def) return null;
+              const raw = reportData[def.reportType];
+              const data = raw ? def.transform(raw) : null;
+              return <div key={id} className="kpi-strip-item">
+                <span className="kpi-strip-value">{data ? fmt(data.value, data.format) : '...'}</span>
+                <span className="kpi-strip-label">{def.label}</span>
+                {def.note && <span className="kpi-strip-note">{def.note}</span>}
+              </div>;
+            })}
+          </div>}
+          <div className="widget-grid">
+            {chartIds.map(id => <WidgetCard key={id} widgetId={id} reportData={reportData} loading={loading} reportingBaseUrl={reportingBaseUrl}
+              target={targets?.[id]} onTargetChange={onTargetChange} dateRange={dateRange} />)}
+          </div>
+        </React.Fragment>;
+      })() : (
+        <div className="widget-grid">
+          {widgetIds.map(id => <WidgetCard key={id} widgetId={id} reportData={reportData} loading={loading} reportingBaseUrl={reportingBaseUrl}
+            target={targets?.[id]} onTargetChange={onTargetChange} dateRange={dateRange} />)}
+        </div>
+      )}
     </div>
   );
 }
@@ -1925,16 +1958,21 @@ function DashboardApp() {
 
   const isReadOnly = orgMeta.readOnly || IS_SHARE;
   const totalWidgets = config.sections.reduce((s,sec) => s + sec.widgets.length, 0);
-  const displaySections = config.sections.filter(sec => {
-    if (sec.id === 'ai-briefing') return false;
-    if (PRINT_SECTIONS && !PRINT_SECTIONS.includes(sec.id)) return false;
-    if (!orgMeta.reportVisibility) return true;
-    const reportType = SECTION_REPORT_MAP[sec.id];
-    if (!reportType) return true;
-    const vis = orgMeta.reportVisibility.find(v => v.type === reportType);
-    if (!vis) return true;
-    return vis.visible;
-  });
+  const displaySections = (() => {
+    const filtered = config.sections.filter(sec => {
+      if (sec.id === 'ai-briefing') return false;
+      if (PRINT_SECTIONS && !PRINT_SECTIONS.includes(sec.id)) return false;
+      if (!orgMeta.reportVisibility) return true;
+      const reportType = SECTION_REPORT_MAP[sec.id];
+      if (!reportType) return true;
+      const vis = orgMeta.reportVisibility.find(v => v.type === reportType);
+      if (!vis) return true;
+      return vis.visible;
+    });
+    const userIdx = filtered.findIndex(s => s.id === 'users-demographics');
+    if (userIdx > 0) { const [ud] = filtered.splice(userIdx, 1); filtered.unshift(ud); }
+    return filtered;
+  })();
 
   return (
     <div>
