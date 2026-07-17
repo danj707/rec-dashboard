@@ -285,7 +285,7 @@ const SECTIONS = {
     defaultWidgets: ['ft-signups','ft-converted','ft-pending','ft-conv-rate','ft-top-programs'] },
   'users-demographics': { id: 'users-demographics', label: 'Users & Demographics', icon: '\uD83D\uDC65', color: '#06b6d4',
     description: 'User growth, age, gender, and location data',
-    defaultWidgets: ['user-total','user-new'] },
+    defaultWidgets: ['user-total','user-new','user-households','user-residents','user-median-age'] },
   memberships: { id: 'memberships', label: 'Memberships', icon: '\uD83C\uDFAB', color: '#ec4899',
     description: 'Member counts, revenue, and check-ins',
     defaultWidgets: ['mem-active','mem-canceled','mem-revenue','mem-net','mem-type-donut'] },
@@ -541,6 +541,27 @@ const W = {
     transform: rows => {
       const thirtyAgo=Date.now()-30*86400000;
       return { value: rows.filter(r=>{const d=r['created_at']||r['Created At']||r['signup_date']||''; return d&&new Date(d).getTime()>thirtyAgo;}).length, format:'number', colorClass:'metric-green' };
+    }},
+  'user-households': { label: 'Households', description: 'Distinct household accounts', note: 'Unique household IDs (heads of household)', section: 'users-demographics',
+    reportType: 'users', size: 'sm', icon: '\uD83C\uDFE0', component: 'metric',
+    transform: rows => ({ value: new Set(rows.map(r=>r['Household ID']).filter(Boolean)).size, format:'number' }) },
+  'user-residents': { label: 'Residents', description: 'Resident percentage', note: 'Percentage of users with resident status', section: 'users-demographics',
+    reportType: 'users', size: 'sm', icon: '\uD83C\uDFE1', component: 'metric',
+    transform: rows => {
+      if(!rows.length) return { value: 0, format:'number', sub:'0 of 0' };
+      const res=rows.filter(r=>{const v=(r['Residency?']||'').toLowerCase(); return v==='resident'||v==='yes'||v==='true'||v==='r';}).length;
+      return { value: Math.round(res/rows.length*1000)/10, format:'percent', sub: res.toLocaleString()+' of '+rows.length.toLocaleString(), colorClass: res/rows.length>0.5?'metric-green':'' };
+    }},
+  'user-median-age': { label: 'Median Age', description: 'Median age of all users', note: 'Middle value of all user ages', section: 'users-demographics',
+    reportType: 'users', size: 'sm', icon: '\uD83C\uDF82', component: 'metric',
+    transform: rows => {
+      const ages=rows.map(r=>parseInt(r['Age']||r['age'])).filter(a=>!isNaN(a)&&a>0&&a<120).sort((a,b)=>a-b);
+      if(!ages.length) return { value: 0, format:'number' };
+      const mid=Math.floor(ages.length/2);
+      const median=ages.length%2?ages[mid]:Math.round((ages[mid-1]+ages[mid])/2);
+      const hoh=rows.filter(r=>(r['Role']||'').toLowerCase().includes('head')).map(r=>parseInt(r['Age'])).filter(a=>!isNaN(a)&&a>0).sort((a,b)=>a-b);
+      const hohMed=hoh.length?(hoh.length%2?hoh[Math.floor(hoh.length/2)]:Math.round((hoh[Math.floor(hoh.length/2)-1]+hoh[Math.floor(hoh.length/2)])/2)):0;
+      return { value: median, format:'number', sub: hohMed?'HoH median: '+hohMed:'' };
     }},
   'user-by-city': { label: 'Users by City', description: 'Top cities by user count', note: 'All registered users, not just participants', section: 'users-demographics',
     reportType: 'users', size: 'md', icon: '\uD83C\uDFD9\uFE0F', component: 'bar',
