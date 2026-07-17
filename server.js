@@ -232,6 +232,11 @@ async function fetchMetabaseData(orgSlug, reportType, query) {
 //  UPDATES LOG
 // ═══════════════════════════════════════════
 const UPDATES = [
+  { date: '2026-07-18', title: 'Users & Demographics promoted to #1 section', items: [
+    'Users & Demographics section now always renders first regardless of config order',
+    'KPI metrics (Total Users, New Users) collapsed into a compact summary strip',
+    'Chart widgets (City, Zip, Map, Age, Gender) get full grid space'
+  ]},
   { date: '2026-07-15', title: 'Platform usage scoping + Send Now digest', items: ['Fixed admin org cards showing global event counts instead of per-org (AI Insights, Dash Views, Layout Saves)', 'Added POST /:org/api/send-digest endpoint — renders dashboard data as inline HTML email and sends via Resend API', 'New env vars: RESEND_API_KEY, FROM_EMAIL, FROM_NAME'] },
   {
     date: "2026-07-15",
