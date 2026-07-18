@@ -1606,7 +1606,7 @@ function TemplateChooser({ onSelect }) {
         <div className="template-heading">Build Your Dashboard</div>
         <div className="template-sub">Select the sections you want. Each comes with default widgets you can customize later.</div>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,margin:'20px 0'}}>
-          {['revenue','facility','programs','users-demographics','courts','fasttrack','memberships','products','instructors','ai-briefing']
+          {['revenue','facility','programs','users-demographics','courts','fasttrack','memberships','products','instructors']
            .filter(key => SECTIONS[key])
            .map(key => { const sec = SECTIONS[key]; const totalW = Object.values(W).filter(w => w.section === key).length; const addlW = totalW - sec.defaultWidgets.length; return (
             <div key={key}
@@ -2125,7 +2125,7 @@ function DashboardApp() {
       <div className={`loading-bar ${loading ? 'active' : ''}`}><div className="loading-bar-inner" /></div>
 
       <div className={loading && lastRefresh ? 'sections-loading' : ''}>
-        {!IS_PRINT && config.sections.some(s => s.id === 'ai-briefing') && (
+        {false && !IS_PRINT && config.sections.some(s => s.id === 'ai-briefing') && (
           <BriefingSection reportData={reportData} loading={loading} dateRange={dateRange} briefingRef={briefingRef} />
         )}
         {displaySections.map((sec, i) => (
