@@ -1927,11 +1927,17 @@ function DashboardApp() {
     try { await fetch(`/${ORG_SLUG}/api/config?token=${TOKEN}`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(cfg) }); } catch(e) {}
   }
 
-  async function handleSelectTemplate(key) {
-    const t = TEMPLATES[key];
-    const cfg = { template: key, sections: t.sections.map(s=>({...s, widgets:[...s.widgets]})), cacheTTL: 15, datePreset: 'thisMonth' };
+  async function handleSelectTemplate(key, customSections) {
+    let secs;
+    if (key === '__custom' && customSections) {
+      secs = customSections;
+    } else {
+      const t = TEMPLATES[key];
+      secs = t.sections.map(s=>({...s, widgets:[...s.widgets]}));
+    }
+    const cfg = { template: key, sections: secs, cacheTTL: 15, datePreset: 'thisMonth' };
     setConfig(cfg); await saveConfig(cfg);
-    track('template_selected', { template: key, sections: t.sections.length });
+    track('template_selected', { template: key, sections: secs.length });
   }
 
   async function handleSaveSections(sections) {
