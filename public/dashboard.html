@@ -1473,8 +1473,7 @@ function EditModal({ sections, onSave, onClose, availableReports, toggles }) {
   const activeSectionIds = new Set(draft.map(s => s.id));
   const availableSections = Object.values(SECTIONS).filter(s => {
       if (activeSectionIds.has(s.id)) return false;
-      // Hide AI Briefing section unless admin has enabled it
-      // ai-briefing is available to all orgs
+      if (s.id === 'ai-briefing') return false;  // disabled until data pipeline audit
       // Also hide sections whose report is hidden on the reporting side (from window._reportVisibility)
       if (window._reportVisibility) {
         const rt = SECTION_REPORT_MAP[s.id];
