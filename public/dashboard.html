@@ -1567,20 +1567,64 @@ function EditModal({ sections, onSave, onClose, availableReports, toggles }) {
 //  TEMPLATE CHOOSER
 // ═══════════════════════════════════════════════════════
 function TemplateChooser({ onSelect }) {
+  const [selected, setSelected] = useState(() => {
+    const all = {};
+    Object.keys(SECTIONS).forEach(k => { all[k] = true; });
+    return all;
+  });
+
+  function toggleSection(id) {
+    setSelected(prev => ({ ...prev, [id]: !prev[id] }));
+  }
+
+  function handleCreate() {
+    const secs = Object.entries(selected)
+      .filter(([_, on]) => on)
+      .map(([id]) => ({ id, widgets: [...SECTIONS[id].defaultWidgets] }));
+    if (!secs.length) return;
+    onSelect('__custom', secs);
+  }
+
+  const selectedCount = Object.values(selected).filter(Boolean).length;
+  const totalWidgets = Object.entries(selected)
+    .filter(([_, on]) => on)
+    .reduce((s, [id]) => s + SECTIONS[id].defaultWidgets.length, 0);
+
   return (
     <div className="template-overlay">
-      <div className="template-container">
+      <div className="template-container" style={{maxWidth:720}}>
         <div className="template-heading">Build Your Dashboard</div>
-        <div className="template-sub">Pick a starting point — you can add, remove, and rearrange everything after.</div>
-        <div className="template-grid">
-          {Object.entries(TEMPLATES).map(([key, t]) => (
-            <div key={key} className="template-card" onClick={() => onSelect(key)}>
-              <div className="template-card-icon">{t.icon}</div>
-              <div className="template-card-name">{t.label}</div>
-              <div className="template-card-desc">{t.description}</div>
-              <div style={{marginTop:12,fontSize:11,color:'var(--text-muted)'}}>{t.sections.length} sections · {t.sections.reduce((s,sec)=>s+sec.widgets.length,0)} widgets</div>
+        <div className="template-sub">Select the sections you want. Each comes with default widgets you can customize later.</div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,margin:'20px 0'}}>
+          {Object.entries(SECTIONS).map(([key, sec]) => (
+            <div key={key}
+              onClick={() => toggleSection(key)}
+              style={{cursor:'pointer',display:'flex',alignItems:'flex-start',gap:12,padding:'14px 16px',
+                border: selected[key] ? '2px solid var(--accent, #3b82f6)' : '2px solid var(--border)',
+                background: selected[key] ? 'var(--bg-accent-subtle, rgba(59,130,246,0.05))' : 'var(--bg-surface)',
+                borderRadius:10,transition:'all 0.15s'}}>
+              <div style={{fontSize:10,marginTop:2,width:18,height:18,borderRadius:4,border:'2px solid ' + (selected[key] ? 'var(--accent, #3b82f6)' : 'var(--border)'),
+                background:selected[key] ? 'var(--accent, #3b82f6)' : 'transparent',color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontWeight:700}}>
+                {selected[key] ? '\u2713' : ''}
+              </div>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:13,fontWeight:600,color:'var(--text-primary)'}}>{sec.icon} {sec.label}</div>
+                <div style={{fontSize:11,color:'var(--text-secondary)',marginTop:2}}>{sec.description}</div>
+                <div style={{fontSize:10,color:'var(--text-muted)',marginTop:4}}>{sec.defaultWidgets.length} default widgets</div>
+              </div>
             </div>
           ))}
+        </div>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:8}}>
+          <div style={{fontSize:12,color:'var(--text-secondary)'}}>
+            {selectedCount} section{selectedCount !== 1 ? 's' : ''} \u00b7 {totalWidgets} widgets
+          </div>
+          <button onClick={handleCreate} disabled={!selectedCount}
+            style={{background:selectedCount ? 'var(--accent, #3b82f6)' : 'var(--border)',color:'#fff',border:'none',
+              padding:'10px 28px',borderRadius:8,fontWeight:600,fontSize:14,cursor:selectedCount ? 'pointer' : 'default',
+              opacity:selectedCount ? 1 : 0.5}}>
+            Create Dashboard
+          </button>
         </div>
       </div>
     </div>
