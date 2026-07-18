@@ -1597,7 +1597,9 @@ function TemplateChooser({ onSelect }) {
         <div className="template-heading">Build Your Dashboard</div>
         <div className="template-sub">Select the sections you want. Each comes with default widgets you can customize later.</div>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,margin:'20px 0'}}>
-          {Object.entries(SECTIONS).map(([key, sec]) => (
+          {['revenue','facility','programs','users-demographics','courts','fasttrack','memberships','products','instructors','ai-briefing']
+           .filter(key => SECTIONS[key])
+           .map(key => { const sec = SECTIONS[key]; const totalW = Object.values(W).filter(w => w.section === key).length; const addlW = totalW - sec.defaultWidgets.length; return (
             <div key={key}
               onClick={() => toggleSection(key)}
               style={{cursor:'pointer',display:'flex',alignItems:'flex-start',gap:12,padding:'14px 16px',
@@ -1611,10 +1613,12 @@ function TemplateChooser({ onSelect }) {
               <div style={{flex:1,minWidth:0}}>
                 <div style={{fontSize:13,fontWeight:600,color:'var(--text-primary)'}}>{sec.icon} {sec.label}</div>
                 <div style={{fontSize:11,color:'var(--text-secondary)',marginTop:2}}>{sec.description}</div>
-                <div style={{fontSize:10,color:'var(--text-muted)',marginTop:4}}>{sec.defaultWidgets.length} default widgets</div>
+                <div style={{fontSize:10,color:'var(--text-muted)',marginTop:4}}>
+                  {sec.defaultWidgets.length} default widgets{addlW > 0 ? ', ' + addlW + ' additional' : ''}
+                </div>
               </div>
             </div>
-          ))}
+          ); })}
         </div>
         <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:8,marginTop:16}}>
           <div style={{fontSize:12,color:'var(--text-secondary)'}}>
