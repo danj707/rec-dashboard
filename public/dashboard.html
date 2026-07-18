@@ -1568,8 +1568,9 @@ function EditModal({ sections, onSave, onClose, availableReports, toggles }) {
 // ═══════════════════════════════════════════════════════
 function TemplateChooser({ onSelect }) {
   const [selected, setSelected] = useState(() => {
+    const defaults = new Set(['revenue', 'facility', 'programs', 'users-demographics']);
     const all = {};
-    Object.keys(SECTIONS).forEach(k => { all[k] = true; });
+    Object.keys(SECTIONS).forEach(k => { all[k] = defaults.has(k); });
     return all;
   });
 
@@ -1615,9 +1616,9 @@ function TemplateChooser({ onSelect }) {
             </div>
           ))}
         </div>
-        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:8}}>
+        <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:8,marginTop:16}}>
           <div style={{fontSize:12,color:'var(--text-secondary)'}}>
-            {selectedCount} section{selectedCount !== 1 ? 's' : ''} \u00b7 {totalWidgets} widgets
+            {selectedCount} section{selectedCount !== 1 ? 's' : ''} · {totalWidgets} widgets
           </div>
           <button onClick={handleCreate} disabled={!selectedCount}
             style={{background:selectedCount ? 'var(--accent, #3b82f6)' : 'var(--border)',color:'#fff',border:'none',
