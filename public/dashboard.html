@@ -1474,7 +1474,7 @@ function EditModal({ sections, onSave, onClose, availableReports, toggles }) {
   const availableSections = Object.values(SECTIONS).filter(s => {
       if (activeSectionIds.has(s.id)) return false;
       // Hide AI Briefing section unless admin has enabled it
-      if (s.id === 'ai-briefing' && !toggles?.aiBriefing) return false;
+      // ai-briefing is available to all orgs
       // Also hide sections whose report is hidden on the reporting side (from window._reportVisibility)
       if (window._reportVisibility) {
         const rt = SECTION_REPORT_MAP[s.id];
@@ -2125,7 +2125,7 @@ function DashboardApp() {
       <div className={`loading-bar ${loading ? 'active' : ''}`}><div className="loading-bar-inner" /></div>
 
       <div className={loading && lastRefresh ? 'sections-loading' : ''}>
-        {!IS_PRINT && orgMeta.toggles?.aiBriefing && config.sections.some(s => s.id === 'ai-briefing') && (
+        {!IS_PRINT && config.sections.some(s => s.id === 'ai-briefing') && (
           <BriefingSection reportData={reportData} loading={loading} dateRange={dateRange} briefingRef={briefingRef} />
         )}
         {displaySections.map((sec, i) => (
