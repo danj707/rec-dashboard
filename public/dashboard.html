@@ -1574,6 +1574,14 @@ function TemplateChooser({ onSelect }) {
     return all;
   });
 
+  const [builderTheme, setBuilderTheme] = useState(() => localStorage.getItem('rec-dash-theme') || 'light');
+  function toggleTheme() {
+    const next = builderTheme === 'dark' ? 'light' : 'dark';
+    setBuilderTheme(next);
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('rec-dash-theme', next);
+  }
+
   function toggleSection(id) {
     setSelected(prev => ({ ...prev, [id]: !prev[id] }));
   }
@@ -1583,7 +1591,7 @@ function TemplateChooser({ onSelect }) {
       .filter(([_, on]) => on)
       .map(([id]) => ({ id, widgets: [...SECTIONS[id].defaultWidgets] }));
     if (!secs.length) return;
-    onSelect('__custom', secs);
+    onSelect('__custom', secs, builderTheme);
   }
 
   const selectedCount = Object.values(selected).filter(Boolean).length;
@@ -1622,25 +1630,13 @@ function TemplateChooser({ onSelect }) {
           ); })}
         </div>
         <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:10,marginTop:20}}>
-          {(() => {
-            const [isDark, setIsDark] = useState(() => document.documentElement.getAttribute('data-theme') === 'dark');
-            function toggle() {
-              const next = !isDark;
-              setIsDark(next);
-              const t = next ? 'dark' : 'light';
-              document.documentElement.setAttribute('data-theme', t);
-              localStorage.setItem('rec-dash-theme', t);
-            }
-            return (
-              <div style={{display:'flex',alignItems:'center',gap:10,fontSize:13}}>
-                <span style={{fontSize:16,opacity:isDark?0.4:1,transition:'opacity 0.2s'}}>☀️</span>
-                <div onClick={toggle} style={{width:44,height:24,borderRadius:12,background:isDark?'#3b82f6':'#d1d5db',cursor:'pointer',position:'relative',transition:'background 0.25s'}}>
-                  <div style={{width:20,height:20,borderRadius:10,background:'#fff',position:'absolute',top:2,left:isDark?22:2,transition:'left 0.25s',boxShadow:'0 1px 3px rgba(0,0,0,0.2)'}} />
-                </div>
-                <span style={{fontSize:16,opacity:isDark?1:0.4,transition:'opacity 0.2s'}}>🌙</span>
-              </div>
-            );
-          })()}
+          <div style={{display:'flex',alignItems:'center',gap:10,fontSize:13}}>
+            <span style={{fontSize:16,opacity:builderTheme==='dark'?0.4:1,transition:'opacity 0.2s'}}>☀️</span>
+            <div onClick={toggleTheme} style={{width:44,height:24,borderRadius:12,background:builderTheme==='dark'?'#3b82f6':'#d1d5db',cursor:'pointer',position:'relative',transition:'background 0.25s'}}>
+              <div style={{width:20,height:20,borderRadius:10,background:'#fff',position:'absolute',top:2,left:builderTheme==='dark'?22:2,transition:'left 0.25s',boxShadow:'0 1px 3px rgba(0,0,0,0.2)'}} />
+            </div>
+            <span style={{fontSize:16,opacity:builderTheme==='dark'?1:0.4,transition:'opacity 0.2s'}}>🌙</span>
+          </div>
           <div style={{fontSize:12,color:'var(--text-secondary)'}}>
             {selectedCount} section{selectedCount !== 1 ? 's' : ''} · {totalWidgets} widgets
           </div>
@@ -1996,7 +1992,7 @@ function DashboardApp() {
     try { await fetch(`/${ORG_SLUG}/api/config?token=${TOKEN}`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(cfg) }); } catch(e) {}
   }
 
-  async function handleSelectTemplate(key, customSections) {
+  async function handleSelectTemplate(key, customSections, chosenTheme) {
     let secs;
     if (key === '__custom' && customSections) {
       secs = customSections;
@@ -2004,9 +2000,10 @@ function DashboardApp() {
       const t = TEMPLATES[key];
       secs = t.sections.map(s=>({...s, widgets:[...s.widgets]}));
     }
-    const cfg = { template: key, sections: secs, cacheTTL: 15, datePreset: 'thisMonth' };
-    setConfig(cfg); await saveConfig(cfg);
-    track('template_selected', { template: key, sections: secs.length });
+    const t = chosenTheme || 'light';
+    const cfg = { template: key, sections: secs, cacheTTL: 15, datePreset: 'thisMonth', theme: t };
+    setConfig(cfg); setTheme(t); document.documentElement.setAttribute('data-theme', t); await saveConfig(cfg);
+    track('template_selected', { template: key, sections: secs.length, theme: t });
   }
 
   async function handleSaveSections(sections) {
