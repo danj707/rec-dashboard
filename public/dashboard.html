@@ -140,7 +140,10 @@ body { font-family: var(--font-body); background: var(--bg-page); color: var(--t
 .metric-value { font-family: var(--font-display); font-size: 36px; font-weight: 700; line-height: 1.1; margin-top: 8px; letter-spacing: -0.02em; }
 .metric-green { color: var(--green); }
 .metric-red { color: var(--red); }
-.chart-container { position: relative; width: 100%; height: calc(100% - 50px); min-height: 220px; }
+.metric-amber { color: var(--amber); }
+/* Fixed height (not % of card): a %-height canvas inside an auto-sized grid row
+   creates a resize feedback loop with Chart.js and the row grows unbounded. */
+.chart-container { position: relative; width: 100%; height: 240px; }
 
 /* Skeleton */
 .skeleton { background: linear-gradient(90deg, var(--bg-surface) 25%, #222 50%, var(--bg-surface) 75%);
@@ -295,6 +298,9 @@ const SECTIONS = {
   instructors: { id: 'instructors', label: 'Instructor Payout', icon: '\uD83C\uDF93', color: '#22c55e',
     description: 'Instructor revenue splits and performance',
     defaultWidgets: ['instr-net','instr-payout','instr-org-ret','instr-fill','instr-top'] },
+  support: { id: 'support', label: 'Customer Support', icon: '\ud83d\udcac', color: '#14b8a6',
+    description: 'Resident support conversations Rec handles on your behalf',
+    defaultWidgets: ['sup-total','sup-ai-resolution','sup-escalated','sup-median-resolution','sup-volume-trend','sup-by-topic','sup-resolution-mix','sup-by-channel','sup-top-articles','tbl-support-topics'] },
   'ai-briefing': { id: 'ai-briefing', label: 'AI Executive Briefing', icon: '\u2728', color: '#a855f7',
     description: 'AI-generated narrative summary from all dashboard data',
     defaultWidgets: [], _special: true },
@@ -798,6 +804,109 @@ const W = {
         data:rows.sort((a,b)=>pf(b['Net Amount'])-pf(a['Net Amount'])).slice(0,15).map(r=>[
           r['GL Code']||'-', r['Account Name']||'-', '$'+Math.round(pf(r['Total Payments'])).toLocaleString(),
           '$'+Math.round(pf(r['Total Refunds'])).toLocaleString(), '$'+Math.round(pf(r['Net Amount'])).toLocaleString()]) };
+    }},
+
+  // ── Customer Support (Intercom) ──
+  // Every widget here reads the support row shape: one row per resident
+  // support conversation. See support-data.js for the column contract.
+  'sup-total': { label: 'Resident Conversations', description: 'Support conversations opened by your residents', note: 'Email + in-app chat started by residents of your org. Conversations from your own staff are excluded.', section: 'support',
+    reportType: 'support', size: 'sm', icon: '💬', component: 'metric',
+    transform: rows => ({ value: rows.length, format: 'number',
+      sub: `${rows.filter(r => r.State === 'open').length} still open` }) },
+  'sup-ai-resolution': { label: 'AI Resolution Rate', description: 'Share resolved by Rec AI without a human', note: 'Conversations Rec’s AI agent resolved end-to-end, as a share of all resident conversations. Higher means fewer residents waiting on a person.', section: 'support',
+    reportType: 'support', size: 'sm', icon: '✨', component: 'metric',
+    transform: rows => {
+      const resolved = rows.filter(r => r['Resolution State'] === 'Resolved by AI').length;
+      return { value: rows.length ? (resolved / rows.length) * 100 : 0, format: 'percent', colorClass: 'metric-green',
+        sub: `${resolved} of ${rows.length} conversations` };
+    }},
+  'sup-escalated': { label: 'Escalated to Staff', description: 'Conversations the AI handed to a Rec agent', note: 'Resident asked something the AI could not close out, so a Rec support agent took over.', section: 'support',
+    reportType: 'support', size: 'sm', icon: '🙋', component: 'metric',
+    transform: rows => {
+      const esc = rows.filter(r => r.Escalated === 1).length;
+      return { value: esc, format: 'number', colorClass: esc ? 'metric-amber' : '',
+        sub: rows.length ? `${((esc / rows.length) * 100).toFixed(1)}% of volume` : '' };
+    }},
+  'sup-median-resolution': { label: 'Median Time to Resolve', description: 'Median minutes from first message to resolution', note: 'Median across conversations that reached a resolution. Median rather than average so one long-running edge case does not distort the picture.', section: 'support',
+    reportType: 'support', size: 'sm', icon: '⏱️', component: 'metric',
+    transform: rows => {
+      const mins = rows.map(r => r['Time to Close Minutes']).filter(v => v != null).sort((a, b) => a - b);
+      if (!mins.length) return { value: 0, format: 'number', sub: 'no resolved conversations' };
+      const mid = Math.floor(mins.length / 2);
+      const med = mins.length % 2 ? mins[mid] : (mins[mid - 1] + mins[mid]) / 2;
+      return { value: med, format: 'number', colorClass: 'metric-green', sub: `minutes · median of ${mins.length} resolved` };
+    }},
+  'sup-ai-involvement': { label: 'AI Involvement Rate', description: 'Share of conversations the AI agent touched', note: 'Whether Rec’s AI agent participated at all — separate from whether it resolved the conversation.', section: 'support',
+    reportType: 'support', size: 'sm', icon: '🤖', component: 'metric',
+    transform: rows => {
+      const inv = rows.filter(r => r['Fin Involved'] === 1).length;
+      return { value: rows.length ? (inv / rows.length) * 100 : 0, format: 'percent',
+        sub: `${inv} of ${rows.length} conversations` };
+    }},
+  'sup-volume-trend': { label: 'Support Volume Over Time', description: 'Resident conversations opened per day', note: 'Daily count of new resident conversations. Spikes usually track a registration opening or a program change.', section: 'support',
+    reportType: 'support', size: 'md', icon: '📈', component: 'line',
+    transform: rows => {
+      const g = {};
+      rows.forEach(r => { g[r.Date] = (g[r.Date] || 0) + 1; });
+      const days = Object.keys(g).sort();
+      return { labels: days.map(shortDate), values: days.map(d => g[d]), format: 'number' };
+    }},
+  'sup-by-topic': { label: 'Conversations by Topic', description: 'What residents are contacting support about', note: 'Topic comes from the support tag when the conversation has one, otherwise it is classified from the subject line.', section: 'support',
+    reportType: 'support', size: 'md', icon: '🏷️', component: 'bar',
+    transform: rows => {
+      const g = {};
+      rows.forEach(r => { g[r.Topic] = (g[r.Topic] || 0) + 1; });
+      const s = Object.entries(g).sort((a, b) => b[1] - a[1]);
+      return { labels: s.map(e => e[0]), values: s.map(e => e[1]), format: 'number' };
+    }},
+  'sup-resolution-mix': { label: 'How Conversations Resolved', description: 'AI vs. staff resolution split', note: 'Resolved by AI, escalated to a Rec agent mid-conversation, or routed straight to staff because the AI never engaged.', section: 'support',
+    reportType: 'support', size: 'md', icon: '🎯', component: 'donut',
+    transform: rows => {
+      const order = ['Resolved by AI', 'Escalated to Staff', 'Handled by Staff'];
+      const g = {};
+      rows.forEach(r => { g[r['Resolution State']] = (g[r['Resolution State']] || 0) + 1; });
+      const s = order.filter(k => g[k]);
+      return { labels: s, values: s.map(k => g[k]), format: 'number' };
+    }},
+  'sup-by-channel': { label: 'Conversations by Channel', description: 'Email vs. in-app chat', note: 'How residents reached support. Email skews toward billing and refunds; chat skews toward in-the-moment registration questions.', section: 'support',
+    reportType: 'support', size: 'md', icon: '📨', component: 'donut',
+    transform: rows => {
+      const g = {};
+      rows.forEach(r => { g[r.Channel] = (g[r.Channel] || 0) + 1; });
+      const s = Object.entries(g).sort((a, b) => b[1] - a[1]);
+      return { labels: s.map(e => e[0]), values: s.map(e => e[1]), format: 'number' };
+    }},
+  'sup-top-articles': { label: 'Help Articles Used Most', description: 'Support content the AI leaned on', note: 'Help center articles the AI agent cited when answering your residents. A heavily-cited article is a good candidate to surface directly in your own registration flow.', section: 'support',
+    reportType: 'support', size: 'md', icon: '📖', component: 'bar',
+    transform: rows => {
+      const g = {};
+      rows.forEach(r => (r['Help Articles'] || []).forEach(a => { g[a] = (g[a] || 0) + 1; }));
+      const s = Object.entries(g).sort((a, b) => b[1] - a[1]).slice(0, 8);
+      return { labels: s.map(e => e[0].length > 34 ? e[0].slice(0, 33) + '…' : e[0]), values: s.map(e => e[1]), format: 'number' };
+    }},
+  'tbl-support-topics': { label: 'Topic Breakdown', description: 'Volume, AI resolution, and speed by topic', note: 'Per-topic view of where volume concentrates and how well it self-serves. A topic with high volume and low AI resolution is the one worth fixing upstream.', section: 'support',
+    reportType: 'support', size: 'lg', icon: '📋', component: 'table',
+    transform: rows => {
+      const g = {};
+      rows.forEach(r => {
+        const t = (g[r.Topic] = g[r.Topic] || { n: 0, ai: 0, esc: 0, mins: [] });
+        t.n++;
+        if (r['Resolution State'] === 'Resolved by AI') t.ai++;
+        if (r.Escalated === 1) t.esc++;
+        if (r['Time to Close Minutes'] != null) t.mins.push(r['Time to Close Minutes']);
+      });
+      const median = a => {
+        if (!a.length) return null;
+        const s = [...a].sort((x, y) => x - y), m = Math.floor(s.length / 2);
+        return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+      };
+      return { columns: ['Topic', 'Conversations', '% of Volume', 'Resolved by AI', 'Escalated', 'Median Resolve'],
+        data: Object.entries(g).sort((a, b) => b[1].n - a[1].n).map(([topic, t]) => {
+          const med = median(t.mins);
+          return [topic, t.n, ((t.n / rows.length) * 100).toFixed(1) + '%',
+            ((t.ai / t.n) * 100).toFixed(0) + '%', t.esc,
+            med == null ? '—' : (med >= 60 ? (med / 60).toFixed(1) + ' hr' : Math.round(med) + ' min')];
+        }) };
     }},
 };
 

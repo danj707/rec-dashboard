@@ -28,6 +28,7 @@ const _recTracer = otelApi.trace.getTracer('rec-dashboard');
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
+const { getSupportRows } = require('./support-data');
 
 const app = express();
 app.use(express.json());
@@ -59,6 +60,15 @@ const ORGS = {
     city: 'Niagara Falls',
     state: 'NY',
     logoUrl: 'https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/organization-a976a11a-5303-4785-838a-1b281ca77678/fullLogo.png',
+    reports: {}
+  },
+  torrance: {
+    name: 'City of Torrance',
+    orgId: '4246b144-a4e2-4bf1-bb7f-a89f47d71973',
+    token: 'Xq3RtBnW8vKdM2Ly',
+    city: 'Torrance',
+    state: 'CA',
+    logoUrl: 'https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/organization-4246b144-a4e2-4bf1-bb7f-a89f47d71973/fullLogo.png',
     reports: {}
   }
 };
@@ -196,6 +206,12 @@ function buildMetabaseParams(reportType, query) {
 
 async function fetchMetabaseData(orgSlug, reportType, query) {
   const org = ORGS[orgSlug];
+  // Support data comes from Intercom, not Metabase — short-circuit before the card lookup
+  if (reportType === 'support') {
+    const rows = getSupportRows(orgSlug, query);
+    if (rows) console.log(`[DATA] ${orgSlug}/support: ${rows.length} rows (intercom snapshot)`);
+    return rows;
+  }
   // Per-org UUID takes priority; fall back to shared
   const isShared = !org.reports?.[reportType];
   const uuid = org.reports?.[reportType] || SHARED_UUIDS[reportType];
@@ -681,6 +697,8 @@ app.get('/:org/api/config', authMiddleware, async (req, res) => {
   const org = ORGS[req.orgSlug];
   for (const [r, uuid] of Object.entries(org.reports || {})) availableReports[r] = true;
   for (const [r, uuid] of Object.entries(SHARED_UUIDS)) availableReports[r] = true;
+  // Support is Intercom-backed — only offered to orgs Rec runs resident support for
+  if (getSupportRows(req.orgSlug)) availableReports.support = true;
   // Fetch report visibility from rental-report
   let reportVisibility = null;
   try {
@@ -796,6 +814,7 @@ const INSIGHT_PROMPTS = {
   memberships: 'Analyze these membership metrics. Focus on: active vs canceled ratio, revenue per member, renewal patterns, and retention opportunities.',
   products: 'Analyze these product/POS sales metrics. Focus on: top sellers, revenue trends, refund rates, and sales volume patterns.',
   instructors: 'Analyze these instructor payout metrics. Focus on: revenue per instructor, section coverage, top performers, and refund exposure.',
+  support: 'Analyze these resident support metrics. Rec\'s support team handles these conversations on the org\'s behalf, so frame insights around what residents are struggling with and what the org could fix upstream. Focus on: which topics drive the most volume, whether AI resolution is holding up or escalating, how fast residents get resolved, and any topic that looks like a self-service or documentation gap rather than a one-off.',
   'executive-briefing': 'You are writing an executive briefing for a parks and recreation director. The data below is organized by dashboard section. IMPORTANT: "Revenue Overview" (GL data) is the authoritative financial revenue — use those numbers for headline revenue. "Programs & Enrollment" revenue is enrollment-specific and should be called "program revenue" not just "revenue." Do not conflate the two. Synthesize ALL sections into exactly 3 concise sentences. Sentence 1: the headline financial picture from Revenue Overview. Sentence 2: the most notable positive signal across any section. Sentence 3: the single biggest risk or item needing attention. Be specific with numbers. No bullets, no headers, no emoji — just 3 clean sentences a director can read in 10 seconds.',
 };
 
