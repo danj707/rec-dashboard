@@ -287,17 +287,14 @@ async function markEscalatedToOrg(conversationId, { orgName, to, note }) {
 // Conversations carrying the Org Escalated tag (recently updated), each with
 // its author contact so the caller can map conversation → org. Powers the
 // poller that emails org admins when Rec staff tag a conversation in Intercom.
-async function liveEscalatedConversations(sinceTs) {
+async function liveEscalatedConversations() {
   if (!liveEnabled()) return null;
   const tagId = await getEscalatedTagId();
+  // No time filter: tagging an old conversation doesn't reliably bump
+  // updated_at, and the tag population is small (only this feature applies
+  // it). The caller's notified-set prevents re-sends.
   const body = {
-    query: {
-      operator: 'AND',
-      value: [
-        { field: 'tag_ids', operator: 'IN', value: [tagId] },
-        { field: 'updated_at', operator: '>', value: sinceTs },
-      ],
-    },
+    query: { field: 'tag_ids', operator: 'IN', value: [tagId] },
     pagination: { per_page: 50 },
   };
   const page = await ic('/conversations/search', { method: 'POST', body: JSON.stringify(body) });
