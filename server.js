@@ -71,6 +71,8 @@ const ORGS = {
     city: 'Torrance',
     state: 'CA',
     intercomOrg: 'city-of-torrance', // Intercom contact attribute `Organization` — enables live support data
+    // Org admins emailed when Rec staff tag a conversation "Org Escalated" in Intercom
+    supportNotify: ['dan@rec.us'],
     logoUrl: 'https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/organization-4246b144-a4e2-4bf1-bb7f-a89f47d71973/fullLogo.png',
     reports: {}
   }
@@ -802,6 +804,8 @@ app.post('/:org/api/support/inbox/:id/forward', authMiddleware, async (req, res)
         // Bust cached views so the tag shows without waiting out the TTL
         cache.delete(`${req.orgSlug}:support-thread:${req.params.id}`);
         for (const key of cache.keys()) if (key.startsWith(`${req.orgSlug}:support-inbox:`)) cache.delete(key);
+        // The org admin was just emailed directly — don't let the notifier double-send
+        markNotified(req.params.id);
       } catch (e) {
         console.error('[intercom] escalate write-back failed (email was sent):', e.message);
       }
@@ -1268,6 +1272,87 @@ async function warmCache() {
 }
 
 // ═══════════════════════════════════════════
+//  ESCALATION NOTIFIER
+//
+//  Rec staff tag a conversation "Org Escalated" in Intercom → the org's
+//  configured admins (org.supportNotify) get a Resend email with a deep
+//  link that opens the dashboard on that exact conversation. Polls every
+//  3 minutes; notified conversation IDs persist to DATA_DIR so restarts
+//  don't re-send. Dashboard-initiated forwards mark themselves notified
+//  (the admin was already emailed directly).
+// ═══════════════════════════════════════════
+const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || 'https://rec-dashboard-production.up.railway.app';
+const NOTIFIED_FILE = path.join(DATA_DIR, 'support-notified.json');
+let _notified = null;
+function loadNotified() {
+  if (_notified) return _notified;
+  try { _notified = new Set(JSON.parse(fs.readFileSync(NOTIFIED_FILE, 'utf8'))); }
+  catch (e) { _notified = new Set(); }
+  return _notified;
+}
+function markNotified(id) {
+  const set = loadNotified();
+  set.add(String(id));
+  try {
+    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(NOTIFIED_FILE, JSON.stringify([...set]));
+  } catch (e) { console.error('[notify] persist failed:', e.message); }
+}
+
+async function sendEscalationEmail(orgSlug, org, entry) {
+  const esc = s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const link = `${PUBLIC_BASE_URL}/${orgSlug}?token=${org.token}&tab=support&conversation=${entry.id}`;
+  const html = `
+    <div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;padding:24px">
+      <div style="font-size:11px;font-weight:700;letter-spacing:1px;color:#f59e0b;text-transform:uppercase;margin-bottom:6px">Rec Customer Support</div>
+      <h2 style="font-size:18px;margin:0 0 14px 0;color:#111">You have a new Customer Support inquiry via Rec</h2>
+      <div style="padding:14px 16px;background:#f9f9f7;border:1px solid #e8e5df;border-radius:10px;margin-bottom:18px">
+        <div style="font-size:14px;font-weight:700;color:#111;margin-bottom:3px">${esc(entry.subject)}</div>
+        <div style="font-size:12px;color:#777;margin-bottom:8px">${esc(entry.contact.name)} · ${entry.channel} · ${esc(entry.topic)}</div>
+        <div style="font-size:13px;color:#333;line-height:1.5">${esc(entry.preview)}</div>
+      </div>
+      <a href="${link}" style="display:inline-block;background:#f59e0b;color:#000;font-weight:700;font-size:14px;padding:11px 24px;border-radius:8px;text-decoration:none">View the conversation →</a>
+      <p style="font-size:11px;color:#999;margin-top:20px">Rec's support team flagged this resident conversation for ${esc(org.name)}. The link opens your Rec dashboard with the conversation pulled up.</p>
+    </div>`;
+  const resp = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      from: `${FROM_NAME} <${FROM_EMAIL}>`,
+      to: org.supportNotify,
+      subject: `You have a new Customer Support inquiry via Rec — ${entry.subject}`,
+      html,
+    }),
+  });
+  if (!resp.ok) throw new Error(`Resend ${resp.status}`);
+}
+
+async function pollEscalations() {
+  if (!intercomLive.liveEnabled() || !RESEND_API_KEY) return;
+  try {
+    const sinceTs = Math.floor(Date.now() / 1000) - 7 * 86400;
+    const tagged = await intercomLive.liveEscalatedConversations(sinceTs);
+    if (!tagged) return;
+    const notified = loadNotified();
+    for (const { conv, contact } of tagged) {
+      if (notified.has(String(conv.id))) continue;
+      const attrs = contact.custom_attributes || {};
+      const match = Object.entries(ORGS).find(([slug, o]) =>
+        o.intercomOrg && o.supportNotify?.length && attrs.Organization === o.intercomOrg && attrs.user_role === 'user');
+      if (!match) { markNotified(conv.id); continue; } // tagged, but no org configured to notify
+      const [orgSlug, org] = match;
+      const { _first, ...entry } = intercomLive.toInboxEntry(conv);
+      await sendEscalationEmail(orgSlug, org, entry);
+      markNotified(conv.id);
+      track_server(orgSlug, 'support_escalation_notified', { conversationId: String(conv.id), recipients: org.supportNotify.length });
+      console.log(`[notify] ${orgSlug}: escalation email sent for conversation ${conv.id} → ${org.supportNotify.join(', ')}`);
+    }
+  } catch (e) {
+    console.error('[notify] escalation poll failed:', e.message);
+  }
+}
+
+// ═══════════════════════════════════════════
 //  START
 // ═══════════════════════════════════════════
 app.listen(PORT, () => {
@@ -1275,4 +1360,9 @@ app.listen(PORT, () => {
   console.log(`Orgs: ${Object.keys(ORGS).join(', ')}`);
   // Pre-warm cache 5s after startup
   setTimeout(warmCache, 5000);
+  if (intercomLive.liveEnabled()) {
+    console.log('[notify] escalation notifier active — polling Intercom every 3 minutes');
+    setTimeout(pollEscalations, 15000);
+    setInterval(pollEscalations, 3 * 60 * 1000);
+  }
 });

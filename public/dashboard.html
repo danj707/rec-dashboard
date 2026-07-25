@@ -2156,7 +2156,10 @@ function SupportInbox() {
     fetch(`/${ORG_SLUG}/api/support/inbox?token=${TOKEN}`).then(r => r.json()).then(json => {
       if (!json.conversations) throw new Error(json.error || 'no data');
       setConvs(json.conversations); setIsLive(!!json.live);
-      if (json.conversations.length) setSelectedId(json.conversations[0].id);
+      // ?conversation=<id> deep links from escalation emails straight to a thread
+      const deepLink = params.get('conversation');
+      if (deepLink && json.conversations.some(c => c.id === deepLink)) setSelectedId(deepLink);
+      else if (json.conversations.length) setSelectedId(json.conversations[0].id);
     }).catch(() => { setConvs([]); setLoadError(true); });
   }
   useEffect(loadInbox, []);
