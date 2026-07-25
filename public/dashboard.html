@@ -168,6 +168,7 @@ body { font-family: var(--font-body); background: var(--bg-page); color: var(--t
 .ii-chip { font-size: 9.5px; font-weight: 600; padding: 1.5px 7px; border-radius: 8px; background: rgba(128,128,128,0.12); color: var(--text-secondary); }
 .ii-chip.ai { background: rgba(20,184,166,0.15); color: #14b8a6; }
 .ii-chip.esc { background: rgba(245,158,11,0.15); color: var(--amber); }
+.ii-chip.org { background: rgba(59,130,246,0.15); color: #3b82f6; }
 .inbox-thread { background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: 12px; display: flex; flex-direction: column; max-height: 640px; }
 .thread-head { padding: 14px 18px; border-bottom: 1px solid var(--border-subtle); display: flex; align-items: flex-start; gap: 12px; }
 .thread-head .th-subject { font-size: 15px; font-weight: 700; color: var(--text-primary); }
@@ -349,7 +350,7 @@ const SECTIONS = {
     defaultWidgets: ['instr-net','instr-payout','instr-org-ret','instr-fill','instr-top'] },
   support: { id: 'support', label: 'Customer Support', icon: '\ud83d\udcac', color: '#14b8a6',
     description: 'Resident support conversations Rec handles on your behalf',
-    defaultWidgets: ['sup-total','sup-ai-resolution','sup-escalated','sup-median-resolution','sup-volume-trend','sup-by-topic','sup-resolution-mix','sup-by-channel','sup-top-articles','tbl-support-topics'] },
+    defaultWidgets: ['sup-total','sup-ai-resolution','sup-hours-saved','sup-dollars-saved','sup-escalated','sup-median-resolution','sup-volume-trend','sup-by-topic','sup-resolution-mix','sup-by-channel','sup-top-articles','tbl-support-topics'] },
   'ai-briefing': { id: 'ai-briefing', label: 'AI Executive Briefing', icon: '\u2728', color: '#a855f7',
     description: 'AI-generated narrative summary from all dashboard data',
     defaultWidgets: [], _special: true },
@@ -858,6 +859,11 @@ const W = {
   // ── Customer Support (Intercom) ──
   // Every widget here reads the support row shape: one row per resident
   // support conversation. See support-data.js for the column contract.
+  //
+  // Savings assumptions, kept deliberately visible in the widget notes:
+  // each conversation Rec handles is one an org admin didn't — triage,
+  // lookup, reply, follow-up runs ~20 min of staff time, at a ~$35/hr
+  // fully-loaded parks & rec admin cost.
   'sup-total': { label: 'Resident Conversations', description: 'Support conversations opened by your residents', note: 'Email + in-app chat started by residents of your org. Conversations from your own staff are excluded.', section: 'support',
     reportType: 'support', size: 'sm', icon: '💬', component: 'metric',
     transform: rows => ({ value: rows.length, format: 'number',
@@ -884,6 +890,22 @@ const W = {
       const mid = Math.floor(mins.length / 2);
       const med = mins.length % 2 ? mins[mid] : (mins[mid - 1] + mins[mid]) / 2;
       return { value: med, format: 'number', colorClass: 'metric-green', sub: `minutes · median of ${mins.length} resolved` };
+    }},
+  'sup-hours-saved': { label: 'Admin Hours Saved', description: 'Staff time your team didn’t spend on support', note: 'Every resident conversation Rec handled is one your staff didn’t: triage, account lookup, reply, and follow-up average ~20 minutes each. Hours = conversations × 20 min.', section: 'support',
+    reportType: 'support', size: 'sm', icon: '⏳', component: 'metric',
+    transform: rows => {
+      const MIN_PER_CONVO = 20;
+      const hours = rows.length * MIN_PER_CONVO / 60;
+      return { value: Math.round(hours * 10) / 10, format: 'number', colorClass: 'metric-green',
+        sub: `${rows.length} conversations × ${MIN_PER_CONVO} min each` };
+    }},
+  'sup-dollars-saved': { label: 'Admin $ Saved', description: 'Estimated staff cost avoided', note: 'Hours saved × $35/hr fully-loaded staff cost (wage + benefits for a typical parks & rec admin). Conservative — excludes after-hours coverage and the cost of missed inquiries.', section: 'support',
+    reportType: 'support', size: 'sm', icon: '💵', component: 'metric',
+    transform: rows => {
+      const MIN_PER_CONVO = 20, HOURLY = 35;
+      const dollars = rows.length * MIN_PER_CONVO / 60 * HOURLY;
+      return { value: Math.round(dollars), format: 'currency', colorClass: 'metric-green',
+        sub: `${(rows.length * MIN_PER_CONVO / 60).toFixed(1)} hrs × $${HOURLY}/hr` };
     }},
   'sup-ai-involvement': { label: 'AI Involvement Rate', description: 'Share of conversations the AI agent touched', note: 'Whether Rec’s AI agent participated at all — separate from whether it resolved the conversation.', section: 'support',
     reportType: 'support', size: 'sm', icon: '🤖', component: 'metric',
@@ -2075,7 +2097,7 @@ function msgTime(ts) {
   return new Date(ts * 1000).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
-function ForwardModal({ conv, onClose }) {
+function ForwardModal({ conv, onClose, onSent }) {
   const [to, setTo] = useState('');
   const [note, setNote] = useState('');
   const [status, setStatus] = useState(null); // null | 'sending' | 'sent' | error string
@@ -2086,7 +2108,7 @@ function ForwardModal({ conv, onClose }) {
       const resp = await fetch(`/${ORG_SLUG}/api/support/inbox/${conv.id}/forward?token=${TOKEN}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ to, note }) });
       const json = await resp.json();
-      if (json.ok) { setStatus('sent'); track('support_forwarded', { conversationId: conv.id }); setTimeout(onClose, 1200); }
+      if (json.ok) { setStatus('sent'); track('support_forwarded', { conversationId: conv.id }); if (onSent) onSent(conv.id); setTimeout(onClose, 1200); }
       else setStatus(json.error || 'Failed to send');
     } catch (e) { setStatus('Failed to send'); }
   }
@@ -2201,6 +2223,7 @@ function SupportInbox() {
                 <span className="ii-chip">{c.topic}</span>
                 {c.resolution === 'Resolved by AI' && <span className="ii-chip ai">{'✨'} AI resolved</span>}
                 {c.resolution === 'Escalated to Staff' && <span className="ii-chip esc">{'↑'} Escalated</span>}
+                {c.orgEscalated && <span className="ii-chip org">{'📤'} Sent to staff</span>}
               </div>
             </div>
           ))}
@@ -2211,7 +2234,7 @@ function SupportInbox() {
             <React.Fragment>
               <div className="thread-head">
                 <div style={{flex:1}}>
-                  <div className="th-subject">{thread.subject}</div>
+                  <div className="th-subject">{thread.subject} {thread.orgEscalated && <span className="ii-chip org" style={{verticalAlign:'middle'}}>{'📤'} Sent to staff</span>}</div>
                   <div className="th-meta">{thread.contact.name} {'·'} {thread.contact.email} {'·'} {thread.channel} {'·'} {thread.topic}
                     {'·'} <span style={{color: thread.state === 'open' ? 'var(--green)' : 'var(--text-muted)', fontWeight:600}}>{thread.state}</span></div>
                 </div>
@@ -2236,7 +2259,11 @@ function SupportInbox() {
           )}
         </div>
       </div>
-      {forwardOpen && thread && <ForwardModal conv={thread} onClose={() => setForwardOpen(false)} />}
+      {forwardOpen && thread && <ForwardModal conv={thread} onClose={() => setForwardOpen(false)}
+        onSent={id => { // reflect the Intercom tag immediately, without waiting for a refetch
+          setThread(t => t && t.id === id ? { ...t, orgEscalated: true } : t);
+          setConvs(cs => cs.map(c => c.id === id ? { ...c, orgEscalated: true } : c));
+        }} />}
     </div>
   );
 }

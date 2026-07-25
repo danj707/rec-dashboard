@@ -168,11 +168,18 @@ function toSupportRow(c) {
   };
 }
 
+// The escalate-to-org loop lives on Intercom tags: forwarding from the
+// dashboard applies this tag (visible to Rec staff in Intercom), and the
+// dashboard reads it back so the escalated state survives refreshes.
+const ORG_ESCALATED_TAG = 'Org Escalated';
+
 function toInboxEntry(c) {
   const ca = c.custom_attributes || {}, a = c.source?.author || {};
   const first = stripHtml(c.source?.body || '').split(/\nOn .{5,80} wrote:\n/)[0].trim();
   const res = resolutionOf(c);
+  const tagNames = (c.tags?.tags || []).map(t => t.name);
   return {
+    orgEscalated: tagNames.includes(ORG_ESCALATED_TAG),
     id: String(c.id),
     subject: stripHtml(c.source?.subject || '') || ca['AI Title'] || '(no subject)',
     contact: { name: a.name || 'Resident', email: a.email || '' },
@@ -224,7 +231,8 @@ async function liveSupportThread(org, id) {
   const messages = [{ role: 'resident', name: entry.contact.name, at: c.created_at, text: entry._first }];
   for (const p of c.conversation_parts?.conversation_parts || []) {
     if (!p.body) continue;
-    if (!['comment', 'assignment', 'note', 'open'].includes(p.part_type)) continue;
+    // 'note' is deliberately excluded: internal Rec staff notes are private
+    if (!['comment', 'assignment', 'open'].includes(p.part_type)) continue;
     const text = stripHtml(p.body);
     if (!text || text === '[Conversation Rating Request]') continue;
     messages.push({ role: partRole(p), name: p.author?.name || '', at: p.created_at, text });
@@ -233,4 +241,46 @@ async function liveSupportThread(org, id) {
   return { ...rest, messages };
 }
 
-module.exports = { liveEnabled, liveSupportRows, liveSupportInbox, liveSupportThread };
+// ── Escalate-to-org write-back ──
+// After a forward, tag the conversation and drop an internal note so Rec
+// staff see the escalation inside Intercom. Best-effort: failures are the
+// caller's to log, never to surface to the org admin.
+
+let _adminId = null;
+async function getActingAdminId() {
+  if (process.env.INTERCOM_ADMIN_ID) return process.env.INTERCOM_ADMIN_ID;
+  if (_adminId) return _adminId;
+  const res = await ic('/admins');
+  _adminId = res.admins?.[0]?.id;
+  return _adminId;
+}
+
+let _escalatedTagId = null;
+async function getEscalatedTagId() {
+  if (_escalatedTagId) return _escalatedTagId;
+  // POST /tags with just a name creates-or-returns the tag
+  const tag = await ic('/tags', { method: 'POST', body: JSON.stringify({ name: ORG_ESCALATED_TAG }) });
+  _escalatedTagId = tag.id;
+  return _escalatedTagId;
+}
+
+async function markEscalatedToOrg(conversationId, { orgName, to, note }) {
+  if (!liveEnabled()) return false;
+  const adminId = await getActingAdminId();
+  if (!adminId) throw new Error('No Intercom admin available for tagging');
+  const tagId = await getEscalatedTagId();
+  await ic(`/conversations/${conversationId}/tags`, {
+    method: 'POST', body: JSON.stringify({ id: tagId, admin_id: adminId }),
+  });
+  const esc = s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  await ic(`/conversations/${conversationId}/reply`, {
+    method: 'POST',
+    body: JSON.stringify({
+      message_type: 'note', type: 'admin', admin_id: adminId,
+      body: `<p>📤 <b>Escalated to org staff</b> — forwarded to ${esc(to)} from the ${esc(orgName)} dashboard.${note ? `</p><p>Note from org: "${esc(note)}"` : ''}</p>`,
+    }),
+  });
+  return true;
+}
+
+module.exports = { liveEnabled, liveSupportRows, liveSupportInbox, liveSupportThread, markEscalatedToOrg, ORG_ESCALATED_TAG };
