@@ -62,7 +62,11 @@ const ORGS = {
     city: 'Niagara Falls',
     state: 'NY',
     logoUrl: 'https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/organization-a976a11a-5303-4785-838a-1b281ca77678/fullLogo.png',
-    reports: {}
+    reports: {},
+    // Support testbed: Niagara's Intercom contacts are Rec test accounts —
+    // safe to exercise forwards, tags, and escalation emails here.
+    intercomOrg: 'city-of-niagara-falls',
+    supportNotify: ['dan@rec.us'],
   },
   torrance: {
     name: 'City of Torrance',
@@ -71,8 +75,10 @@ const ORGS = {
     city: 'Torrance',
     state: 'CA',
     intercomOrg: 'city-of-torrance', // Intercom contact attribute `Organization` — enables live support data
-    // Org admins emailed when Rec staff tag a conversation "Org Escalated" in Intercom
-    supportNotify: ['dan@rec.us'],
+    // Torrance is a LIVE org: support tab stays read-only (no forwards, no
+    // tags/notes written to their real conversations, no escalation emails)
+    // until the flow is proven out on the Niagara testbed. No supportNotify.
+    supportReadOnly: true,
     logoUrl: 'https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/organization-4246b144-a4e2-4bf1-bb7f-a89f47d71973/fullLogo.png',
     reports: {}
   }
@@ -756,6 +762,7 @@ app.post('/:org/api/support/inbox/:id/forward', authMiddleware, async (req, res)
   const { to, note } = req.body || {};
   if (!to || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) return res.status(400).json({ ok: false, error: 'Valid "to" email required' });
   const org = ORGS[req.orgSlug];
+  if (org?.supportReadOnly) return res.status(403).json({ ok: false, error: 'Support actions are disabled for this org while the feature is in testing' });
   let thread = null;
   if (intercomLive.liveEnabled() && org?.intercomOrg) {
     try { thread = await intercomLive.liveSupportThread(org, req.params.id); } catch (e) { /* fall through to snapshot */ }
@@ -825,8 +832,9 @@ app.get('/:org/api/config', authMiddleware, async (req, res) => {
   const org = ORGS[req.orgSlug];
   for (const [r, uuid] of Object.entries(org.reports || {})) availableReports[r] = true;
   for (const [r, uuid] of Object.entries(SHARED_UUIDS)) availableReports[r] = true;
-  // Support is Intercom-backed — only offered to orgs Rec runs resident support for
-  if (getSupportRows(req.orgSlug)) availableReports.support = true;
+  // Support is Intercom-backed — offered to orgs with a snapshot, or any
+  // org with a live Intercom mapping when the token is configured
+  if (getSupportRows(req.orgSlug) || (intercomLive.liveEnabled() && org.intercomOrg)) availableReports.support = true;
   // Fetch report visibility from rental-report
   let reportVisibility = null;
   try {
@@ -839,6 +847,7 @@ app.get('/:org/api/config', authMiddleware, async (req, res) => {
   res.json({ config, availableReports, orgName: org.name, logoUrl: org.logoUrl, city: org.city, state: org.state,
     toggles: config?.toggles || { ai: true, reportLinks: false, aiBriefing: false, emailDigest: false },
     reportingBaseUrl: REPORTING_BASE_URL,
+    supportReadOnly: !!org.supportReadOnly,
     reportVisibility: reportVisibility?.available || null });
 });
 
@@ -1330,8 +1339,7 @@ async function sendEscalationEmail(orgSlug, org, entry) {
 async function pollEscalations() {
   if (!intercomLive.liveEnabled() || !RESEND_API_KEY) return;
   try {
-    const sinceTs = Math.floor(Date.now() / 1000) - 7 * 86400;
-    const tagged = await intercomLive.liveEscalatedConversations(sinceTs);
+    const tagged = await intercomLive.liveEscalatedConversations();
     if (!tagged) return;
     const notified = loadNotified();
     for (const { conv, contact } of tagged) {

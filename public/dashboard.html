@@ -2142,7 +2142,7 @@ function ForwardModal({ conv, onClose, onSent }) {
   );
 }
 
-function SupportInbox() {
+function SupportInbox({ actionsDisabled }) {
   const [convs, setConvs] = useState(null);
   const [selectedId, setSelectedId] = useState(null);
   const [thread, setThread] = useState(null);
@@ -2241,7 +2241,7 @@ function SupportInbox() {
                   <div className="th-meta">{thread.contact.name} {'·'} {thread.contact.email} {'·'} {thread.channel} {'·'} {thread.topic}
                     {'·'} <span style={{color: thread.state === 'open' ? 'var(--green)' : 'var(--text-muted)', fontWeight:600}}>{thread.state}</span></div>
                 </div>
-                <button className="btn btn-amber" onClick={() => { setForwardOpen(true); track('support_forward_opened', { conversationId: thread.id }); }}>{'✉'} Forward to team</button>
+                {!actionsDisabled && <button className="btn btn-amber" onClick={() => { setForwardOpen(true); track('support_forward_opened', { conversationId: thread.id }); }}>{'✉'} Forward to team</button>}
               </div>
               <div className="thread-body">
                 {thread.messages.map((m, i) => (
@@ -2271,11 +2271,11 @@ function SupportInbox() {
   );
 }
 
-function SupportTab({ reportData, loading, targets, onTargetChange, dateRange, aiEnabled }) {
+function SupportTab({ reportData, loading, targets, onTargetChange, dateRange, aiEnabled, supportReadOnly }) {
   // Inbox first — the conversations are the headline; metrics follow below.
   return (
     <React.Fragment>
-      <SupportInbox />
+      <SupportInbox actionsDisabled={supportReadOnly} />
       <SectionBlock sectionId="support" widgetIds={SECTIONS.support.defaultWidgets} reportData={reportData} loading={loading}
         targets={targets} onTargetChange={onTargetChange} dateRange={dateRange} aiEnabled={aiEnabled}
         reportLinksEnabled={false} reportingBaseUrl="" />
@@ -2358,7 +2358,7 @@ function DashboardApp() {
         const resp = await fetch(configUrl);
         const json = await resp.json();
         setAvailableReports(json.availableReports || {});
-        setOrgMeta({ name: json.orgName, logoUrl: json.logoUrl, city: json.city, state: json.state, toggles: json.toggles || {}, reportingBaseUrl: json.reportingBaseUrl || '', reportVisibility: json.reportVisibility || null, readOnly: json.readOnly || false, expiresAt: json.expiresAt || null });
+        setOrgMeta({ name: json.orgName, logoUrl: json.logoUrl, city: json.city, state: json.state, toggles: json.toggles || {}, reportingBaseUrl: json.reportingBaseUrl || '', reportVisibility: json.reportVisibility || null, readOnly: json.readOnly || false, expiresAt: json.expiresAt || null, supportReadOnly: json.supportReadOnly || false });
         window._orgGeo = json.city && json.state ? `${json.city}, ${json.state}` : '';
         window._reportVisibility = json.reportVisibility || null;
         if (json.dateRange) { setDateRange(json.dateRange); setDatePreset(''); }
@@ -2556,7 +2556,8 @@ function DashboardApp() {
         ))}
         {!IS_PRINT && activeTab === 'support' && availableReports.support && (
           <SupportTab key={'support'+theme} reportData={reportData} loading={loading} targets={targets}
-            onTargetChange={handleTargetChange} dateRange={dateRange} aiEnabled={!isReadOnly && orgMeta.toggles?.ai !== false} />
+            onTargetChange={handleTargetChange} dateRange={dateRange} aiEnabled={!isReadOnly && orgMeta.toggles?.ai !== false}
+            supportReadOnly={orgMeta.supportReadOnly} />
         )}
       </div>
 
