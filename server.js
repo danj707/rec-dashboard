@@ -28,6 +28,9 @@ const _recTracer = otelApi.trace.getTracer('rec-dashboard');
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
+const { getSupportRows } = require('./support-data');
+const { getSupportInbox, getSupportThread } = require('./support-inbox-data');
+const intercomLive = require('./intercom-live');
 
 const app = express();
 app.use(express.json());
@@ -59,6 +62,16 @@ const ORGS = {
     city: 'Niagara Falls',
     state: 'NY',
     logoUrl: 'https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/organization-a976a11a-5303-4785-838a-1b281ca77678/fullLogo.png',
+    reports: {}
+  },
+  torrance: {
+    name: 'City of Torrance',
+    orgId: '4246b144-a4e2-4bf1-bb7f-a89f47d71973',
+    token: 'Xq3RtBnW8vKdM2Ly',
+    city: 'Torrance',
+    state: 'CA',
+    intercomOrg: 'city-of-torrance', // Intercom contact attribute `Organization` — enables live support data
+    logoUrl: 'https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/organization-4246b144-a4e2-4bf1-bb7f-a89f47d71973/fullLogo.png',
     reports: {}
   }
 };
@@ -196,6 +209,26 @@ function buildMetabaseParams(reportType, query) {
 
 async function fetchMetabaseData(orgSlug, reportType, query) {
   const org = ORGS[orgSlug];
+  // Support data comes from Intercom, not Metabase — short-circuit before the card lookup.
+  // Live API when INTERCOM_ACCESS_TOKEN is set (cached), else the baked snapshot.
+  if (reportType === 'support') {
+    if (intercomLive.liveEnabled() && org?.intercomOrg) {
+      const cacheKey = `${orgSlug}:support:${query.start}:${query.end}`;
+      const cached = getCached(cacheKey);
+      if (cached) return cached;
+      try {
+        const rows = await intercomLive.liveSupportRows(org, query);
+        console.log(`[DATA] ${orgSlug}/support: ${rows.length} rows (intercom LIVE)`);
+        setCache(cacheKey, rows, 15 * 60 * 1000);
+        return rows;
+      } catch (e) {
+        console.error(`[intercom] live rows failed, falling back to snapshot:`, e.message);
+      }
+    }
+    const rows = getSupportRows(orgSlug, query);
+    if (rows) console.log(`[DATA] ${orgSlug}/support: ${rows.length} rows (intercom snapshot)`);
+    return rows;
+  }
   // Per-org UUID takes priority; fall back to shared
   const isShared = !org.reports?.[reportType];
   const uuid = org.reports?.[reportType] || SHARED_UUIDS[reportType];
@@ -673,6 +706,98 @@ app.get('/:org/api/data/:reportType', authMiddleware, async (req, res) => {
   }
 });
 
+// ── Support Inbox (Intercom) ─────────────────────────────────────────
+// List: live Intercom when INTERCOM_ACCESS_TOKEN is set, snapshot otherwise.
+app.get('/:org/api/support/inbox', authMiddleware, async (req, res) => {
+  const org = ORGS[req.orgSlug];
+  const query = { start: req.query.start || new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10), end: req.query.end };
+  if (intercomLive.liveEnabled() && org?.intercomOrg) {
+    const cacheKey = `${req.orgSlug}:support-inbox:${query.start}:${query.end}`;
+    const cached = getCached(cacheKey);
+    if (cached) return res.json({ conversations: cached, live: true });
+    try {
+      const list = await intercomLive.liveSupportInbox(org, query);
+      setCache(cacheKey, list, 5 * 60 * 1000);
+      return res.json({ conversations: list, live: true });
+    } catch (e) {
+      console.error('[intercom] live inbox failed, falling back to snapshot:', e.message);
+    }
+  }
+  const list = getSupportInbox(req.orgSlug);
+  if (!list) return res.status(404).json({ error: 'Support inbox not available for this org' });
+  res.json({ conversations: list, live: false });
+});
+
+app.get('/:org/api/support/inbox/:id', authMiddleware, async (req, res) => {
+  const org = ORGS[req.orgSlug];
+  if (intercomLive.liveEnabled() && org?.intercomOrg) {
+    const cacheKey = `${req.orgSlug}:support-thread:${req.params.id}`;
+    const cached = getCached(cacheKey);
+    if (cached) return res.json({ conversation: cached, live: true });
+    try {
+      const thread = await intercomLive.liveSupportThread(org, req.params.id);
+      if (thread) { setCache(cacheKey, thread, 5 * 60 * 1000); return res.json({ conversation: thread, live: true }); }
+      return res.status(404).json({ error: 'Conversation not found' });
+    } catch (e) {
+      console.error('[intercom] live thread failed, falling back to snapshot:', e.message);
+    }
+  }
+  const thread = getSupportThread(req.orgSlug, req.params.id);
+  if (!thread) return res.status(404).json({ error: 'Conversation not found' });
+  res.json({ conversation: thread, live: false });
+});
+
+// Forward a conversation to an org admin via email (Resend) — the "tag your
+// staff on a resident question" action.
+app.post('/:org/api/support/inbox/:id/forward', authMiddleware, async (req, res) => {
+  const { to, note } = req.body || {};
+  if (!to || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) return res.status(400).json({ ok: false, error: 'Valid "to" email required' });
+  const org = ORGS[req.orgSlug];
+  let thread = null;
+  if (intercomLive.liveEnabled() && org?.intercomOrg) {
+    try { thread = await intercomLive.liveSupportThread(org, req.params.id); } catch (e) { /* fall through to snapshot */ }
+  }
+  if (!thread) thread = getSupportThread(req.orgSlug, req.params.id);
+  if (!thread) return res.status(404).json({ ok: false, error: 'Conversation not found' });
+  if (!RESEND_API_KEY) return res.status(503).json({ ok: false, error: 'RESEND_API_KEY not configured' });
+
+  const esc = s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
+  const ROLE_LABEL = { resident: 'Resident', ai: 'Rec AI Agent', agent: 'Rec Support', note: 'Internal Note' };
+  const msgsHtml = thread.messages.map(m => `
+    <div style="margin:0 0 14px 0;padding:10px 14px;border-radius:8px;background:${m.role === 'resident' ? '#f4f4f2' : m.role === 'note' ? '#fffbe6' : '#eef4fd'};border:1px solid #e5e2db">
+      <div style="font-size:11px;font-weight:700;color:#666;margin-bottom:4px">${esc(m.name)} · ${ROLE_LABEL[m.role] || m.role} · ${new Date(m.at * 1000).toLocaleString('en-US', { timeZone: 'America/Los_Angeles', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</div>
+      <div style="font-size:13px;color:#222;line-height:1.5">${esc(m.text)}</div>
+    </div>`).join('');
+  const html = `
+    <div style="font-family:Arial,Helvetica,sans-serif;max-width:640px;margin:0 auto;padding:20px">
+      <p style="font-size:13px;color:#444">A resident support conversation was forwarded to you from the ${esc(org.name)} dashboard.</p>
+      ${note ? `<div style="padding:12px 14px;background:#fef3e2;border:1px solid #f5d9a8;border-radius:8px;margin:0 0 16px 0"><div style="font-size:11px;font-weight:700;color:#92600a;margin-bottom:4px">Note from your team</div><div style="font-size:13px;color:#333">${esc(note)}</div></div>` : ''}
+      <h2 style="font-size:16px;margin:0 0 2px 0">${esc(thread.subject)}</h2>
+      <p style="font-size:12px;color:#777;margin:0 0 16px 0">${esc(thread.contact.name)} &lt;${esc(thread.contact.email)}&gt; · ${thread.channel} · ${esc(thread.topic)} · ${thread.state}</p>
+      ${msgsHtml}
+      <p style="font-size:11px;color:#999;margin-top:20px">Handled by Rec Support on behalf of ${esc(org.name)}. Reply to the resident directly at ${esc(thread.contact.email)} if follow-up is needed.</p>
+    </div>`;
+  try {
+    const resp = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        from: `${FROM_NAME} <${FROM_EMAIL}>`,
+        to: [to],
+        subject: `[${org.name} Support] Fwd: ${thread.subject}`,
+        html,
+      }),
+    });
+    const json = await resp.json();
+    if (!resp.ok) throw new Error(json?.message || `Resend ${resp.status}`);
+    track_server(req.orgSlug, 'support_forwarded', { to, conversationId: req.params.id });
+    res.json({ ok: true, id: json.id });
+  } catch (e) {
+    console.error('[support] forward failed:', e.message);
+    res.status(502).json({ ok: false, error: e.message });
+  }
+});
+
 // --- Dashboard config ---
 app.get('/:org/api/config', authMiddleware, async (req, res) => {
   const config = dashboardConfigs[req.orgSlug] || null;
@@ -681,6 +806,8 @@ app.get('/:org/api/config', authMiddleware, async (req, res) => {
   const org = ORGS[req.orgSlug];
   for (const [r, uuid] of Object.entries(org.reports || {})) availableReports[r] = true;
   for (const [r, uuid] of Object.entries(SHARED_UUIDS)) availableReports[r] = true;
+  // Support is Intercom-backed — only offered to orgs Rec runs resident support for
+  if (getSupportRows(req.orgSlug)) availableReports.support = true;
   // Fetch report visibility from rental-report
   let reportVisibility = null;
   try {
@@ -796,6 +923,7 @@ const INSIGHT_PROMPTS = {
   memberships: 'Analyze these membership metrics. Focus on: active vs canceled ratio, revenue per member, renewal patterns, and retention opportunities.',
   products: 'Analyze these product/POS sales metrics. Focus on: top sellers, revenue trends, refund rates, and sales volume patterns.',
   instructors: 'Analyze these instructor payout metrics. Focus on: revenue per instructor, section coverage, top performers, and refund exposure.',
+  support: 'Analyze these resident support metrics. Rec\'s support team handles these conversations on the org\'s behalf, so frame insights around what residents are struggling with and what the org could fix upstream. Focus on: which topics drive the most volume, whether AI resolution is holding up or escalating, how fast residents get resolved, and any topic that looks like a self-service or documentation gap rather than a one-off.',
   'executive-briefing': 'You are writing an executive briefing for a parks and recreation director. The data below is organized by dashboard section. IMPORTANT: "Revenue Overview" (GL data) is the authoritative financial revenue — use those numbers for headline revenue. "Programs & Enrollment" revenue is enrollment-specific and should be called "program revenue" not just "revenue." Do not conflate the two. Synthesize ALL sections into exactly 3 concise sentences. Sentence 1: the headline financial picture from Revenue Overview. Sentence 2: the most notable positive signal across any section. Sentence 3: the single biggest risk or item needing attention. Be specific with numbers. No bullets, no headers, no emoji — just 3 clean sentences a director can read in 10 seconds.',
 };
 
