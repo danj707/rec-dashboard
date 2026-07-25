@@ -53,7 +53,22 @@ function isOrgResident(contact, intercomOrg) {
 }
 
 // ── Conversation search across the window, filtered to org residents ──
-async function searchOrgConversations(org, { start, end }) {
+// One sweep serves both the metrics rows and the inbox: concurrent callers
+// share the same in-flight promise, and results are held for 5 minutes so
+// the tab's two fetches don't each crawl the whole workspace.
+const sweepCache = new Map();
+const SWEEP_TTL = 5 * 60 * 1000;
+
+function searchOrgConversations(org, query) {
+  const key = `${org.intercomOrg}:${query.start}:${query.end}`;
+  const hit = sweepCache.get(key);
+  if (hit && Date.now() - hit.at < SWEEP_TTL) return hit.promise;
+  const promise = doSearchOrgConversations(org, query).catch(e => { sweepCache.delete(key); throw e; });
+  sweepCache.set(key, { promise, at: Date.now() });
+  return promise;
+}
+
+async function doSearchOrgConversations(org, { start, end }) {
   const startTs = Math.floor(new Date(`${start}T00:00:00Z`).getTime() / 1000);
   const endTs = end ? Math.floor(new Date(`${end}T23:59:59Z`).getTime() / 1000) : null;
   const value = [{ field: 'created_at', operator: '>', value: startTs }];
@@ -88,6 +103,21 @@ const RESOLUTION_LABEL = {
   escalated: 'Escalated to Staff',
 };
 
+// ai_agent.resolution_state is not reliably present on conversation-search
+// payloads (it is on GET /conversations/:id). The "Fin AI Agent resolution
+// state" custom attribute carries the same signal — fall back to it so
+// escalations are not silently mislabeled as staff-handled.
+const ATTR_RESOLUTION = {
+  'Assumed Resolution': 'assumed_resolution',
+  'Confirmed Resolution': 'confirmed_resolution',
+  'Escalated': 'escalated',
+};
+function resolutionOf(c) {
+  return (c.ai_agent || {}).resolution_state
+    || ATTR_RESOLUTION[(c.custom_attributes || {})['Fin AI Agent resolution state']]
+    || null;
+}
+
 const TOPIC_RULES = [
   [/refund|cancel|booking cancelled|purchased in error/i, 'Refunds & Cancellations'],
   [/sign in|log ?in|password|changing email|email associated/i, 'Account & Login'],
@@ -120,7 +150,7 @@ function topicOf(c) {
 
 function toSupportRow(c) {
   const ca = c.custom_attributes || {}, ai = c.ai_agent || {}, s = c.statistics || {};
-  const res = ai.resolution_state;
+  const res = resolutionOf(c);
   const srcs = ai.content_sources?.content_sources || [];
   return {
     'Date': new Date(c.created_at * 1000).toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' }),
@@ -139,9 +169,9 @@ function toSupportRow(c) {
 }
 
 function toInboxEntry(c) {
-  const ca = c.custom_attributes || {}, ai = c.ai_agent || {}, a = c.source?.author || {};
+  const ca = c.custom_attributes || {}, a = c.source?.author || {};
   const first = stripHtml(c.source?.body || '').split(/\nOn .{5,80} wrote:\n/)[0].trim();
-  const res = ai.resolution_state;
+  const res = resolutionOf(c);
   return {
     id: String(c.id),
     subject: stripHtml(c.source?.subject || '') || ca['AI Title'] || '(no subject)',
