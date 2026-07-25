@@ -792,7 +792,21 @@ app.post('/:org/api/support/inbox/:id/forward', authMiddleware, async (req, res)
     const json = await resp.json();
     if (!resp.ok) throw new Error(json?.message || `Resend ${resp.status}`);
     track_server(req.orgSlug, 'support_forwarded', { to, conversationId: req.params.id });
-    res.json({ ok: true, id: json.id });
+    // Best-effort Intercom write-back: tag the conversation + internal note so
+    // Rec staff see the escalation in Intercom, and the dashboard reads the
+    // tag back on refresh. Email already went out — never fail on this.
+    let escalated = false;
+    if (intercomLive.liveEnabled()) {
+      try {
+        escalated = await intercomLive.markEscalatedToOrg(req.params.id, { orgName: org.name, to, note });
+        // Bust cached views so the tag shows without waiting out the TTL
+        cache.delete(`${req.orgSlug}:support-thread:${req.params.id}`);
+        for (const key of cache.keys()) if (key.startsWith(`${req.orgSlug}:support-inbox:`)) cache.delete(key);
+      } catch (e) {
+        console.error('[intercom] escalate write-back failed (email was sent):', e.message);
+      }
+    }
+    res.json({ ok: true, id: json.id, escalated });
   } catch (e) {
     console.error('[support] forward failed:', e.message);
     res.status(502).json({ ok: false, error: e.message });

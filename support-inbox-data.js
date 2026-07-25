@@ -7,7 +7,8 @@
 //  its message thread.
 //
 //  Message roles: resident (the org's resident), ai (Rec's Fin AI agent),
-//  agent (Rec support teammate), note (internal note — rendered dashed).
+//  agent (Rec support teammate). Internal Rec staff notes are private and
+//  are excluded here and in the live client — never shown to orgs.
 //  Bodies are HTML-stripped; long AI answers lightly trimmed for display.
 //  A few older threads carry only the opening message.
 //
@@ -177,12 +178,6 @@ const SUPPORT_INBOX = {
     "name": "Fin",
     "at": 1784574066,
     "text": "Hello Desiree!\nThanks for reaching out! Our instructor support team will be in touch with you shortly."
-   },
-   {
-    "role": "note",
-    "name": "Nazarena",
-    "at": 1784579824,
-    "text": "I'm taking care of this."
    }
   ]
  },
@@ -735,12 +730,6 @@ const SUPPORT_INBOX = {
     "name": "Don Kwak",
     "at": 1782858007,
     "text": "talk to the team"
-   },
-   {
-    "role": "note",
-    "name": "Jennel Rossetti",
-    "at": 1782940973,
-    "text": "I see this is rec managed. Do you know if this was cancelled by the instructor?"
    },
    {
     "role": "agent",
