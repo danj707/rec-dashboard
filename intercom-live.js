@@ -283,4 +283,32 @@ async function markEscalatedToOrg(conversationId, { orgName, to, note }) {
   return true;
 }
 
-module.exports = { liveEnabled, liveSupportRows, liveSupportInbox, liveSupportThread, markEscalatedToOrg, ORG_ESCALATED_TAG };
+// ── Escalation notifier support ──
+// Conversations carrying the Org Escalated tag (recently updated), each with
+// its author contact so the caller can map conversation → org. Powers the
+// poller that emails org admins when Rec staff tag a conversation in Intercom.
+async function liveEscalatedConversations(sinceTs) {
+  if (!liveEnabled()) return null;
+  const tagId = await getEscalatedTagId();
+  const body = {
+    query: {
+      operator: 'AND',
+      value: [
+        { field: 'tag_ids', operator: 'IN', value: [tagId] },
+        { field: 'updated_at', operator: '>', value: sinceTs },
+      ],
+    },
+    pagination: { per_page: 50 },
+  };
+  const page = await ic('/conversations/search', { method: 'POST', body: JSON.stringify(body) });
+  const out = [];
+  for (const c of page.conversations || []) {
+    const author = c.source?.author;
+    if (author?.type !== 'user' || !author.id) continue;
+    const contact = await getContact(author.id);
+    if (contact) out.push({ conv: c, contact });
+  }
+  return out;
+}
+
+module.exports = { liveEnabled, liveSupportRows, liveSupportInbox, liveSupportThread, markEscalatedToOrg, liveEscalatedConversations, toInboxEntry, ORG_ESCALATED_TAG };
