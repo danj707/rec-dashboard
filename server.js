@@ -717,6 +717,7 @@ app.get('/:org/api/support/inbox', authMiddleware, async (req, res) => {
     if (cached) return res.json({ conversations: cached, live: true });
     try {
       const list = await intercomLive.liveSupportInbox(org, query);
+      console.log(`[DATA] ${req.orgSlug}/support-inbox: ${list.length} conversations (intercom LIVE)`);
       setCache(cacheKey, list, 5 * 60 * 1000);
       return res.json({ conversations: list, live: true });
     } catch (e) {
