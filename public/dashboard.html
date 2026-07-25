@@ -141,6 +141,55 @@ body { font-family: var(--font-body); background: var(--bg-page); color: var(--t
 .metric-green { color: var(--green); }
 .metric-red { color: var(--red); }
 .metric-amber { color: var(--amber); }
+
+/* ── Tabs (format borrowed from rental-report's g-tabs) ── */
+.g-tabs { display: flex; gap: 0; margin: 0; padding: 0 24px; border-bottom: 2px solid var(--border); flex-wrap: wrap; }
+.g-tab { padding: 11px 20px; font-size: 13px; font-weight: 600; color: var(--text-secondary); cursor: pointer;
+  border: none; border-bottom: 2px solid transparent; margin-bottom: -2px; background: none;
+  font-family: var(--font-body); display: flex; align-items: center; gap: 7px; transition: color 0.15s; }
+.g-tab:hover { color: var(--text-primary); }
+.g-tab.active { color: var(--amber); border-bottom-color: var(--amber); }
+.g-tab .tab-count { font-size: 10px; font-weight: 700; background: var(--amber); color: #000; border-radius: 9px; padding: 1px 7px; }
+
+/* ── Support Inbox ── */
+.inbox-wrap { display: grid; grid-template-columns: 340px 1fr; gap: 14px; min-height: 480px; }
+@media (max-width: 900px) { .inbox-wrap { grid-template-columns: 1fr; } }
+.inbox-list { background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: 12px; overflow-y: auto; max-height: 640px; }
+.inbox-item { padding: 12px 14px; border-bottom: 1px solid var(--border-subtle); cursor: pointer; transition: background 0.12s; }
+.inbox-item:hover { background: var(--bg-hover, rgba(128,128,128,0.06)); }
+.inbox-item.selected { background: var(--amber-glow); border-left: 3px solid var(--amber); padding-left: 11px; }
+.inbox-item .ii-top { display: flex; align-items: center; gap: 6px; }
+.inbox-item .ii-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.inbox-item .ii-name { font-size: 12.5px; font-weight: 700; color: var(--text-primary); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.inbox-item .ii-time { font-size: 10px; color: var(--text-muted); flex-shrink: 0; }
+.inbox-item .ii-subject { font-size: 12px; font-weight: 600; color: var(--text-primary); margin: 3px 0 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.inbox-item .ii-preview { font-size: 11px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.inbox-item .ii-chips { display: flex; gap: 5px; margin-top: 6px; flex-wrap: wrap; }
+.ii-chip { font-size: 9.5px; font-weight: 600; padding: 1.5px 7px; border-radius: 8px; background: rgba(128,128,128,0.12); color: var(--text-secondary); }
+.ii-chip.ai { background: rgba(20,184,166,0.15); color: #14b8a6; }
+.ii-chip.esc { background: rgba(245,158,11,0.15); color: var(--amber); }
+.inbox-thread { background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: 12px; display: flex; flex-direction: column; max-height: 640px; }
+.thread-head { padding: 14px 18px; border-bottom: 1px solid var(--border-subtle); display: flex; align-items: flex-start; gap: 12px; }
+.thread-head .th-subject { font-size: 15px; font-weight: 700; color: var(--text-primary); }
+.thread-head .th-meta { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
+.thread-body { flex: 1; overflow-y: auto; padding: 16px 18px; }
+.msg { max-width: 82%; margin-bottom: 14px; }
+.msg .msg-meta { font-size: 10px; color: var(--text-muted); margin-bottom: 3px; display: flex; gap: 6px; align-items: center; }
+.msg .msg-bubble { padding: 10px 14px; border-radius: 12px; font-size: 12.5px; line-height: 1.55; color: var(--text-primary); white-space: pre-wrap; word-break: break-word; }
+.msg.resident .msg-bubble { background: rgba(128,128,128,0.10); border: 1px solid var(--border-subtle); border-top-left-radius: 4px; }
+.msg.ai { margin-left: auto; }
+.msg.ai .msg-meta { justify-content: flex-end; }
+.msg.ai .msg-bubble { background: rgba(20,184,166,0.10); border: 1px solid rgba(20,184,166,0.25); border-top-right-radius: 4px; }
+.msg.agent { margin-left: auto; }
+.msg.agent .msg-meta { justify-content: flex-end; }
+.msg.agent .msg-bubble { background: var(--amber-glow); border: 1px solid rgba(245,158,11,0.3); border-top-right-radius: 4px; }
+.msg.note { margin-left: auto; }
+.msg.note .msg-meta { justify-content: flex-end; }
+.msg.note .msg-bubble { background: transparent; border: 1.5px dashed var(--border); color: var(--text-secondary); font-style: italic; }
+.msg-role-badge { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; padding: 1px 6px; border-radius: 6px; }
+.msg-role-badge.ai { background: rgba(20,184,166,0.15); color: #14b8a6; }
+.msg-role-badge.agent { background: var(--amber-glow); color: var(--amber); }
+.msg-role-badge.note { background: rgba(128,128,128,0.15); color: var(--text-muted); }
 /* Fixed height (not % of card): a %-height canvas inside an auto-sized grid row
    creates a resize feedback loop with Chart.js and the row grows unbounded. */
 .chart-container { position: relative; width: 100%; height: 240px; }
@@ -1583,6 +1632,7 @@ function EditModal({ sections, onSave, onClose, availableReports, toggles }) {
   const availableSections = Object.values(SECTIONS).filter(s => {
       if (activeSectionIds.has(s.id)) return false;
       if (s.id === 'ai-briefing') return false;  // disabled until data pipeline audit
+      if (s.id === 'support') return false;      // lives in its own tab, not section config
       // Also hide sections whose report is hidden on the reporting side (from window._reportVisibility)
       if (window._reportVisibility) {
         const rt = SECTION_REPORT_MAP[s.id];
@@ -1987,6 +2037,178 @@ function SettingsPopover({ cacheTTL, onCacheTTLChange, onClearCache, onReset, th
 // ═══════════════════════════════════════════════════════
 //  MAIN APP
 // ═══════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════
+//  SUPPORT INBOX (Customer Support tab)
+// ═══════════════════════════════════════════════════════
+function timeAgo(ts) {
+  const s = Math.floor(Date.now() / 1000 - ts);
+  if (s < 3600) return `${Math.max(1, Math.floor(s / 60))}m`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h`;
+  return `${Math.floor(s / 86400)}d`;
+}
+function msgTime(ts) {
+  return new Date(ts * 1000).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
+function ForwardModal({ conv, onClose }) {
+  const [to, setTo] = useState('');
+  const [note, setNote] = useState('');
+  const [status, setStatus] = useState(null); // null | 'sending' | 'sent' | error string
+  async function send() {
+    if (!to) return;
+    setStatus('sending');
+    try {
+      const resp = await fetch(`/${ORG_SLUG}/api/support/inbox/${conv.id}/forward?token=${TOKEN}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ to, note }) });
+      const json = await resp.json();
+      if (json.ok) { setStatus('sent'); track('support_forwarded', { conversationId: conv.id }); setTimeout(onClose, 1200); }
+      else setStatus(json.error || 'Failed to send');
+    } catch (e) { setStatus('Failed to send'); }
+  }
+  return (
+    <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="modal-panel" style={{maxWidth:440}}>
+        <div className="modal-header">
+          <span className="modal-title">Forward to your team</span>
+          <button className="modal-close" onClick={onClose}>{'✕'}</button>
+        </div>
+        <div className="modal-body" style={{padding:'18px 24px'}}>
+          <div style={{fontSize:12,color:'var(--text-secondary)',marginBottom:14}}>
+            Emails this conversation — <b style={{color:'var(--text-primary)'}}>{conv.subject}</b> from {conv.contact.name} — to a member of your staff, with the full thread included.
+          </div>
+          <label style={{fontSize:11,fontWeight:600,color:'var(--text-muted)',display:'block',marginBottom:4}}>Send to</label>
+          <input type="email" className="date-input" style={{width:'100%',marginBottom:12}} placeholder="staff@torranceca.gov"
+            value={to} onChange={e => setTo(e.target.value)} autoFocus />
+          <label style={{fontSize:11,fontWeight:600,color:'var(--text-muted)',display:'block',marginBottom:4}}>Note (optional)</label>
+          <textarea className="date-input" style={{width:'100%',height:70,resize:'vertical',fontFamily:'var(--font-body)'}}
+            placeholder="Can you take a look at this one? Resident needs a residency badge approved." value={note} onChange={e => setNote(e.target.value)} />
+          {status && status !== 'sending' && status !== 'sent' && <div style={{fontSize:11,color:'var(--red)',marginTop:8}}>{status}</div>}
+        </div>
+        <div className="modal-footer">
+          <button className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn btn-amber" disabled={status === 'sending' || status === 'sent'} onClick={send}>
+            {status === 'sending' ? 'Sending…' : status === 'sent' ? '✓ Sent' : '✉ Forward'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SupportInbox() {
+  const [convs, setConvs] = useState(null);
+  const [selectedId, setSelectedId] = useState(null);
+  const [thread, setThread] = useState(null);
+  const [isLive, setIsLive] = useState(false);
+  const [filter, setFilter] = useState('all'); // all | open | closed
+  const [forwardOpen, setForwardOpen] = useState(false);
+
+  useEffect(() => {
+    fetch(`/${ORG_SLUG}/api/support/inbox?token=${TOKEN}`).then(r => r.json()).then(json => {
+      setConvs(json.conversations || []); setIsLive(!!json.live);
+      if (json.conversations?.length) setSelectedId(json.conversations[0].id);
+    }).catch(() => setConvs([]));
+  }, []);
+
+  useEffect(() => {
+    if (!selectedId) return;
+    setThread(null);
+    fetch(`/${ORG_SLUG}/api/support/inbox/${selectedId}?token=${TOKEN}`).then(r => r.json())
+      .then(json => setThread(json.conversation || null)).catch(() => {});
+    track('support_thread_viewed', { conversationId: selectedId });
+  }, [selectedId]);
+
+  if (!convs) return <div className="skeleton skeleton-chart" style={{height:480,margin:'0 24px'}} />;
+
+  const shown = convs.filter(c => filter === 'all' || c.state === filter);
+  const openCount = convs.filter(c => c.state === 'open').length;
+
+  return (
+    <div className="dashboard-section">
+      <div className="section-header">
+        <span className="section-icon">{'📥'}</span>
+        <span className="section-label">Support Inbox</span>
+        <div className="section-line" />
+        <span style={{fontSize:10,fontWeight:600,padding:'2px 8px',borderRadius:8,
+          background: isLive ? 'rgba(34,197,94,0.15)' : 'rgba(128,128,128,0.15)',
+          color: isLive ? 'var(--green)' : 'var(--text-muted)'}}>
+          {isLive ? '● LIVE · Intercom' : 'Snapshot · last 30 days'}</span>
+        <span className="section-badge">{convs.length} conversations {'·'} {openCount} open</span>
+      </div>
+      <div style={{display:'flex',gap:6,margin:'10px 0'}}>
+        {['all','open','closed'].map(f => (
+          <button key={f} className={`btn-quick ${filter===f?'active':''}`} onClick={()=>setFilter(f)}>
+            {f === 'all' ? `All (${convs.length})` : f === 'open' ? `Open (${openCount})` : `Closed (${convs.length - openCount})`}
+          </button>
+        ))}
+      </div>
+      <div className="inbox-wrap">
+        <div className="inbox-list">
+          {shown.map(c => (
+            <div key={c.id} className={`inbox-item ${c.id === selectedId ? 'selected' : ''}`} onClick={() => setSelectedId(c.id)}>
+              <div className="ii-top">
+                <span className="ii-dot" style={{background: c.state === 'open' ? 'var(--green)' : 'var(--text-muted)'}} />
+                <span className="ii-name">{c.contact.name}</span>
+                <span className="ii-time">{timeAgo(c.updatedAt)}</span>
+              </div>
+              <div className="ii-subject">{c.subject}</div>
+              <div className="ii-preview">{c.preview}</div>
+              <div className="ii-chips">
+                <span className="ii-chip">{c.channel}</span>
+                <span className="ii-chip">{c.topic}</span>
+                {c.resolution === 'Resolved by AI' && <span className="ii-chip ai">{'✨'} AI resolved</span>}
+                {c.resolution === 'Escalated to Staff' && <span className="ii-chip esc">{'↑'} Escalated</span>}
+              </div>
+            </div>
+          ))}
+          {!shown.length && <div style={{padding:20,fontSize:12,color:'var(--text-muted)'}}>No {filter} conversations.</div>}
+        </div>
+        <div className="inbox-thread">
+          {thread ? (
+            <React.Fragment>
+              <div className="thread-head">
+                <div style={{flex:1}}>
+                  <div className="th-subject">{thread.subject}</div>
+                  <div className="th-meta">{thread.contact.name} {'·'} {thread.contact.email} {'·'} {thread.channel} {'·'} {thread.topic}
+                    {'·'} <span style={{color: thread.state === 'open' ? 'var(--green)' : 'var(--text-muted)', fontWeight:600}}>{thread.state}</span></div>
+                </div>
+                <button className="btn btn-amber" onClick={() => { setForwardOpen(true); track('support_forward_opened', { conversationId: thread.id }); }}>{'✉'} Forward to team</button>
+              </div>
+              <div className="thread-body">
+                {thread.messages.map((m, i) => (
+                  <div key={i} className={`msg ${m.role}`}>
+                    <div className="msg-meta">
+                      <span style={{fontWeight:700,color:'var(--text-secondary)'}}>{m.name}</span>
+                      {m.role !== 'resident' && <span className={`msg-role-badge ${m.role}`}>{m.role === 'ai' ? '✨ Rec AI' : m.role === 'note' ? 'Internal note' : 'Rec Support'}</span>}
+                      <span>{msgTime(m.at)}</span>
+                    </div>
+                    <div className="msg-bubble">{m.text}</div>
+                  </div>
+                ))}
+              </div>
+            </React.Fragment>
+          ) : (
+            <div style={{display:'flex',alignItems:'center',justifyContent:'center',flex:1,color:'var(--text-muted)',fontSize:12}}>
+              {selectedId ? 'Loading conversation…' : 'Select a conversation'}</div>
+          )}
+        </div>
+      </div>
+      {forwardOpen && thread && <ForwardModal conv={thread} onClose={() => setForwardOpen(false)} />}
+    </div>
+  );
+}
+
+function SupportTab({ reportData, loading, targets, onTargetChange, dateRange, aiEnabled }) {
+  return (
+    <React.Fragment>
+      <SectionBlock sectionId="support" widgetIds={SECTIONS.support.defaultWidgets} reportData={reportData} loading={loading}
+        targets={targets} onTargetChange={onTargetChange} dateRange={dateRange} aiEnabled={aiEnabled}
+        reportLinksEnabled={false} reportingBaseUrl="" />
+      <SupportInbox />
+    </React.Fragment>
+  );
+}
+
 function DashboardApp() {
   const [config, setConfig] = useState(null);
   const [orgMeta, setOrgMeta] = useState({});
@@ -2041,6 +2263,7 @@ function DashboardApp() {
   const [loading, setLoading] = useState(true);
   const [editOpen, setEditOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState(params.get('tab') === 'support' ? 'support' : 'dashboard');
   const [lastRefresh, setLastRefresh] = useState(null);
   const [theme, setTheme] = useState('light');
   const [targets, setTargets] = useState({});
@@ -2076,12 +2299,14 @@ function DashboardApp() {
   }, []);
 
   // Only refetch when sections/widgets change or date range changes, NOT theme/cacheTTL
-  const dataKey = config && config !== 'new' ? JSON.stringify(config.sections.map(s=>s.id+':'+s.widgets.join(','))) : '';
+  const dataKey = config && config !== 'new' ? JSON.stringify(config.sections.map(s=>s.id+':'+s.widgets.join(','))) + (availableReports.support ? '+support' : '') : '';
 
   useEffect(() => {
     if (!config || config === 'new') { setLoading(false); return; }
     const allWidgetIds = config.sections.flatMap(s => s.widgets);
     const rts = [...new Set(allWidgetIds.map(id => W[id]?.reportType).filter(Boolean))];
+    // The Customer Support tab is outside section config — load its data whenever the org has it
+    if (availableReports.support && !rts.includes('support')) rts.push('support');
     if (!rts.length) { setLoading(false); return; }
     setLoading(true); clearDataStore();
     Promise.all(rts.map(rt => fetchReportData(rt, dateRange).then(rows => [rt, rows]).catch(() => [rt, []])))
@@ -2168,6 +2393,7 @@ function DashboardApp() {
   const displaySections = (() => {
     const filtered = config.sections.filter(sec => {
       if (sec.id === 'ai-briefing') return false;
+      if (sec.id === 'support') return false; // lives in its own tab
       if (PRINT_SECTIONS && !PRINT_SECTIONS.includes(sec.id)) return false;
       if (!orgMeta.reportVisibility) return true;
       const reportType = SECTION_REPORT_MAP[sec.id];
@@ -2238,15 +2464,26 @@ function DashboardApp() {
       )}
       <div className={`loading-bar ${loading ? 'active' : ''}`}><div className="loading-bar-inner" /></div>
 
+      {!IS_PRINT && availableReports.support && (
+        <div className="g-tabs" style={{marginBottom:14}}>
+          <button className={`g-tab ${activeTab==='dashboard'?'active':''}`} onClick={()=>{setActiveTab('dashboard');track('tab_changed',{tab:'dashboard'});}}>{'📊'} Dashboard</button>
+          <button className={`g-tab ${activeTab==='support'?'active':''}`} onClick={()=>{setActiveTab('support');track('tab_changed',{tab:'support'});}}>{'💬'} Customer Support</button>
+        </div>
+      )}
+
       <div className={loading && lastRefresh ? 'sections-loading' : ''}>
         {false && !IS_PRINT && config.sections.some(s => s.id === 'ai-briefing') && (
           <BriefingSection reportData={reportData} loading={loading} dateRange={dateRange} briefingRef={briefingRef} />
         )}
-        {displaySections.map((sec, i) => (
+        {(IS_PRINT || activeTab === 'dashboard' || !availableReports.support) && displaySections.map((sec, i) => (
           <SectionBlock key={sec.id+i+theme} sectionId={sec.id} widgetIds={sec.widgets} reportData={reportData} loading={loading}
             targets={targets} onTargetChange={handleTargetChange} dateRange={dateRange} aiEnabled={!isReadOnly && orgMeta.toggles?.ai !== false}
             reportLinksEnabled={!isReadOnly && orgMeta.toggles?.reportLinks === true} reportingBaseUrl={orgMeta.reportingBaseUrl || ''} />
         ))}
+        {!IS_PRINT && activeTab === 'support' && availableReports.support && (
+          <SupportTab key={'support'+theme} reportData={reportData} loading={loading} targets={targets}
+            onTargetChange={handleTargetChange} dateRange={dateRange} aiEnabled={!isReadOnly && orgMeta.toggles?.ai !== false} />
+        )}
       </div>
 
       {!isReadOnly && editOpen && <EditModal sections={config.sections.filter(sec => {
