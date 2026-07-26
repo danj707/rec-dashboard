@@ -34,22 +34,65 @@ async function ic(path, opts = {}) {
   return resp.json();
 }
 
-// ── Contact classification cache (author id → contact or null) ──
-const contactCache = new Map();
-const CONTACT_TTL = 60 * 60 * 1000; // contacts change org/role rarely
+// ── Contact classification cache (author id → { org, role }) ──
+// The sweep only needs two attributes per author, and they change rarely —
+// 24h TTL, persisted to the DATA_DIR volume so deploys/restarts don't force
+// the workspace-wide relookup that made cold loads take a minute+.
+const fs = require('fs');
+const path = require('path');
+const DATA_DIR = process.env.DATA_DIR || './data';
+const CONTACT_META_FILE = path.join(DATA_DIR, 'intercom-contact-meta.json');
+const CONTACT_TTL = 24 * 60 * 60 * 1000;
+const contactMeta = new Map();
+try {
+  for (const [id, m] of Object.entries(JSON.parse(fs.readFileSync(CONTACT_META_FILE, 'utf8')))) contactMeta.set(id, m);
+  console.log(`[intercom] loaded ${contactMeta.size} cached contact classification(s)`);
+} catch (e) { /* first boot */ }
 
-async function getContact(id) {
-  const hit = contactCache.get(id);
-  if (hit && Date.now() - hit.at < CONTACT_TTL) return hit.contact;
-  let contact = null;
-  try { contact = await ic(`/contacts/${id}`); } catch (e) { /* deleted/merged contacts 404 */ }
-  contactCache.set(id, { contact, at: Date.now() });
-  return contact;
+let _metaSaveTimer = null;
+function saveContactMeta() {
+  if (_metaSaveTimer) return;
+  _metaSaveTimer = setTimeout(() => {
+    _metaSaveTimer = null;
+    try {
+      if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+      fs.writeFileSync(CONTACT_META_FILE, JSON.stringify(Object.fromEntries(contactMeta)));
+    } catch (e) { console.error('[intercom] contact meta persist failed:', e.message); }
+  }, 2000);
 }
 
-function isOrgResident(contact, intercomOrg) {
-  const attrs = contact?.custom_attributes || {};
-  return attrs.Organization === intercomOrg && attrs.user_role === 'user';
+async function getContactMeta(id) {
+  const hit = contactMeta.get(id);
+  if (hit && Date.now() - hit.at < CONTACT_TTL) return hit;
+  let meta = { org: null, role: null, at: Date.now() };
+  try {
+    const c = await ic(`/contacts/${id}`);
+    const a = c?.custom_attributes || {};
+    meta = { org: a.Organization || null, role: a.user_role || null, at: Date.now() };
+  } catch (e) { /* deleted/merged contacts 404 — cache the miss too */ }
+  contactMeta.set(id, meta);
+  saveContactMeta();
+  return meta;
+}
+
+function isOrgResidentMeta(meta, intercomOrg) {
+  return !!meta && meta.org === intercomOrg && meta.role === 'user';
+}
+
+// Bounded-concurrency map: Intercom allows ~1000 req/min, so 10 parallel
+// contact lookups is safe and turns a minute of sequential round trips
+// into a few seconds.
+async function mapConcurrent(items, limit, fn) {
+  const results = new Array(items.length);
+  let next = 0;
+  async function worker() {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await fn(items[i]);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
 }
 
 // ── Conversation search across the window, filtered to org residents ──
@@ -86,14 +129,15 @@ async function doSearchOrgConversations(org, { start, end }) {
     startingAfter = page.pages?.next?.starting_after || null;
   } while (startingAfter);
 
-  const out = [];
-  for (const c of all) {
-    const author = c.source?.author;
-    if (author?.type !== 'user' || !author.id) continue;
-    const contact = await getContact(author.id);
-    if (contact && isOrgResident(contact, org.intercomOrg)) out.push(c);
-  }
-  return out;
+  // Classify unique authors with bounded parallelism (mostly cache hits
+  // after the first sweep thanks to the persisted contact meta).
+  const authorIds = [...new Set(all.map(c => c.source?.author).filter(a => a?.type === 'user' && a.id).map(a => a.id))];
+  await mapConcurrent(authorIds, 10, getContactMeta);
+  return all.filter(c => {
+    const a = c.source?.author;
+    if (a?.type !== 'user' || !a.id) return false;
+    return isOrgResidentMeta(contactMeta.get(a.id), org.intercomOrg);
+  });
 }
 
 // ── Shape mappers (must match the snapshot shapes exactly) ──
@@ -268,9 +312,9 @@ async function liveSupportThread(org, id, orgSlug) {
   if (!liveEnabled() || !org?.intercomOrg) return null;
   const c = await ic(`/conversations/${id}`);
   const author = c.source?.author;
-  const contact = author?.id ? await getContact(author.id) : null;
+  const meta = author?.id ? await getContactMeta(author.id) : null;
   const explicitlyRouted = orgSlug && hasOrgRouteTag(c, orgSlug, org);
-  if (!explicitlyRouted && (!contact || !isOrgResident(contact, org.intercomOrg))) return null; // never leak another org's thread
+  if (!explicitlyRouted && !isOrgResidentMeta(meta, org.intercomOrg)) return null; // never leak another org's thread
   const entry = toInboxEntry(c);
   const messages = [{ role: 'resident', name: entry.contact.name, at: c.created_at, text: entry._first }];
   for (const p of c.conversation_parts?.conversation_parts || []) {

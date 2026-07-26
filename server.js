@@ -1338,6 +1338,15 @@ async function warmCache() {
 //  (the admin was already emailed directly).
 // ═══════════════════════════════════════════
 const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || 'https://rec-dashboard-production.up.railway.app';
+
+// Current month in YYYY-MM-DD, matching the frontend's default date preset
+function getMonthRangeServer() {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), 1);
+  const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  const iso = d => d.toISOString().slice(0, 10);
+  return { start: iso(start), end: iso(end) };
+}
 // v2: v1 wrongly marked unmatched conversations as processed forever; fresh
 // file so tagged-but-unrouted test conversations become eligible again.
 const NOTIFIED_FILE = path.join(DATA_DIR, 'support-notified-v2.json');
@@ -1437,5 +1446,22 @@ app.listen(PORT, () => {
         console.log(`[intercom] ensured ${tags.length} routing tag(s): ${tags.join(' | ')}`);
       } catch (e) { console.error('[intercom] tag provisioning failed:', e.message); }
     }, 10000);
+    // Pre-warm the support sweeps so the first visitor doesn't eat the
+    // cold classification pass: rolling 30d (inbox default) + current month
+    // (the date picker's default). Contact classifications persist to the
+    // volume, so even a cold sweep after this is mostly search pages.
+    setTimeout(async () => {
+      const rolling = { start: new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10) };
+      const month = getMonthRangeServer();
+      for (const [slug, org] of Object.entries(ORGS)) {
+        if (!org.intercomOrg) continue;
+        for (const q of [rolling, month]) {
+          try {
+            const rows = await intercomLive.liveSupportRows(org, q);
+            console.log(`[WARM] ${slug}/support ${q.start}..${q.end || 'now'}: ${rows?.length ?? 0} rows`);
+          } catch (e) { console.error(`[WARM] ${slug}/support failed:`, e.message); }
+        }
+      }
+    }, 25000);
   }
 });
