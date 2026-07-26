@@ -2152,7 +2152,43 @@ function ForwardModal({ conv, onClose, onSent }) {
   );
 }
 
-function SupportInbox({ actionsDisabled, onConversationSeen }) {
+function NotifySettings({ initialEmails }) {
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState((initialEmails || []).join(', '));
+  const [status, setStatus] = useState(null); // null | 'saving' | 'saved' | error string
+  async function save() {
+    setStatus('saving');
+    try {
+      const resp = await fetch(`/${ORG_SLUG}/api/support/notify-emails?token=${TOKEN}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ emails: value }) });
+      const json = await resp.json();
+      if (json.ok) { setValue((json.emails || []).join(', ')); setStatus('saved'); track('support_notify_updated'); setTimeout(() => setStatus(null), 2000); }
+      else setStatus(json.error || 'Failed to save');
+    } catch (e) { setStatus('Failed to save'); }
+  }
+  return (
+    <div style={{position:'relative'}}>
+      <button className="btn btn-sm" onClick={() => setOpen(o => !o)}>{'🔔'} Notifications</button>
+      {open && (
+        <div className="status-menu" style={{width:340,padding:14}} onClick={e => e.stopPropagation()}>
+          <div style={{fontSize:12,fontWeight:700,color:'var(--text-primary)',marginBottom:4}}>Escalation notifications</div>
+          <div style={{fontSize:11,color:'var(--text-secondary)',marginBottom:10}}>
+            When Rec's support team escalates a resident question to your org, these addresses get the email with a link to the conversation.</div>
+          <input type="text" className="date-input" style={{width:'100%',marginBottom:8}}
+            placeholder="staff@yourcity.gov, parks@yourcity.gov" value={value} onChange={e => setValue(e.target.value)} />
+          {status && status !== 'saving' && status !== 'saved' && <div style={{fontSize:11,color:'var(--red)',marginBottom:8}}>{status}</div>}
+          <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
+            <button className="btn btn-sm" onClick={() => setOpen(false)}>Close</button>
+            <button className="btn btn-sm btn-amber" disabled={status === 'saving'} onClick={save}>
+              {status === 'saving' ? 'Saving…' : status === 'saved' ? '✓ Saved' : 'Save'}</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SupportInbox({ actionsDisabled, onConversationSeen, notifyEmails }) {
   const [convs, setConvs] = useState(null);
   const [selectedId, setSelectedId] = useState(null);
   const [thread, setThread] = useState(null);
@@ -2251,6 +2287,7 @@ function SupportInbox({ actionsDisabled, onConversationSeen }) {
           background: isLive ? 'rgba(34,197,94,0.15)' : 'rgba(128,128,128,0.15)',
           color: isLive ? 'var(--green)' : 'var(--text-muted)'}}>
           {isLive ? '● LIVE · Intercom' : 'Snapshot · last 30 days'}</span>
+        {!IS_SHARE && <NotifySettings initialEmails={notifyEmails} />}
         <span className="section-badge">{convs.length} conversations {'·'} {openCount} open</span>
       </div>
       <div style={{display:'flex',gap:6,margin:'10px 0'}}>
@@ -2351,11 +2388,11 @@ function SupportInbox({ actionsDisabled, onConversationSeen }) {
   );
 }
 
-function SupportTab({ reportData, loading, targets, onTargetChange, dateRange, aiEnabled, supportReadOnly, onConversationSeen }) {
+function SupportTab({ reportData, loading, targets, onTargetChange, dateRange, aiEnabled, supportReadOnly, onConversationSeen, notifyEmails }) {
   // Inbox first — the conversations are the headline; metrics follow below.
   return (
     <React.Fragment>
-      <SupportInbox actionsDisabled={supportReadOnly} onConversationSeen={onConversationSeen} />
+      <SupportInbox actionsDisabled={supportReadOnly} onConversationSeen={onConversationSeen} notifyEmails={notifyEmails} />
       <SectionBlock sectionId="support" widgetIds={SECTIONS.support.defaultWidgets} reportData={reportData} loading={loading}
         targets={targets} onTargetChange={onTargetChange} dateRange={dateRange} aiEnabled={aiEnabled}
         reportLinksEnabled={false} reportingBaseUrl="" />
@@ -2463,7 +2500,7 @@ function DashboardApp() {
         const resp = await fetch(configUrl);
         const json = await resp.json();
         setAvailableReports(json.availableReports || {});
-        setOrgMeta({ name: json.orgName, logoUrl: json.logoUrl, city: json.city, state: json.state, toggles: json.toggles || {}, reportingBaseUrl: json.reportingBaseUrl || '', reportVisibility: json.reportVisibility || null, readOnly: json.readOnly || false, expiresAt: json.expiresAt || null, supportReadOnly: json.supportReadOnly || false });
+        setOrgMeta({ name: json.orgName, logoUrl: json.logoUrl, city: json.city, state: json.state, toggles: json.toggles || {}, reportingBaseUrl: json.reportingBaseUrl || '', reportVisibility: json.reportVisibility || null, readOnly: json.readOnly || false, expiresAt: json.expiresAt || null, supportReadOnly: json.supportReadOnly || false, supportNotify: json.supportNotify || [] });
         window._orgGeo = json.city && json.state ? `${json.city}, ${json.state}` : '';
         window._reportVisibility = json.reportVisibility || null;
         if (json.dateRange) { setDateRange(json.dateRange); setDatePreset(''); }
@@ -2664,7 +2701,7 @@ function DashboardApp() {
         {!IS_PRINT && activeTab === 'support' && availableReports.support && (
           <SupportTab key={'support'+theme} reportData={reportData} loading={loading} targets={targets}
             onTargetChange={handleTargetChange} dateRange={dateRange} aiEnabled={!isReadOnly && orgMeta.toggles?.ai !== false}
-            supportReadOnly={orgMeta.supportReadOnly} onConversationSeen={markConversationSeen} />
+            supportReadOnly={orgMeta.supportReadOnly} onConversationSeen={markConversationSeen} notifyEmails={orgMeta.supportNotify} />
         )}
       </div>
 

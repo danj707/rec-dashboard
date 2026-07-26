@@ -177,6 +177,32 @@ function saveAllConfigs(configs) {
 
 let dashboardConfigs = loadAllConfigs();
 
+// ── Support enablement (code + admin config merged) ─────────────────
+// An org has Customer Support if it carries a code-level intercomOrg
+// mapping OR the admin panel's "Customer Support" toggle is on. The
+// Intercom `Organization` attribute defaults to the slug (code override
+// wins for mismatches like torrance → city-of-torrance). Escalation
+// recipients come from admin/org-managed config first, code fallback.
+function supportSettings(slug) {
+  const org = ORGS[slug] || {};
+  const cfg = dashboardConfigs[slug] || {};
+  const enabled = !!(org.intercomOrg || cfg.toggles?.support);
+  const notify = (Array.isArray(cfg.supportNotify) && cfg.supportNotify.length ? cfg.supportNotify : org.supportNotify) || [];
+  return {
+    enabled,
+    intercomOrg: enabled ? (org.intercomOrg || slug) : null,
+    notify,
+    readOnly: !!org.supportReadOnly,
+  };
+}
+
+// Org object with the effective support fields resolved — what the
+// intercom-live client expects.
+function effectiveSupportOrg(slug) {
+  const ss = supportSettings(slug);
+  return { ...(ORGS[slug] || {}), intercomOrg: ss.intercomOrg, supportNotify: ss.notify };
+}
+
 // ═══════════════════════════════════════════
 //  AUTH MIDDLEWARE
 // ═══════════════════════════════════════════
@@ -217,15 +243,16 @@ function buildMetabaseParams(reportType, query) {
 
 async function fetchMetabaseData(orgSlug, reportType, query) {
   const org = ORGS[orgSlug];
+  const eff = effectiveSupportOrg(orgSlug);
   // Support data comes from Intercom, not Metabase — short-circuit before the card lookup.
   // Live API when INTERCOM_ACCESS_TOKEN is set (cached), else the baked snapshot.
   if (reportType === 'support') {
-    if (intercomLive.liveEnabled() && org?.intercomOrg) {
+    if (intercomLive.liveEnabled() && eff.intercomOrg) {
       const cacheKey = `${orgSlug}:support:${query.start}:${query.end}`;
       const cached = getCached(cacheKey);
       if (cached) return cached;
       try {
-        const rows = await intercomLive.liveSupportRows(org, query);
+        const rows = await intercomLive.liveSupportRows(eff, query);
         console.log(`[DATA] ${orgSlug}/support: ${rows.length} rows (intercom LIVE)`);
         setCache(cacheKey, rows, 15 * 60 * 1000);
         return rows;
@@ -466,6 +493,10 @@ app.get('/admin/api/orgs', adminAuth, (req, res) => {
       theme: config?.theme || 'dark',
       cacheTTL: config?.cacheTTL || 15,
       toggles: config?.toggles || { ai: true, reportLinks: false, aiBriefing: false, emailDigest: false },
+      support: supportSettings(slug).enabled,
+      supportNotify: supportSettings(slug).notify,
+      supportReadOnly: !!org.supportReadOnly,
+      supportLockedOn: !!org.intercomOrg, // code-level mapping — toggle can't turn it off
       updatedAt: config?.updatedAt || null,
     };
   });
@@ -541,7 +572,49 @@ app.post('/admin/api/orgs/:slug/toggles', adminAuth, (req, res) => {
   dashboardConfigs[slug].toggles = { ...dashboardConfigs[slug].toggles, ...req.body };
   dashboardConfigs[slug].updatedAt = new Date().toISOString();
   saveAllConfigs(dashboardConfigs);
+  // Enabling support spins up the org's routing tag in Intercom right away
+  if (req.body.support === true && intercomLive.liveEnabled()) {
+    intercomLive.ensureOrgTags(ORGS).then(t => console.log(`[intercom] tags ensured after enabling support for ${slug}`))
+      .catch(e => console.error('[intercom] tag provisioning failed:', e.message));
+  }
   res.json({ ok: true, toggles: dashboardConfigs[slug].toggles });
+});
+
+// ── Escalation recipients — one stored list, editable from both sides ──
+function parseNotifyEmails(body) {
+  const raw = Array.isArray(body?.emails) ? body.emails : String(body?.emails || '').split(',');
+  const emails = [...new Set(raw.map(e => String(e).trim().toLowerCase()).filter(Boolean))];
+  if (emails.length > 10) return { error: 'Max 10 recipients' };
+  for (const e of emails) if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) return { error: `Invalid email: ${e}` };
+  return { emails };
+}
+
+function setSupportNotify(slug, emails) {
+  if (!dashboardConfigs[slug]) dashboardConfigs[slug] = {};
+  dashboardConfigs[slug].supportNotify = emails;
+  dashboardConfigs[slug].updatedAt = new Date().toISOString();
+  saveAllConfigs(dashboardConfigs);
+}
+
+// Rec side (admin panel)
+app.post('/admin/api/orgs/:slug/support-notify', adminAuth, (req, res) => {
+  const { slug } = req.params;
+  if (!ORGS[slug]) return res.status(404).json({ error: 'Not found' });
+  const parsed = parseNotifyEmails(req.body);
+  if (parsed.error) return res.status(400).json({ ok: false, error: parsed.error });
+  setSupportNotify(slug, parsed.emails);
+  console.log(`[support] ${slug}: escalation recipients set via admin → ${parsed.emails.join(', ') || '(none)'}`);
+  res.json({ ok: true, emails: parsed.emails });
+});
+
+// Org side (their dashboard's notification settings)
+app.post('/:org/api/support/notify-emails', authMiddleware, (req, res) => {
+  const parsed = parseNotifyEmails(req.body);
+  if (parsed.error) return res.status(400).json({ ok: false, error: parsed.error });
+  setSupportNotify(req.orgSlug, parsed.emails);
+  track_server(req.orgSlug, 'support_notify_updated', { count: parsed.emails.length });
+  console.log(`[support] ${req.orgSlug}: escalation recipients set by org → ${parsed.emails.join(', ') || '(none)'}`);
+  res.json({ ok: true, emails: parsed.emails });
 });
 
 // ── POST /admin/api/orgs — add new org via admin panel ───────────────
@@ -718,13 +791,14 @@ app.get('/:org/api/data/:reportType', authMiddleware, async (req, res) => {
 // List: live Intercom when INTERCOM_ACCESS_TOKEN is set, snapshot otherwise.
 app.get('/:org/api/support/inbox', authMiddleware, async (req, res) => {
   const org = ORGS[req.orgSlug];
+  const eff = effectiveSupportOrg(req.orgSlug);
   const query = { start: req.query.start || new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10), end: req.query.end };
-  if (intercomLive.liveEnabled() && org?.intercomOrg) {
+  if (intercomLive.liveEnabled() && eff.intercomOrg) {
     const cacheKey = `${req.orgSlug}:support-inbox:${query.start}:${query.end}`;
     const cached = getCached(cacheKey);
     if (cached) return res.json({ conversations: cached, live: true });
     try {
-      const list = await intercomLive.liveSupportInbox(org, query, req.orgSlug);
+      const list = await intercomLive.liveSupportInbox(eff, query, req.orgSlug);
       console.log(`[DATA] ${req.orgSlug}/support-inbox: ${list.length} conversations (intercom LIVE)`);
       setCache(cacheKey, list, 5 * 60 * 1000);
       return res.json({ conversations: list, live: true });
@@ -739,12 +813,13 @@ app.get('/:org/api/support/inbox', authMiddleware, async (req, res) => {
 
 app.get('/:org/api/support/inbox/:id', authMiddleware, async (req, res) => {
   const org = ORGS[req.orgSlug];
-  if (intercomLive.liveEnabled() && org?.intercomOrg) {
+  const eff = effectiveSupportOrg(req.orgSlug);
+  if (intercomLive.liveEnabled() && eff.intercomOrg) {
     const cacheKey = `${req.orgSlug}:support-thread:${req.params.id}`;
     const cached = getCached(cacheKey);
     if (cached) return res.json({ conversation: cached, live: true });
     try {
-      const thread = await intercomLive.liveSupportThread(org, req.params.id, req.orgSlug);
+      const thread = await intercomLive.liveSupportThread(eff, req.params.id, req.orgSlug);
       if (thread) { setCache(cacheKey, thread, 5 * 60 * 1000); return res.json({ conversation: thread, live: true }); }
       return res.status(404).json({ error: 'Conversation not found' });
     } catch (e) {
@@ -762,10 +837,11 @@ app.post('/:org/api/support/inbox/:id/forward', authMiddleware, async (req, res)
   const { to, note } = req.body || {};
   if (!to || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) return res.status(400).json({ ok: false, error: 'Valid "to" email required' });
   const org = ORGS[req.orgSlug];
+  const eff = effectiveSupportOrg(req.orgSlug);
   if (org?.supportReadOnly) return res.status(403).json({ ok: false, error: 'Support actions are disabled for this org while the feature is in testing' });
   let thread = null;
-  if (intercomLive.liveEnabled() && org?.intercomOrg) {
-    try { thread = await intercomLive.liveSupportThread(org, req.params.id, req.orgSlug); } catch (e) { /* fall through to snapshot */ }
+  if (intercomLive.liveEnabled() && eff.intercomOrg) {
+    try { thread = await intercomLive.liveSupportThread(eff, req.params.id, req.orgSlug); } catch (e) { /* fall through to snapshot */ }
   }
   if (!thread) thread = getSupportThread(req.orgSlug, req.params.id);
   if (!thread) return res.status(404).json({ ok: false, error: 'Conversation not found' });
@@ -831,11 +907,12 @@ app.post('/:org/api/support/inbox/:id/status', authMiddleware, async (req, res) 
   const { status, note } = req.body || {};
   if (!['resolved', 'no_action', 'reopen'].includes(status)) return res.status(400).json({ ok: false, error: 'Invalid status' });
   const org = ORGS[req.orgSlug];
+  const eff = effectiveSupportOrg(req.orgSlug);
   if (org?.supportReadOnly) return res.status(403).json({ ok: false, error: 'Support actions are disabled for this org while the feature is in testing' });
-  if (!intercomLive.liveEnabled() || !org?.intercomOrg) return res.status(503).json({ ok: false, error: 'Live Intercom not configured' });
+  if (!intercomLive.liveEnabled() || !eff.intercomOrg) return res.status(503).json({ ok: false, error: 'Live Intercom not configured' });
   try {
     // Access check: only conversations visible to this org can be acted on
-    const thread = await intercomLive.liveSupportThread(org, req.params.id, req.orgSlug);
+    const thread = await intercomLive.liveSupportThread(eff, req.params.id, req.orgSlug);
     if (!thread) return res.status(404).json({ ok: false, error: 'Conversation not found' });
     const result = await intercomLive.markOrgStatus(req.params.id, status, { orgName: org.name, note });
     cache.delete(`${req.orgSlug}:support-thread:${req.params.id}`);
@@ -856,10 +933,11 @@ app.post('/:org/api/support/inbox/:id/note', authMiddleware, async (req, res) =>
   if (!text) return res.status(400).json({ ok: false, error: 'Note text required' });
   if (text.length > 4000) return res.status(400).json({ ok: false, error: 'Note too long (4000 chars max)' });
   const org = ORGS[req.orgSlug];
+  const eff = effectiveSupportOrg(req.orgSlug);
   if (org?.supportReadOnly) return res.status(403).json({ ok: false, error: 'Support actions are disabled for this org while the feature is in testing' });
-  if (!intercomLive.liveEnabled() || !org?.intercomOrg) return res.status(503).json({ ok: false, error: 'Live Intercom not configured' });
+  if (!intercomLive.liveEnabled() || !eff.intercomOrg) return res.status(503).json({ ok: false, error: 'Live Intercom not configured' });
   try {
-    const thread = await intercomLive.liveSupportThread(org, req.params.id, req.orgSlug);
+    const thread = await intercomLive.liveSupportThread(eff, req.params.id, req.orgSlug);
     if (!thread) return res.status(404).json({ ok: false, error: 'Conversation not found' });
     await intercomLive.addOrgNote(req.params.id, { orgName: org.name, text });
     cache.delete(`${req.orgSlug}:support-thread:${req.params.id}`);
@@ -877,11 +955,13 @@ app.get('/:org/api/config', authMiddleware, async (req, res) => {
   // Also send available report types for this org
   const availableReports = {};
   const org = ORGS[req.orgSlug];
+  const eff = effectiveSupportOrg(req.orgSlug);
   for (const [r, uuid] of Object.entries(org.reports || {})) availableReports[r] = true;
   for (const [r, uuid] of Object.entries(SHARED_UUIDS)) availableReports[r] = true;
   // Support is Intercom-backed — offered to orgs with a snapshot, or any
   // org with a live Intercom mapping when the token is configured
-  if (getSupportRows(req.orgSlug) || (intercomLive.liveEnabled() && org.intercomOrg)) availableReports.support = true;
+  const ss = supportSettings(req.orgSlug);
+  if (getSupportRows(req.orgSlug) || (intercomLive.liveEnabled() && ss.enabled)) availableReports.support = true;
   // Fetch report visibility from rental-report
   let reportVisibility = null;
   try {
@@ -895,6 +975,7 @@ app.get('/:org/api/config', authMiddleware, async (req, res) => {
     toggles: config?.toggles || { ai: true, reportLinks: false, aiBriefing: false, emailDigest: false },
     reportingBaseUrl: REPORTING_BASE_URL,
     supportReadOnly: !!org.supportReadOnly,
+    supportNotify: ss.notify,
     reportVisibility: reportVisibility?.available || null });
 });
 
@@ -1409,13 +1490,14 @@ async function pollEscalations() {
       // those attributes are synced from the Rec app, not editable in
       // Intercom). Otherwise route by the author's contact attributes.
       // Unmatched conversations are skipped but stay eligible for later.
+      const candidates = Object.keys(ORGS).map(slug => [slug, supportSettings(slug)])
+        .filter(([slug, c]) => c.enabled && c.notify.length && !c.readOnly);
       const match =
-        Object.entries(ORGS).find(([slug, o]) =>
-          o.supportNotify?.length && intercomLive.hasOrgRouteTag(conv, slug, o)) ||
-        Object.entries(ORGS).find(([slug, o]) =>
-          o.intercomOrg && o.supportNotify?.length && attrs.Organization === o.intercomOrg && attrs.user_role === 'user');
+        candidates.find(([slug]) => intercomLive.hasOrgRouteTag(conv, slug, ORGS[slug])) ||
+        candidates.find(([slug, c]) => attrs.Organization === c.intercomOrg && attrs.user_role === 'user');
       if (!match) continue;
-      const [orgSlug, org] = match;
+      const [orgSlug, matchSettings] = match;
+      const org = { ...ORGS[orgSlug], supportNotify: matchSettings.notify };
       const { _first, ...entry } = intercomLive.toInboxEntry(conv);
       await sendEscalationEmail(orgSlug, org, entry);
       markNotified(conv.id);
@@ -1453,8 +1535,9 @@ app.listen(PORT, () => {
     setTimeout(async () => {
       const rolling = { start: new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10) };
       const month = getMonthRangeServer();
-      for (const [slug, org] of Object.entries(ORGS)) {
-        if (!org.intercomOrg) continue;
+      for (const slug of Object.keys(ORGS)) {
+        if (!supportSettings(slug).enabled) continue;
+        const org = effectiveSupportOrg(slug);
         for (const q of [rolling, month]) {
           try {
             const rows = await intercomLive.liveSupportRows(org, q);
