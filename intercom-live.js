@@ -251,7 +251,10 @@ async function liveSupportInbox(org, query, orgSlug) {
       const seen = new Set(convs.map(c => String(c.id)));
       const tagged = await liveEscalatedConversations();
       for (const { conv } of tagged || []) {
-        if (hasOrgRouteTag(conv, orgSlug, org) && !seen.has(String(conv.id))) convs.push(conv);
+        if (hasOrgRouteTag(conv, orgSlug, org) && !seen.has(String(conv.id))) {
+          convs.push(conv);
+          seen.add(String(conv.id)); // guard against duplicate rows from the tag search
+        }
       }
     } catch (e) { /* override merge is best-effort */ }
   }
@@ -444,7 +447,10 @@ async function liveEscalatedConversations() {
   };
   const page = await ic('/conversations/search', { method: 'POST', body: JSON.stringify(body) });
   const out = [];
+  const emitted = new Set(); // tag_ids IN [...] returns one row PER matching tag — dedupe
   for (const c of page.conversations || []) {
+    if (emitted.has(String(c.id))) continue;
+    emitted.add(String(c.id));
     const author = c.source?.author;
     if (author?.type !== 'user' || !author.id) continue;
     // Fetch fresh (no cache): escalation routing must see attribute edits
