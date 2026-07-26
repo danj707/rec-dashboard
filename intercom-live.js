@@ -220,6 +220,10 @@ const ORG_ESCALATED_TAG = 'Org Escalated';
 // Applied when org staff mark an escalated conversation done from their
 // dashboard — closes the loop back to Rec CS inside Intercom.
 const ORG_RESOLVED_TAG = 'Org Resolved';
+
+// Applied by Rec staff in Intercom to (re-)send the escalation email to the
+// org — the poller sends and then removes the tag, so it's repeatable.
+const ORG_NOTIFY_TAG = 'Org Notify';
 function hasTagNamed(c, name) { return (c.tags?.tags || []).some(t => t.name === name); }
 
 // Explicit routing override: a conversation tagged for a specific org
@@ -345,8 +349,12 @@ async function liveSupportThread(org, id, orgSlug) {
     if (!text || text === '[Conversation Rating Request]') continue;
     // Rec-internal notes are private. The only notes shown back are the
     // dashboard-originated ones (org's own notes + escalation audit trail).
-    if (p.part_type === 'note' && !ORG_VISIBLE_NOTE.test(text)) continue;
-    messages.push({ role: partRole(p), name: p.author?.name || '', at: p.created_at, text });
+    let display = text;
+    if (p.part_type === 'note') {
+      if (ORG_ADDRESSED_NOTE.test(text)) display = '💬 ' + text.replace(ORG_ADDRESSED_NOTE, '');
+      else if (!ORG_VISIBLE_NOTE.test(text)) continue;
+    }
+    messages.push({ role: partRole(p), name: p.author?.name || '', at: p.created_at, text: display });
   }
   const { _first, ...rest } = entry;
   return { ...rest, messages };
@@ -461,6 +469,9 @@ async function addOrgNote(conversationId, { orgName, text }) {
 // the org is allowed to see back (their own audit trail). Everything else
 // stays Rec-internal.
 const ORG_VISIBLE_NOTE = /^(💬|📤|✅|⛔|🔄)/;
+// Rec staff can deliberately surface a note to the org by starting it with
+// "@org" in Intercom — shown in the org's thread with the prefix stripped.
+const ORG_ADDRESSED_NOTE = /^@org\b[:,]?\s*/i;
 
 async function markEscalatedToOrg(conversationId, { orgName, to, note }) {
   if (!liveEnabled()) return false;
@@ -496,7 +507,7 @@ let _routingTagIds = { ids: null, at: 0 };
 async function getRoutingTagIds() {
   if (_routingTagIds.ids && Date.now() - _routingTagIds.at < 10 * 60 * 1000) return _routingTagIds.ids;
   const res = await ic('/tags');
-  const ids = (res.data || []).filter(t => isRoutingTagName(t.name)).map(t => t.id);
+  const ids = (res.data || []).filter(t => isRoutingTagName(t.name) || t.name === ORG_NOTIFY_TAG).map(t => t.id);
   _routingTagIds = { ids, at: Date.now() };
   return ids;
 }
@@ -536,7 +547,7 @@ async function liveEscalatedConversations() {
 // on every boot; newly onboarded orgs get their tag automatically.
 async function ensureOrgTags(orgs) {
   if (!liveEnabled()) return [];
-  const names = [ORG_ESCALATED_TAG, ORG_RESOLVED_TAG];
+  const names = [ORG_ESCALATED_TAG, ORG_RESOLVED_TAG, ORG_NOTIFY_TAG];
   for (const org of Object.values(orgs)) {
     const label = org.city || org.name;
     if (label) names.push(`${ORG_ESCALATED_TAG}: ${label}`);
@@ -553,4 +564,15 @@ async function ensureOrgTags(orgs) {
   return ensured;
 }
 
-module.exports = { liveEnabled, liveSupportRows, liveSupportInbox, liveSupportThread, markEscalatedToOrg, markOrgStatus, addOrgNote, liveEscalatedConversations, toInboxEntry, hasOrgRouteTag, hasTagNamed, ensureOrgTags, getActingAdminId, ORG_ESCALATED_TAG, ORG_RESOLVED_TAG };
+// Remove the Org Notify tag after a ping is delivered so the tag acts as
+// a repeatable button rather than a permanent state.
+async function clearNotifyTag(conversationId) {
+  const adminId = await getActingAdminId();
+  const res = await ic('/tags');
+  const tag = (res.data || []).find(t => t.name === ORG_NOTIFY_TAG);
+  if (!tag || !adminId) return false;
+  await ic(`/conversations/${conversationId}/tags/${tag.id}`, { method: 'DELETE', body: JSON.stringify({ admin_id: adminId }) });
+  return true;
+}
+
+module.exports = { liveEnabled, liveSupportRows, liveSupportInbox, liveSupportThread, markEscalatedToOrg, markOrgStatus, addOrgNote, liveEscalatedConversations, toInboxEntry, hasOrgRouteTag, hasTagNamed, ensureOrgTags, getActingAdminId, clearNotifyTag, ORG_ESCALATED_TAG, ORG_RESOLVED_TAG, ORG_NOTIFY_TAG };

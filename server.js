@@ -1482,8 +1482,13 @@ async function pollEscalations() {
     if (!tagged) return;
     const notified = loadNotified();
     for (const { conv, contact } of tagged) {
-      if (notified.has(String(conv.id))) continue;
-      if (intercomLive.hasTagNamed(conv, intercomLive.ORG_RESOLVED_TAG)) continue; // org already handled it
+      // "Org Notify" is an explicit re-ping: bypasses the notified-set and
+      // the resolved-skip, and the tag is removed after sending.
+      const isPing = intercomLive.hasTagNamed(conv, intercomLive.ORG_NOTIFY_TAG);
+      if (!isPing) {
+        if (notified.has(String(conv.id))) continue;
+        if (intercomLive.hasTagNamed(conv, intercomLive.ORG_RESOLVED_TAG)) continue; // org already handled it
+      }
       const attrs = contact.custom_attributes || {};
       // Routing: an explicit org:<slug> tag wins (staff override for
       // conversations whose author has missing/wrong Organization data —
@@ -1501,6 +1506,12 @@ async function pollEscalations() {
       const { _first, ...entry } = intercomLive.toInboxEntry(conv);
       await sendEscalationEmail(orgSlug, org, entry);
       markNotified(conv.id);
+      if (isPing) {
+        try { await intercomLive.clearNotifyTag(conv.id); }
+        catch (e) { console.error('[notify] failed to clear Org Notify tag:', e.message); }
+        // the tag change should reflect in the org inbox promptly
+        for (const key of cache.keys()) if (key.startsWith(`${orgSlug}:support-`)) cache.delete(key);
+      }
       track_server(orgSlug, 'support_escalation_notified', { conversationId: String(conv.id), recipients: org.supportNotify.length });
       console.log(`[notify] ${orgSlug}: escalation email sent for conversation ${conv.id} → ${org.supportNotify.join(', ')}`);
     }
