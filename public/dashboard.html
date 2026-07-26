@@ -2194,6 +2194,8 @@ function SupportInbox({ actionsDisabled, onConversationSeen, notifyEmails, dateR
   const [thread, setThread] = useState(null);
   const [isLive, setIsLive] = useState(false);
   const [filter, setFilter] = useState('all'); // all | open | closed
+  const [search, setSearch] = useState('');
+  const [sort, setSort] = useState('newest'); // newest | oldest | activity
   const [forwardOpen, setForwardOpen] = useState(false);
   const [statusOpen, setStatusOpen] = useState(false);
   const [statusBusy, setStatusBusy] = useState(false);
@@ -2275,7 +2277,17 @@ function SupportInbox({ actionsDisabled, onConversationSeen, notifyEmails, dateR
     </div>
   );
 
-  const shown = convs.filter(c => filter === 'all' || c.state === filter);
+  const q = search.trim().toLowerCase();
+  const SORTS = {
+    newest: (a, b) => b.createdAt - a.createdAt,
+    oldest: (a, b) => a.createdAt - b.createdAt,
+    activity: (a, b) => b.updatedAt - a.updatedAt,
+  };
+  const shown = convs
+    .filter(c => filter === 'all' || c.state === filter)
+    .filter(c => !q || [c.subject, c.contact.name, c.contact.email, c.topic, c.preview]
+      .some(v => (v || '').toLowerCase().includes(q)))
+    .sort(SORTS[sort] || SORTS.newest);
   const openCount = convs.filter(c => c.state === 'open').length;
 
   return (
@@ -2291,12 +2303,20 @@ function SupportInbox({ actionsDisabled, onConversationSeen, notifyEmails, dateR
         {!IS_SHARE && <NotifySettings initialEmails={notifyEmails} />}
         <span className="section-badge">{convs.length} conversations {'·'} {openCount} open</span>
       </div>
-      <div style={{display:'flex',gap:6,margin:'10px 0'}}>
+      <div style={{display:'flex',gap:6,margin:'10px 0',alignItems:'center',flexWrap:'wrap'}}>
         {['all','open','closed'].map(f => (
           <button key={f} className={`btn-quick ${filter===f?'active':''}`} onClick={()=>setFilter(f)}>
             {f === 'all' ? `All (${convs.length})` : f === 'open' ? `Open (${openCount})` : `Closed (${convs.length - openCount})`}
           </button>
         ))}
+        <input type="search" className="date-input" style={{flex:'1 1 160px',minWidth:140,maxWidth:280}}
+          placeholder="🔍 Search name, subject, topic…" value={search} onChange={e => setSearch(e.target.value)} />
+        <select className="date-input" style={{cursor:'pointer'}} value={sort} onChange={e => { setSort(e.target.value); track('support_sort_changed', { sort: e.target.value }); }}>
+          <option value="newest">Newest first</option>
+          <option value="oldest">Oldest first</option>
+          <option value="activity">Recent activity</option>
+        </select>
+        {q && <span style={{fontSize:11,color:'var(--text-muted)'}}>{shown.length} match{shown.length === 1 ? '' : 'es'}</span>}
       </div>
       <div className="inbox-wrap">
         <div className="inbox-list">
@@ -2319,7 +2339,7 @@ function SupportInbox({ actionsDisabled, onConversationSeen, notifyEmails, dateR
               </div>
             </div>
           ))}
-          {!shown.length && <div style={{padding:20,fontSize:12,color:'var(--text-muted)'}}>No {filter} conversations.</div>}
+          {!shown.length && <div style={{padding:20,fontSize:12,color:'var(--text-muted)'}}>{q ? `No matches for “${search.trim()}”.` : `No ${filter} conversations.`}</div>}
         </div>
         <div className="inbox-thread">
           {thread ? (
