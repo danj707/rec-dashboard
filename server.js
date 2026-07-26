@@ -1354,7 +1354,7 @@ async function pollEscalations() {
       // Unmatched conversations are skipped but stay eligible for later.
       const match =
         Object.entries(ORGS).find(([slug, o]) =>
-          o.supportNotify?.length && intercomLive.hasTag(conv, intercomLive.orgTagName(slug))) ||
+          o.supportNotify?.length && intercomLive.hasOrgRouteTag(conv, slug, o)) ||
         Object.entries(ORGS).find(([slug, o]) =>
           o.intercomOrg && o.supportNotify?.length && attrs.Organization === o.intercomOrg && attrs.user_role === 'user');
       if (!match) continue;
