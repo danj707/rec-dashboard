@@ -862,7 +862,7 @@ app.post('/:org/api/support/inbox/:id/forward', authMiddleware, async (req, res)
       <h2 style="font-size:16px;margin:0 0 2px 0">${esc(thread.subject)}</h2>
       <p style="font-size:12px;color:#777;margin:0 0 16px 0">${esc(thread.contact.name)} &lt;${esc(thread.contact.email)}&gt; · ${thread.channel} · ${esc(thread.topic)} · ${thread.state}</p>
       ${msgsHtml}
-      <p style="font-size:11px;color:#999;margin-top:20px">Handled by Rec Support on behalf of ${esc(org.name)}. Reply to the resident directly at ${esc(thread.contact.email)} if follow-up is needed.</p>
+      <p style="font-size:11px;color:#999;margin-top:20px">Handled by Rec Support on behalf of ${esc(org.name)}. Hitting reply on this email goes straight to the resident — you'll be writing as yourself, not as Rec. Or start fresh: <a href="mailto:${encodeURIComponent(thread.contact.email)}?subject=${encodeURIComponent('Re: ' + thread.subject)}">email ${esc(thread.contact.email)}</a>.</p>
     </div>`;
   try {
     const resp = await fetch('https://api.resend.com/emails', {
@@ -871,6 +871,10 @@ app.post('/:org/api/support/inbox/:id/forward', authMiddleware, async (req, res)
       body: JSON.stringify({
         from: `${FROM_NAME} <${FROM_EMAIL}>`,
         to: [to],
+        // The whole point of forwarding is org staff replying to the
+        // resident as themselves — make "Reply" in their mail client
+        // address the resident, not Rec.
+        reply_to: thread.contact.email || undefined,
         subject: `[${org.name} Support] Fwd: ${thread.subject}`,
         html,
       }),
