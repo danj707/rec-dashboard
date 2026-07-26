@@ -1527,6 +1527,9 @@ app.listen(PORT, () => {
         const tags = await intercomLive.ensureOrgTags(ORGS);
         console.log(`[intercom] ensured ${tags.length} routing tag(s): ${tags.join(' | ')}`);
       } catch (e) { console.error('[intercom] tag provisioning failed:', e.message); }
+      // Resolve (and log) the acting teammate at boot so attribution
+      // issues show up in logs before anyone performs an action
+      try { await intercomLive.getActingAdminId(); } catch (e) { console.error('[intercom] admin lookup failed:', e.message); }
     }, 10000);
     // Pre-warm the support sweeps so the first visitor doesn't eat the
     // cold classification pass: rolling 30d (inbox default) + current month

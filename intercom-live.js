@@ -371,6 +371,8 @@ async function getActingAdminId() {
   if (_adminId) return _adminId;
   const res = await ic('/admins');
   const admins = res.admins || [];
+  // One-time roster dump so the right acting identity can be picked from logs
+  console.log(`[intercom] workspace teammates: ${admins.map(a => `${a.name} <${a.email}> (${a.id})`).join(' | ')}`);
   const service =
     admins.find(a => (a.email || '').toLowerCase() === 'support@rec.us') ||
     admins.find(a => /^rec support$/i.test((a.name || '').trim())) ||
@@ -551,4 +553,4 @@ async function ensureOrgTags(orgs) {
   return ensured;
 }
 
-module.exports = { liveEnabled, liveSupportRows, liveSupportInbox, liveSupportThread, markEscalatedToOrg, markOrgStatus, addOrgNote, liveEscalatedConversations, toInboxEntry, hasOrgRouteTag, hasTagNamed, ensureOrgTags, ORG_ESCALATED_TAG, ORG_RESOLVED_TAG };
+module.exports = { liveEnabled, liveSupportRows, liveSupportInbox, liveSupportThread, markEscalatedToOrg, markOrgStatus, addOrgNote, liveEscalatedConversations, toInboxEntry, hasOrgRouteTag, hasTagNamed, ensureOrgTags, getActingAdminId, ORG_ESCALATED_TAG, ORG_RESOLVED_TAG };
