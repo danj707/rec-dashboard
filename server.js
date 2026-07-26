@@ -1382,5 +1382,12 @@ app.listen(PORT, () => {
     console.log('[notify] escalation notifier active — polling Intercom every 3 minutes');
     setTimeout(pollEscalations, 15000);
     setInterval(pollEscalations, 3 * 60 * 1000);
+    // Provision routing tags so they're ready in the Intercom tag picker
+    setTimeout(async () => {
+      try {
+        const tags = await intercomLive.ensureOrgTags(ORGS);
+        console.log(`[intercom] ensured ${tags.length} routing tag(s): ${tags.join(' | ')}`);
+      } catch (e) { console.error('[intercom] tag provisioning failed:', e.message); }
+    }, 10000);
   }
 });

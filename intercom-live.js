@@ -346,4 +346,28 @@ async function liveEscalatedConversations() {
   return out;
 }
 
-module.exports = { liveEnabled, liveSupportRows, liveSupportInbox, liveSupportThread, markEscalatedToOrg, liveEscalatedConversations, toInboxEntry, hasOrgRouteTag, ORG_ESCALATED_TAG };
+// ── Tag provisioning ──
+// Create the routing tags in Intercom so they're waiting in the tag picker:
+// the base "Org Escalated" plus "Org Escalated: <City>" for every configured
+// org. POST /tags is create-or-return, so this is idempotent and safe to run
+// on every boot; newly onboarded orgs get their tag automatically.
+async function ensureOrgTags(orgs) {
+  if (!liveEnabled()) return [];
+  const names = [ORG_ESCALATED_TAG];
+  for (const org of Object.values(orgs)) {
+    const label = org.city || org.name;
+    if (label) names.push(`${ORG_ESCALATED_TAG}: ${label}`);
+  }
+  const ensured = [];
+  for (const name of names) {
+    try {
+      await ic('/tags', { method: 'POST', body: JSON.stringify({ name }) });
+      ensured.push(name);
+    } catch (e) {
+      console.error(`[intercom] ensure tag "${name}" failed:`, e.message);
+    }
+  }
+  return ensured;
+}
+
+module.exports = { liveEnabled, liveSupportRows, liveSupportInbox, liveSupportThread, markEscalatedToOrg, liveEscalatedConversations, toInboxEntry, hasOrgRouteTag, ensureOrgTags, ORG_ESCALATED_TAG };
