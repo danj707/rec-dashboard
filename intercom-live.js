@@ -288,22 +288,25 @@ async function liveSupportThread(org, id, orgSlug) {
 // caller's to log, never to surface to the org admin.
 
 // Intercom attributes every API action (notes, closes, tags) to a real
-// teammate — names can't be invented. Selection order:
+// teammate — names can't be invented, and teammates must be tied to real
+// accounts. Selection order:
 //   1. INTERCOM_ADMIN_ID env (pin an exact teammate)
-//   2. a teammate whose name looks like a dashboard service account
-//      (e.g. "Org Dashboard", "Rec Dashboard", "Dashboard Bot")
-//   3. first workspace admin (fallback — shows up as that person)
-// Create a lite-seat teammate named "Org Dashboard" and it's picked up
-// automatically on the next restart, no config needed.
+//   2. the shared support identity: teammate with email support@rec.us
+//      or named "Rec Support" — actions read "Rec Support closed the
+//      conversation", with the org named in the note body
+//   3. a dashboard-ish service teammate, then first admin (fallbacks)
 let _adminId = null;
 async function getActingAdminId() {
   if (process.env.INTERCOM_ADMIN_ID) return process.env.INTERCOM_ADMIN_ID;
   if (_adminId) return _adminId;
   const res = await ic('/admins');
   const admins = res.admins || [];
-  const service = admins.find(a => /(org|rec)?\s*dashboard/i.test(a.name || ''));
+  const service =
+    admins.find(a => (a.email || '').toLowerCase() === 'support@rec.us') ||
+    admins.find(a => /^rec support$/i.test((a.name || '').trim())) ||
+    admins.find(a => /(org|rec)?\s*dashboard/i.test(a.name || ''));
   _adminId = (service || admins[0])?.id;
-  if (service) console.log(`[intercom] acting as service teammate "${service.name}" (${service.id})`);
+  console.log(`[intercom] acting as teammate "${(service || admins[0])?.name}" (${_adminId})${service ? '' : ' — no support@rec.us/Rec Support teammate found, using first admin'}`);
   return _adminId;
 }
 
