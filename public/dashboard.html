@@ -150,6 +150,9 @@ body { font-family: var(--font-body); background: var(--bg-page); color: var(--t
 .g-tab:hover { color: var(--text-primary); }
 .g-tab.active { color: var(--amber); border-bottom-color: var(--amber); }
 .g-tab .tab-count { font-size: 10px; font-weight: 700; background: var(--amber); color: #000; border-radius: 9px; padding: 1px 7px; }
+.g-tab .tab-alert { font-size: 10px; font-weight: 800; background: #ef4444; color: #fff; border-radius: 9px;
+  min-width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; padding: 0 5px;
+  box-shadow: 0 0 0 2px var(--bg-main, transparent); }
 
 /* ── Support Inbox ── */
 .inbox-wrap { display: grid; grid-template-columns: 340px 1fr; gap: 14px; min-height: 480px; }
@@ -2142,7 +2145,7 @@ function ForwardModal({ conv, onClose, onSent }) {
   );
 }
 
-function SupportInbox({ actionsDisabled }) {
+function SupportInbox({ actionsDisabled, onConversationSeen }) {
   const [convs, setConvs] = useState(null);
   const [selectedId, setSelectedId] = useState(null);
   const [thread, setThread] = useState(null);
@@ -2169,6 +2172,7 @@ function SupportInbox({ actionsDisabled }) {
     setThread(null);
     fetch(`/${ORG_SLUG}/api/support/inbox/${selectedId}?token=${TOKEN}`).then(r => r.json())
       .then(json => setThread(json.conversation || null)).catch(() => {});
+    if (onConversationSeen) onConversationSeen(selectedId); // shrink the tab's escalation badge
     track('support_thread_viewed', { conversationId: selectedId });
   }, [selectedId]);
 
@@ -2271,11 +2275,11 @@ function SupportInbox({ actionsDisabled }) {
   );
 }
 
-function SupportTab({ reportData, loading, targets, onTargetChange, dateRange, aiEnabled, supportReadOnly }) {
+function SupportTab({ reportData, loading, targets, onTargetChange, dateRange, aiEnabled, supportReadOnly, onConversationSeen }) {
   // Inbox first — the conversations are the headline; metrics follow below.
   return (
     <React.Fragment>
-      <SupportInbox actionsDisabled={supportReadOnly} />
+      <SupportInbox actionsDisabled={supportReadOnly} onConversationSeen={onConversationSeen} />
       <SectionBlock sectionId="support" widgetIds={SECTIONS.support.defaultWidgets} reportData={reportData} loading={loading}
         targets={targets} onTargetChange={onTargetChange} dateRange={dateRange} aiEnabled={aiEnabled}
         reportLinksEnabled={false} reportingBaseUrl="" />
@@ -2338,6 +2342,31 @@ function DashboardApp() {
   const [editOpen, setEditOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState(params.get('tab') === 'support' ? 'support' : 'dashboard');
+
+  // ── Escalation badge: red count on the Customer Support tab ──
+  // Counts escalated conversations this browser hasn't opened yet; viewing
+  // a thread marks it seen (localStorage) and the badge shrinks.
+  const [supportConvs, setSupportConvs] = useState(null);
+  const [seenBump, setSeenBump] = useState(0);
+  const SEEN_KEY = `rec-support-seen-${ORG_SLUG}`;
+  const getSeen = () => { try { return new Set(JSON.parse(localStorage.getItem(SEEN_KEY) || '[]')); } catch (e) { return new Set(); } };
+  const markConversationSeen = useCallback(id => {
+    const seen = getSeen();
+    if (seen.has(id)) return;
+    seen.add(id);
+    try { localStorage.setItem(SEEN_KEY, JSON.stringify([...seen])); } catch (e) {}
+    setSeenBump(b => b + 1);
+  }, []);
+  useEffect(() => {
+    if (!availableReports.support || IS_SHARE || IS_PRINT) return;
+    fetch(`/${ORG_SLUG}/api/support/inbox?token=${TOKEN}`).then(r => r.json())
+      .then(json => setSupportConvs(json.conversations || [])).catch(() => {});
+  }, [availableReports.support]);
+  const escalationBadge = (() => {
+    if (!supportConvs) return 0;
+    const seen = getSeen();
+    return supportConvs.filter(c => c.orgEscalated && !seen.has(c.id)).length;
+  })();
   const [lastRefresh, setLastRefresh] = useState(null);
   const [theme, setTheme] = useState('light');
   const [targets, setTargets] = useState({});
@@ -2541,7 +2570,9 @@ function DashboardApp() {
       {!IS_PRINT && availableReports.support && (
         <div className="g-tabs" style={{marginBottom:14}}>
           <button className={`g-tab ${activeTab==='dashboard'?'active':''}`} onClick={()=>{setActiveTab('dashboard');track('tab_changed',{tab:'dashboard'});}}>{'📊'} Dashboard</button>
-          <button className={`g-tab ${activeTab==='support'?'active':''}`} onClick={()=>{setActiveTab('support');track('tab_changed',{tab:'support'});}}>{'💬'} Customer Support</button>
+          <button className={`g-tab ${activeTab==='support'?'active':''}`} onClick={()=>{setActiveTab('support');track('tab_changed',{tab:'support'});}}>{'💬'} Customer Support
+            {escalationBadge > 0 && <span className="tab-alert" title={`${escalationBadge} escalated conversation${escalationBadge > 1 ? 's' : ''} awaiting review`}>{escalationBadge}</span>}
+          </button>
         </div>
       )}
 
@@ -2557,7 +2588,7 @@ function DashboardApp() {
         {!IS_PRINT && activeTab === 'support' && availableReports.support && (
           <SupportTab key={'support'+theme} reportData={reportData} loading={loading} targets={targets}
             onTargetChange={handleTargetChange} dateRange={dateRange} aiEnabled={!isReadOnly && orgMeta.toggles?.ai !== false}
-            supportReadOnly={orgMeta.supportReadOnly} />
+            supportReadOnly={orgMeta.supportReadOnly} onConversationSeen={markConversationSeen} />
         )}
       </div>
 
