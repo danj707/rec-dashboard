@@ -272,10 +272,12 @@ async function liveSupportThread(org, id, orgSlug) {
   const messages = [{ role: 'resident', name: entry.contact.name, at: c.created_at, text: entry._first }];
   for (const p of c.conversation_parts?.conversation_parts || []) {
     if (!p.body) continue;
-    // 'note' is deliberately excluded: internal Rec staff notes are private
-    if (!['comment', 'assignment', 'open'].includes(p.part_type)) continue;
+    if (!['comment', 'assignment', 'open', 'note'].includes(p.part_type)) continue;
     const text = stripHtml(p.body);
     if (!text || text === '[Conversation Rating Request]') continue;
+    // Rec-internal notes are private. The only notes shown back are the
+    // dashboard-originated ones (org's own notes + escalation audit trail).
+    if (p.part_type === 'note' && !ORG_VISIBLE_NOTE.test(text)) continue;
     messages.push({ role: partRole(p), name: p.author?.name || '', at: p.created_at, text });
   }
   const { _first, ...rest } = entry;
@@ -368,6 +370,28 @@ async function markOrgStatus(conversationId, status, { orgName, note }) {
   return { resolved: def.tagResolved, state: def.part === 'close' ? 'closed' : 'open' };
 }
 
+// Org staff write an internal note from their dashboard — visible to Rec CS
+// in Intercom (never to the resident). This is the org→Rec channel: "please
+// tell the resident X", "we approved this on our side", etc.
+async function addOrgNote(conversationId, { orgName, text }) {
+  const adminId = await getActingAdminId();
+  if (!adminId) throw new Error('No Intercom admin available');
+  const esc = s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
+  await ic(`/conversations/${conversationId}/reply`, {
+    method: 'POST',
+    body: JSON.stringify({
+      message_type: 'note', type: 'admin', admin_id: adminId,
+      body: `<p>💬 <b>Note from ${esc(orgName)} staff</b> (via their Rec dashboard):</p><p>${esc(text)}</p>`,
+    }),
+  });
+  return true;
+}
+
+// Dashboard-originated notes carry these markers; they're the only notes
+// the org is allowed to see back (their own audit trail). Everything else
+// stays Rec-internal.
+const ORG_VISIBLE_NOTE = /^(💬|📤|✅|⛔|🔄)/;
+
 async function markEscalatedToOrg(conversationId, { orgName, to, note }) {
   if (!liveEnabled()) return false;
   const adminId = await getActingAdminId();
@@ -456,4 +480,4 @@ async function ensureOrgTags(orgs) {
   return ensured;
 }
 
-module.exports = { liveEnabled, liveSupportRows, liveSupportInbox, liveSupportThread, markEscalatedToOrg, markOrgStatus, liveEscalatedConversations, toInboxEntry, hasOrgRouteTag, hasTagNamed, ensureOrgTags, ORG_ESCALATED_TAG, ORG_RESOLVED_TAG };
+module.exports = { liveEnabled, liveSupportRows, liveSupportInbox, liveSupportThread, markEscalatedToOrg, markOrgStatus, addOrgNote, liveEscalatedConversations, toInboxEntry, hasOrgRouteTag, hasTagNamed, ensureOrgTags, ORG_ESCALATED_TAG, ORG_RESOLVED_TAG };

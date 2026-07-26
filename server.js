@@ -849,6 +849,28 @@ app.post('/:org/api/support/inbox/:id/status', authMiddleware, async (req, res) 
   }
 });
 
+// Org staff add an internal note from their dashboard — Rec CS sees it in
+// Intercom; the resident never does. The org→Rec communication channel.
+app.post('/:org/api/support/inbox/:id/note', authMiddleware, async (req, res) => {
+  const text = (req.body?.text || '').trim();
+  if (!text) return res.status(400).json({ ok: false, error: 'Note text required' });
+  if (text.length > 4000) return res.status(400).json({ ok: false, error: 'Note too long (4000 chars max)' });
+  const org = ORGS[req.orgSlug];
+  if (org?.supportReadOnly) return res.status(403).json({ ok: false, error: 'Support actions are disabled for this org while the feature is in testing' });
+  if (!intercomLive.liveEnabled() || !org?.intercomOrg) return res.status(503).json({ ok: false, error: 'Live Intercom not configured' });
+  try {
+    const thread = await intercomLive.liveSupportThread(org, req.params.id, req.orgSlug);
+    if (!thread) return res.status(404).json({ ok: false, error: 'Conversation not found' });
+    await intercomLive.addOrgNote(req.params.id, { orgName: org.name, text });
+    cache.delete(`${req.orgSlug}:support-thread:${req.params.id}`);
+    track_server(req.orgSlug, 'support_note_added', { conversationId: req.params.id });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[support] note failed:', e.message);
+    res.status(502).json({ ok: false, error: e.message });
+  }
+});
+
 // --- Dashboard config ---
 app.get('/:org/api/config', authMiddleware, async (req, res) => {
   const config = dashboardConfigs[req.orgSlug] || null;
