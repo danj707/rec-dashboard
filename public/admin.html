@@ -167,6 +167,25 @@ async function toggleOrg(slug, key, value) {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body)
   });
+  // Support toggle reveals/hides the recipients field — re-render
+  if (key === 'support') location.reload();
+}
+
+async function saveNotify(slug) {
+  const input = document.getElementById('sn-' + slug);
+  const btn = document.getElementById('snb-' + slug);
+  const resp = await fetch('/admin/api/orgs/' + slug + '/support-notify', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ emails: input.value })
+  });
+  const json = await resp.json();
+  if (json.ok) {
+    input.value = (json.emails || []).join(', ');
+    btn.textContent = '✓ Saved'; btn.style.background = '#22c55e';
+  } else {
+    btn.textContent = json.error || 'Error'; btn.style.background = '#ef4444'; btn.style.color = '#fff';
+  }
+  setTimeout(() => { btn.textContent = 'Save'; btn.style.background = '#14b8a6'; btn.style.color = '#000'; }, 2500);
 }
 
 (async function() {
@@ -239,6 +258,25 @@ async function toggleOrg(slug, key, value) {
                   <input type="checkbox" ${o.toggles.emailDigest ? 'checked' : ''} onchange="toggleOrg('${o.slug}','emailDigest',this.checked)" style="accent-color:#06b6d4;width:16px;height:16px">
                   <span>\uD83D\uDCE7 Email Digest</span>
                 </label>
+              </div>
+              <div style="margin-top:10px;padding-top:10px;border-top:1px solid #1e1e1e">
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                  <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:#aaa;cursor:${o.supportLockedOn ? 'default' : 'pointer'}">
+                    <input type="checkbox" ${o.support ? 'checked' : ''} ${o.supportLockedOn ? 'disabled' : ''} onchange="toggleOrg('${o.slug}','support',this.checked)" style="accent-color:#14b8a6;width:16px;height:16px">
+                    <span>\uD83D\uDCAC Customer Support</span>
+                  </label>
+                  ${o.supportLockedOn ? '<span style="font-size:10px;color:#14b8a6;background:rgba(20,184,166,0.12);padding:2px 8px;border-radius:8px">enabled in code</span>' : ''}
+                  ${o.supportReadOnly ? '<span style="font-size:10px;color:#f59e0b;background:rgba(245,158,11,0.12);padding:2px 8px;border-radius:8px">\uD83D\uDD12 read-only (testing)</span>' : ''}
+                </div>
+                ${o.support ? `
+                <div style="display:flex;gap:6px;margin-top:8px;align-items:center">
+                  <input id="sn-${o.slug}" type="text" placeholder="escalation emails, comma-separated" value="${(o.supportNotify || []).join(', ')}"
+                    style="flex:1;background:#111;border:1px solid #2a2a2a;border-radius:6px;padding:6px 10px;font-size:11px;color:#ddd;font-family:inherit">
+                  <button id="snb-${o.slug}" onclick="saveNotify('${o.slug}')"
+                    style="background:#14b8a6;color:#000;border:none;border-radius:6px;padding:6px 12px;font-size:11px;font-weight:600;cursor:pointer">Save</button>
+                </div>
+                <div style="font-size:10px;color:#666;margin-top:4px">Who gets \u201CNew Customer Support inquiry\u201D emails when Rec tags an escalation. Orgs can also edit this from their dashboard.</div>
+                ` : ''}
               </div>
               ${o.updatedAt ? '<div class="org-updated">Last updated: ' + new Date(o.updatedAt).toLocaleString() + '</div>' : ''}
             </div>
