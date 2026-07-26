@@ -824,6 +824,31 @@ app.post('/:org/api/support/inbox/:id/forward', authMiddleware, async (req, res)
   }
 });
 
+// Org staff set a conversation's status from their dashboard. Mirrors into
+// Intercom (Org Resolved tag + internal note + close/reopen) so Rec CS sees
+// the outcome, and clears the conversation off the org's action list.
+app.post('/:org/api/support/inbox/:id/status', authMiddleware, async (req, res) => {
+  const { status, note } = req.body || {};
+  if (!['resolved', 'no_action', 'reopen'].includes(status)) return res.status(400).json({ ok: false, error: 'Invalid status' });
+  const org = ORGS[req.orgSlug];
+  if (org?.supportReadOnly) return res.status(403).json({ ok: false, error: 'Support actions are disabled for this org while the feature is in testing' });
+  if (!intercomLive.liveEnabled() || !org?.intercomOrg) return res.status(503).json({ ok: false, error: 'Live Intercom not configured' });
+  try {
+    // Access check: only conversations visible to this org can be acted on
+    const thread = await intercomLive.liveSupportThread(org, req.params.id, req.orgSlug);
+    if (!thread) return res.status(404).json({ ok: false, error: 'Conversation not found' });
+    const result = await intercomLive.markOrgStatus(req.params.id, status, { orgName: org.name, note });
+    cache.delete(`${req.orgSlug}:support-thread:${req.params.id}`);
+    for (const key of cache.keys()) if (key.startsWith(`${req.orgSlug}:support-inbox:`)) cache.delete(key);
+    track_server(req.orgSlug, 'support_status_set', { conversationId: req.params.id, status });
+    console.log(`[support] ${req.orgSlug}: conversation ${req.params.id} marked ${status} by org staff`);
+    res.json({ ok: true, ...result });
+  } catch (e) {
+    console.error('[support] status change failed:', e.message);
+    res.status(502).json({ ok: false, error: e.message });
+  }
+});
+
 // --- Dashboard config ---
 app.get('/:org/api/config', authMiddleware, async (req, res) => {
   const config = dashboardConfigs[req.orgSlug] || null;
@@ -1346,6 +1371,7 @@ async function pollEscalations() {
     const notified = loadNotified();
     for (const { conv, contact } of tagged) {
       if (notified.has(String(conv.id))) continue;
+      if (intercomLive.hasTagNamed(conv, intercomLive.ORG_RESOLVED_TAG)) continue; // org already handled it
       const attrs = contact.custom_attributes || {};
       // Routing: an explicit org:<slug> tag wins (staff override for
       // conversations whose author has missing/wrong Organization data —
