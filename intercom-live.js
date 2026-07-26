@@ -278,10 +278,31 @@ function partRole(p) {
 // ── Public API (each returns null when live mode is off) ──
 
 // Same shape as getSupportRows() in support-data.js
-async function liveSupportRows(org, query) {
+// Conversations explicitly routed to this org via its routing tag, within
+// the query window. Merged into both metrics and inbox so the tab agrees
+// with itself — an escalated conversation from a non-resident author (e.g.
+// wrong contact attributes) still counts.
+async function taggedOrgConversations(org, orgSlug, { start, end }, excludeIds) {
+  if (!orgSlug) return [];
+  const startTs = Math.floor(new Date(`${start}T00:00:00Z`).getTime() / 1000);
+  const endTs = end ? Math.floor(new Date(`${end}T23:59:59Z`).getTime() / 1000) : null;
+  try {
+    const tagged = await liveEscalatedConversations();
+    return (tagged || [])
+      .map(t => t.conv)
+      .filter(c => hasOrgRouteTag(c, orgSlug, org))
+      .filter(c => c.created_at > startTs && (!endTs || c.created_at < endTs))
+      .filter(c => !excludeIds.has(String(c.id)));
+  } catch (e) {
+    return []; // best-effort merge
+  }
+}
+
+async function liveSupportRows(org, query, orgSlug) {
   if (!liveEnabled() || !org?.intercomOrg) return null;
-  const convs = await searchOrgConversations(org, query);
-  return convs.map(toSupportRow);
+  const convs = [...await searchOrgConversations(org, query)];
+  const extra = await taggedOrgConversations(org, orgSlug, query, new Set(convs.map(c => String(c.id))));
+  return [...convs, ...extra].map(toSupportRow);
 }
 
 // Same shape as getSupportInbox() in support-inbox-data.js

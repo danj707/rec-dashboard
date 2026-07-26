@@ -252,7 +252,7 @@ async function fetchMetabaseData(orgSlug, reportType, query) {
       const cached = getCached(cacheKey);
       if (cached) return cached;
       try {
-        const rows = await intercomLive.liveSupportRows(eff, query);
+        const rows = await intercomLive.liveSupportRows(eff, query, orgSlug);
         console.log(`[DATA] ${orgSlug}/support: ${rows.length} rows (intercom LIVE)`);
         setCache(cacheKey, rows, 15 * 60 * 1000);
         return rows;
@@ -1540,7 +1540,7 @@ app.listen(PORT, () => {
         const org = effectiveSupportOrg(slug);
         for (const q of [rolling, month]) {
           try {
-            const rows = await intercomLive.liveSupportRows(org, q);
+            const rows = await intercomLive.liveSupportRows(org, q, slug);
             console.log(`[WARM] ${slug}/support ${q.start}..${q.end || 'now'}: ${rows?.length ?? 0} rows`);
           } catch (e) { console.error(`[WARM] ${slug}/support failed:`, e.message); }
         }
