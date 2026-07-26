@@ -172,6 +172,13 @@ body { font-family: var(--font-body); background: var(--bg-page); color: var(--t
 .ii-chip.ai { background: rgba(20,184,166,0.15); color: #14b8a6; }
 .ii-chip.esc { background: rgba(245,158,11,0.15); color: var(--amber); }
 .ii-chip.org { background: rgba(59,130,246,0.15); color: #3b82f6; }
+.ii-chip.done { background: rgba(34,197,94,0.15); color: var(--green); }
+.status-menu { position: absolute; top: 100%; right: 0; margin-top: 6px; background: var(--bg-modal); border: 1px solid var(--border);
+  border-radius: 10px; padding: 6px; width: 250px; z-index: 60; box-shadow: 0 12px 32px rgba(0,0,0,0.4); }
+.status-menu button { display: flex; align-items: flex-start; gap: 8px; width: 100%; text-align: left; background: none; border: none;
+  border-radius: 7px; padding: 9px 10px; cursor: pointer; font-family: var(--font-body); color: var(--text-primary); font-size: 12px; }
+.status-menu button:hover { background: rgba(128,128,128,0.1); }
+.status-menu .sm-sub { font-size: 10px; color: var(--text-muted); margin-top: 1px; }
 .inbox-thread { background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: 12px; display: flex; flex-direction: column; max-height: 640px; }
 .thread-head { padding: 14px 18px; border-bottom: 1px solid var(--border-subtle); display: flex; align-items: flex-start; gap: 12px; }
 .thread-head .th-subject { font-size: 15px; font-weight: 700; color: var(--text-primary); }
@@ -2152,6 +2159,25 @@ function SupportInbox({ actionsDisabled, onConversationSeen }) {
   const [isLive, setIsLive] = useState(false);
   const [filter, setFilter] = useState('all'); // all | open | closed
   const [forwardOpen, setForwardOpen] = useState(false);
+  const [statusOpen, setStatusOpen] = useState(false);
+  const [statusBusy, setStatusBusy] = useState(false);
+
+  async function setStatus(status) {
+    if (!thread || statusBusy) return;
+    setStatusBusy(true);
+    try {
+      const resp = await fetch(`/${ORG_SLUG}/api/support/inbox/${thread.id}/status?token=${TOKEN}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) });
+      const json = await resp.json();
+      if (json.ok) {
+        const patch = { orgResolved: !!json.resolved, state: json.state };
+        setThread(t => t && t.id === thread.id ? { ...t, ...patch } : t);
+        setConvs(cs => cs.map(c => c.id === thread.id ? { ...c, ...patch } : c));
+        track('support_status_set', { conversationId: thread.id, status });
+      }
+    } catch (e) {}
+    setStatusBusy(false); setStatusOpen(false);
+  }
 
   const [loadError, setLoadError] = useState(false);
   function loadInbox() {
@@ -2230,7 +2256,8 @@ function SupportInbox({ actionsDisabled, onConversationSeen }) {
                 <span className="ii-chip">{c.topic}</span>
                 {c.resolution === 'Resolved by AI' && <span className="ii-chip ai">{'✨'} AI resolved</span>}
                 {c.resolution === 'Escalated to Staff' && <span className="ii-chip esc">{'↑'} Escalated</span>}
-                {c.orgEscalated && <span className="ii-chip org">{'📤'} Sent to staff</span>}
+                {c.orgEscalated && !c.orgResolved && <span className="ii-chip org">{'📤'} Sent to staff</span>}
+                {c.orgResolved && <span className="ii-chip done">{'✅'} Resolved by staff</span>}
               </div>
             </div>
           ))}
@@ -2241,11 +2268,31 @@ function SupportInbox({ actionsDisabled, onConversationSeen }) {
             <React.Fragment>
               <div className="thread-head">
                 <div style={{flex:1}}>
-                  <div className="th-subject">{thread.subject} {thread.orgEscalated && <span className="ii-chip org" style={{verticalAlign:'middle'}}>{'📤'} Sent to staff</span>}</div>
+                  <div className="th-subject">{thread.subject}
+                    {' '}{thread.orgEscalated && !thread.orgResolved && <span className="ii-chip org" style={{verticalAlign:'middle'}}>{'📤'} Sent to staff</span>}
+                    {' '}{thread.orgResolved && <span className="ii-chip done" style={{verticalAlign:'middle'}}>{'✅'} Resolved by staff</span>}</div>
                   <div className="th-meta">{thread.contact.name} {'·'} {thread.contact.email} {'·'} {thread.channel} {'·'} {thread.topic}
                     {'·'} <span style={{color: thread.state === 'open' ? 'var(--green)' : 'var(--text-muted)', fontWeight:600}}>{thread.state}</span></div>
                 </div>
-                {!actionsDisabled && <button className="btn btn-amber" onClick={() => { setForwardOpen(true); track('support_forward_opened', { conversationId: thread.id }); }}>{'✉'} Forward to team</button>}
+                {!actionsDisabled && (
+                  <div style={{display:'flex',gap:8,alignItems:'center'}}>
+                    <div style={{position:'relative'}}>
+                      <button className="btn" disabled={statusBusy} onClick={() => setStatusOpen(o => !o)}>
+                        {statusBusy ? 'Updating…' : thread.orgResolved ? '✅ Resolved' : '✓ Update status'}</button>
+                      {statusOpen && (
+                        <div className="status-menu" onClick={e => e.stopPropagation()}>
+                          <button onClick={() => setStatus('resolved')}><span>{'✅'}</span>
+                            <span><div>Resolved — close it</div><div className="sm-sub">Handled by your team. Closes in Intercom, clears from your list.</div></span></button>
+                          <button onClick={() => setStatus('no_action')}><span>{'⛔'}</span>
+                            <span><div>No action needed — close it</div><div className="sm-sub">Nothing to do here. Closes in Intercom with a note to Rec.</div></span></button>
+                          <button onClick={() => setStatus('reopen')}><span>{'🔄'}</span>
+                            <span><div>Send back to Rec</div><div className="sm-sub">Reopens in Intercom — Rec Support keeps working it.</div></span></button>
+                        </div>
+                      )}
+                    </div>
+                    <button className="btn btn-amber" onClick={() => { setForwardOpen(true); track('support_forward_opened', { conversationId: thread.id }); }}>{'✉'} Forward to team</button>
+                  </div>
+                )}
               </div>
               <div className="thread-body">
                 {thread.messages.map((m, i) => (
@@ -2365,7 +2412,7 @@ function DashboardApp() {
   const escalationBadge = (() => {
     if (!supportConvs) return 0;
     const seen = getSeen();
-    return supportConvs.filter(c => c.orgEscalated && !seen.has(c.id)).length;
+    return supportConvs.filter(c => c.orgEscalated && !c.orgResolved && !seen.has(c.id)).length;
   })();
   const [lastRefresh, setLastRefresh] = useState(null);
   const [theme, setTheme] = useState('light');

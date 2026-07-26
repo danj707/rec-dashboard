@@ -173,6 +173,11 @@ function toSupportRow(c) {
 // dashboard reads it back so the escalated state survives refreshes.
 const ORG_ESCALATED_TAG = 'Org Escalated';
 
+// Applied when org staff mark an escalated conversation done from their
+// dashboard — closes the loop back to Rec CS inside Intercom.
+const ORG_RESOLVED_TAG = 'Org Resolved';
+function hasTagNamed(c, name) { return (c.tags?.tags || []).some(t => t.name === name); }
+
 // Explicit routing override: a conversation tagged for a specific org
 // belongs to that org's dashboard regardless of the author's contact
 // attributes (those are synced from the Rec app and aren't editable in
@@ -203,6 +208,7 @@ function toInboxEntry(c) {
   const tagNames = (c.tags?.tags || []).map(t => t.name);
   return {
     orgEscalated: tagNames.some(isRoutingTagName),
+    orgResolved: tagNames.includes(ORG_RESOLVED_TAG),
     id: String(c.id),
     subject: stripHtml(c.source?.subject || '') || ca['AI Title'] || '(no subject)',
     contact: { name: a.name || 'Resident', email: a.email || '' },
@@ -299,6 +305,55 @@ async function getEscalatedTagId() {
   return _escalatedTagId;
 }
 
+// Org staff set a status from their dashboard — mirror it into Intercom so
+// Rec CS sees the outcome where they work. Close-type statuses tag the
+// conversation Org Resolved and close it; reopen sends it back to Rec.
+const ORG_STATUS = {
+  resolved: { emoji: '✅', label: 'RESOLVED', part: 'close', tagResolved: true,
+    text: org => `Marked <b>resolved</b> by ${org} staff via their Rec dashboard — issue handled on the org side.` },
+  no_action: { emoji: '⛔', label: 'NO ACTION NEEDED', part: 'close', tagResolved: true,
+    text: org => `Closed by ${org} staff via their Rec dashboard — <b>no action needed</b>.` },
+  reopen: { emoji: '🔄', label: 'BACK TO REC', part: 'open', tagResolved: false,
+    text: org => `${org} staff sent this back to Rec Support via their dashboard — <b>needs Rec follow-up</b>.` },
+};
+
+let _resolvedTagId = null;
+async function getResolvedTagId() {
+  if (_resolvedTagId) return _resolvedTagId;
+  const tag = await ic('/tags', { method: 'POST', body: JSON.stringify({ name: ORG_RESOLVED_TAG }) });
+  _resolvedTagId = tag.id;
+  return _resolvedTagId;
+}
+
+async function markOrgStatus(conversationId, status, { orgName, note }) {
+  const def = ORG_STATUS[status];
+  if (!def) throw new Error(`Unknown status: ${status}`);
+  const adminId = await getActingAdminId();
+  if (!adminId) throw new Error('No Intercom admin available');
+  const esc = s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  if (def.tagResolved) {
+    const tagId = await getResolvedTagId();
+    await ic(`/conversations/${conversationId}/tags`, { method: 'POST', body: JSON.stringify({ id: tagId, admin_id: adminId }) });
+  }
+  await ic(`/conversations/${conversationId}/reply`, {
+    method: 'POST',
+    body: JSON.stringify({
+      message_type: 'note', type: 'admin', admin_id: adminId,
+      body: `<p>${def.emoji} <b>${def.label}</b> — ${def.text(esc(orgName))}${note ? `</p><p>Note from org: "${esc(note)}"` : ''}</p>`,
+    }),
+  });
+  // Mirror the conversation state (close/open). Best-effort: the note+tag
+  // already carry the signal if state management is rejected.
+  try {
+    await ic(`/conversations/${conversationId}/parts`, {
+      method: 'POST', body: JSON.stringify({ message_type: def.part, type: 'admin', admin_id: adminId }),
+    });
+  } catch (e) {
+    console.error(`[intercom] state change (${def.part}) failed:`, e.message);
+  }
+  return { resolved: def.tagResolved, state: def.part === 'close' ? 'closed' : 'open' };
+}
+
 async function markEscalatedToOrg(conversationId, { orgName, to, note }) {
   if (!liveEnabled()) return false;
   const adminId = await getActingAdminId();
@@ -370,7 +425,7 @@ async function liveEscalatedConversations() {
 // on every boot; newly onboarded orgs get their tag automatically.
 async function ensureOrgTags(orgs) {
   if (!liveEnabled()) return [];
-  const names = [ORG_ESCALATED_TAG];
+  const names = [ORG_ESCALATED_TAG, ORG_RESOLVED_TAG];
   for (const org of Object.values(orgs)) {
     const label = org.city || org.name;
     if (label) names.push(`${ORG_ESCALATED_TAG}: ${label}`);
@@ -387,4 +442,4 @@ async function ensureOrgTags(orgs) {
   return ensured;
 }
 
-module.exports = { liveEnabled, liveSupportRows, liveSupportInbox, liveSupportThread, markEscalatedToOrg, liveEscalatedConversations, toInboxEntry, hasOrgRouteTag, ensureOrgTags, ORG_ESCALATED_TAG };
+module.exports = { liveEnabled, liveSupportRows, liveSupportInbox, liveSupportThread, markEscalatedToOrg, markOrgStatus, liveEscalatedConversations, toInboxEntry, hasOrgRouteTag, hasTagNamed, ensureOrgTags, ORG_ESCALATED_TAG, ORG_RESOLVED_TAG };
