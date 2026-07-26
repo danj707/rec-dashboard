@@ -2188,7 +2188,7 @@ function NotifySettings({ initialEmails }) {
   );
 }
 
-function SupportInbox({ actionsDisabled, onConversationSeen, notifyEmails }) {
+function SupportInbox({ actionsDisabled, onConversationSeen, notifyEmails, dateRange }) {
   const [convs, setConvs] = useState(null);
   const [selectedId, setSelectedId] = useState(null);
   const [thread, setThread] = useState(null);
@@ -2238,7 +2238,8 @@ function SupportInbox({ actionsDisabled, onConversationSeen, notifyEmails }) {
   const [loadError, setLoadError] = useState(false);
   function loadInbox() {
     setLoadError(false); setConvs(null);
-    fetch(`/${ORG_SLUG}/api/support/inbox?token=${TOKEN}`).then(r => r.json()).then(json => {
+    const range = dateRange ? `&start=${dateRange.start}&end=${dateRange.end}` : '';
+    fetch(`/${ORG_SLUG}/api/support/inbox?token=${TOKEN}${range}`).then(r => r.json()).then(json => {
       if (!json.conversations) throw new Error(json.error || 'no data');
       setConvs(json.conversations); setIsLive(!!json.live);
       // ?conversation=<id> deep links from escalation emails straight to a thread
@@ -2247,7 +2248,7 @@ function SupportInbox({ actionsDisabled, onConversationSeen, notifyEmails }) {
       else if (json.conversations.length) setSelectedId(json.conversations[0].id);
     }).catch(() => { setConvs([]); setLoadError(true); });
   }
-  useEffect(loadInbox, []);
+  useEffect(loadInbox, [dateRange?.start, dateRange?.end]); // inbox follows the dashboard date picker
 
   useEffect(() => {
     if (!selectedId) return;
@@ -2286,7 +2287,7 @@ function SupportInbox({ actionsDisabled, onConversationSeen, notifyEmails }) {
         <span style={{fontSize:10,fontWeight:600,padding:'2px 8px',borderRadius:8,
           background: isLive ? 'rgba(34,197,94,0.15)' : 'rgba(128,128,128,0.15)',
           color: isLive ? 'var(--green)' : 'var(--text-muted)'}}>
-          {isLive ? '● LIVE · Intercom' : 'Snapshot · last 30 days'}</span>
+          {isLive ? '● LIVE · Intercom' : 'Snapshot'}{dateRange ? ` · ${shortDate(dateRange.start)} – ${shortDate(dateRange.end)}` : ''}</span>
         {!IS_SHARE && <NotifySettings initialEmails={notifyEmails} />}
         <span className="section-badge">{convs.length} conversations {'·'} {openCount} open</span>
       </div>
@@ -2392,7 +2393,7 @@ function SupportTab({ reportData, loading, targets, onTargetChange, dateRange, a
   // Inbox first — the conversations are the headline; metrics follow below.
   return (
     <React.Fragment>
-      <SupportInbox actionsDisabled={supportReadOnly} onConversationSeen={onConversationSeen} notifyEmails={notifyEmails} />
+      <SupportInbox actionsDisabled={supportReadOnly} onConversationSeen={onConversationSeen} notifyEmails={notifyEmails} dateRange={dateRange} />
       <SectionBlock sectionId="support" widgetIds={SECTIONS.support.defaultWidgets} reportData={reportData} loading={loading}
         targets={targets} onTargetChange={onTargetChange} dateRange={dateRange} aiEnabled={aiEnabled}
         reportLinksEnabled={false} reportingBaseUrl="" />
@@ -2472,9 +2473,9 @@ function DashboardApp() {
   }, []);
   useEffect(() => {
     if (!availableReports.support || IS_SHARE || IS_PRINT) return;
-    fetch(`/${ORG_SLUG}/api/support/inbox?token=${TOKEN}`).then(r => r.json())
+    fetch(`/${ORG_SLUG}/api/support/inbox?token=${TOKEN}&start=${dateRange.start}&end=${dateRange.end}`).then(r => r.json())
       .then(json => setSupportConvs(json.conversations || [])).catch(() => {});
-  }, [availableReports.support]);
+  }, [availableReports.support, dateRange.start, dateRange.end]);
   const escalationBadge = (() => {
     if (!supportConvs) return 0;
     const seen = getSeen();
