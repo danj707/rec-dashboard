@@ -2188,7 +2188,7 @@ function NotifySettings({ initialEmails }) {
   );
 }
 
-function SupportInbox({ actionsDisabled, onConversationSeen, notifyEmails, dateRange }) {
+function SupportInbox({ actionsDisabled, onConversationSeen, notifyEmails, dateRange, refreshNonce }) {
   const [convs, setConvs] = useState(null);
   const [selectedId, setSelectedId] = useState(null);
   const [thread, setThread] = useState(null);
@@ -2238,19 +2238,36 @@ function SupportInbox({ actionsDisabled, onConversationSeen, notifyEmails, dateR
   }
 
   const [loadError, setLoadError] = useState(false);
-  function loadInbox() {
-    setLoadError(false); setConvs(null);
+  const [lastFetched, setLastFetched] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
+  function loadInbox(opts) {
+    const { quiet, fresh } = opts || {};
+    setLoadError(false);
+    if (!quiet) setConvs(null); // quiet refreshes update in place, no skeleton flash
+    else setRefreshing(true);
     const range = dateRange ? `&start=${dateRange.start}&end=${dateRange.end}` : '';
-    fetch(`/${ORG_SLUG}/api/support/inbox?token=${TOKEN}${range}`).then(r => r.json()).then(json => {
+    fetch(`/${ORG_SLUG}/api/support/inbox?token=${TOKEN}${range}${fresh ? '&fresh=1' : ''}`).then(r => r.json()).then(json => {
       if (!json.conversations) throw new Error(json.error || 'no data');
-      setConvs(json.conversations); setIsLive(!!json.live);
-      // ?conversation=<id> deep links from escalation emails straight to a thread
-      const deepLink = params.get('conversation');
-      if (deepLink && json.conversations.some(c => c.id === deepLink)) setSelectedId(deepLink);
-      else if (json.conversations.length) setSelectedId(json.conversations[0].id);
-    }).catch(() => { setConvs([]); setLoadError(true); });
+      setConvs(prev => {
+        // keep the current selection when it still exists; only auto-select on first load
+        const deepLink = params.get('conversation');
+        setSelectedId(sel => {
+          if (json.conversations.some(c => c.id === sel)) return sel;
+          if (deepLink && json.conversations.some(c => c.id === deepLink)) return deepLink;
+          return json.conversations[0]?.id || null;
+        });
+        return json.conversations;
+      });
+      setIsLive(!!json.live); setLastFetched(Date.now()); setRefreshing(false);
+    }).catch(() => { setRefreshing(false); if (!quiet) { setConvs([]); setLoadError(true); } });
   }
-  useEffect(loadInbox, [dateRange?.start, dateRange?.end]); // inbox follows the dashboard date picker
+  useEffect(() => loadInbox(), [dateRange?.start, dateRange?.end]); // inbox follows the dashboard date picker
+  useEffect(() => { if (refreshNonce) loadInbox({ quiet: true, fresh: true }); }, [refreshNonce]); // header Refresh button
+  // Quiet auto-refresh every 60s while the browser tab is visible
+  useEffect(() => {
+    const t = setInterval(() => { if (document.visibilityState === 'visible') loadInbox({ quiet: true }); }, 60000);
+    return () => clearInterval(t);
+  }, [dateRange?.start, dateRange?.end]);
 
   useEffect(() => {
     if (!selectedId) return;
@@ -2300,6 +2317,11 @@ function SupportInbox({ actionsDisabled, onConversationSeen, notifyEmails, dateR
           background: isLive ? 'rgba(34,197,94,0.15)' : 'rgba(128,128,128,0.15)',
           color: isLive ? 'var(--green)' : 'var(--text-muted)'}}>
           {isLive ? '● LIVE · Intercom' : 'Snapshot'}{dateRange ? ` · ${shortDate(dateRange.start)} – ${shortDate(dateRange.end)}` : ''}</span>
+        <button className="btn btn-sm" title="Refresh conversations now" disabled={refreshing}
+          onClick={() => { loadInbox({ quiet: true, fresh: true }); track('support_inbox_refreshed'); }}>
+          {refreshing ? '⏳' : '↻'}</button>
+        {lastFetched && <span style={{fontSize:10,color:'var(--text-muted)'}} title="Auto-refreshes every minute">
+          updated {Math.max(0, Math.round((Date.now() - lastFetched) / 60000))}m ago</span>}
         {!IS_SHARE && <NotifySettings initialEmails={notifyEmails} />}
         <span className="section-badge">{convs.length} conversations {'·'} {openCount} open</span>
       </div>
@@ -2409,11 +2431,11 @@ function SupportInbox({ actionsDisabled, onConversationSeen, notifyEmails, dateR
   );
 }
 
-function SupportTab({ reportData, loading, targets, onTargetChange, dateRange, aiEnabled, supportReadOnly, onConversationSeen, notifyEmails }) {
+function SupportTab({ reportData, loading, targets, onTargetChange, dateRange, aiEnabled, supportReadOnly, onConversationSeen, notifyEmails, refreshNonce }) {
   // Inbox first — the conversations are the headline; metrics follow below.
   return (
     <React.Fragment>
-      <SupportInbox actionsDisabled={supportReadOnly} onConversationSeen={onConversationSeen} notifyEmails={notifyEmails} dateRange={dateRange} />
+      <SupportInbox actionsDisabled={supportReadOnly} onConversationSeen={onConversationSeen} notifyEmails={notifyEmails} dateRange={dateRange} refreshNonce={refreshNonce} />
       <SectionBlock sectionId="support" widgetIds={SECTIONS.support.defaultWidgets} reportData={reportData} loading={loading}
         targets={targets} onTargetChange={onTargetChange} dateRange={dateRange} aiEnabled={aiEnabled}
         reportLinksEnabled={false} reportingBaseUrl="" />
@@ -2476,6 +2498,7 @@ function DashboardApp() {
   const [editOpen, setEditOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState(params.get('tab') === 'support' ? 'support' : 'dashboard');
+  const [supportRefreshNonce, setSupportRefreshNonce] = useState(0);
 
   // ── Escalation badge: red count on the Customer Support tab ──
   // Counts escalated conversations this browser hasn't opened yet; viewing
@@ -2613,7 +2636,7 @@ function DashboardApp() {
     const cfg = { ...config, targets: newTargets }; setConfig(cfg); await saveConfig(cfg);
     track('target_set', { widget: widgetId, value });
   }
-  function handleRefresh() { clearDataStore(); setDateRange({...dateRange}); track('refresh_clicked'); }
+  function handleRefresh() { clearDataStore(); setDateRange({...dateRange}); setSupportRefreshNonce(n => n + 1); track('refresh_clicked'); }
 
   // Auto-print in print mode (must be before early returns to maintain hook order)
   useEffect(() => {
@@ -2722,7 +2745,7 @@ function DashboardApp() {
         {!IS_PRINT && activeTab === 'support' && availableReports.support && (
           <SupportTab key={'support'+theme} reportData={reportData} loading={loading} targets={targets}
             onTargetChange={handleTargetChange} dateRange={dateRange} aiEnabled={!isReadOnly && orgMeta.toggles?.ai !== false}
-            supportReadOnly={orgMeta.supportReadOnly} onConversationSeen={markConversationSeen} notifyEmails={orgMeta.supportNotify} />
+            supportReadOnly={orgMeta.supportReadOnly} onConversationSeen={markConversationSeen} notifyEmails={orgMeta.supportNotify} refreshNonce={supportRefreshNonce} />
         )}
       </div>
 
