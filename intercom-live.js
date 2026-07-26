@@ -287,12 +287,23 @@ async function liveSupportThread(org, id, orgSlug) {
 // staff see the escalation inside Intercom. Best-effort: failures are the
 // caller's to log, never to surface to the org admin.
 
+// Intercom attributes every API action (notes, closes, tags) to a real
+// teammate — names can't be invented. Selection order:
+//   1. INTERCOM_ADMIN_ID env (pin an exact teammate)
+//   2. a teammate whose name looks like a dashboard service account
+//      (e.g. "Org Dashboard", "Rec Dashboard", "Dashboard Bot")
+//   3. first workspace admin (fallback — shows up as that person)
+// Create a lite-seat teammate named "Org Dashboard" and it's picked up
+// automatically on the next restart, no config needed.
 let _adminId = null;
 async function getActingAdminId() {
   if (process.env.INTERCOM_ADMIN_ID) return process.env.INTERCOM_ADMIN_ID;
   if (_adminId) return _adminId;
   const res = await ic('/admins');
-  _adminId = res.admins?.[0]?.id;
+  const admins = res.admins || [];
+  const service = admins.find(a => /(org|rec)?\s*dashboard/i.test(a.name || ''));
+  _adminId = (service || admins[0])?.id;
+  if (service) console.log(`[intercom] acting as service teammate "${service.name}" (${service.id})`);
   return _adminId;
 }
 
