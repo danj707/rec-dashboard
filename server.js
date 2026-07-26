@@ -724,7 +724,7 @@ app.get('/:org/api/support/inbox', authMiddleware, async (req, res) => {
     const cached = getCached(cacheKey);
     if (cached) return res.json({ conversations: cached, live: true });
     try {
-      const list = await intercomLive.liveSupportInbox(org, query);
+      const list = await intercomLive.liveSupportInbox(org, query, req.orgSlug);
       console.log(`[DATA] ${req.orgSlug}/support-inbox: ${list.length} conversations (intercom LIVE)`);
       setCache(cacheKey, list, 5 * 60 * 1000);
       return res.json({ conversations: list, live: true });
@@ -744,7 +744,7 @@ app.get('/:org/api/support/inbox/:id', authMiddleware, async (req, res) => {
     const cached = getCached(cacheKey);
     if (cached) return res.json({ conversation: cached, live: true });
     try {
-      const thread = await intercomLive.liveSupportThread(org, req.params.id);
+      const thread = await intercomLive.liveSupportThread(org, req.params.id, req.orgSlug);
       if (thread) { setCache(cacheKey, thread, 5 * 60 * 1000); return res.json({ conversation: thread, live: true }); }
       return res.status(404).json({ error: 'Conversation not found' });
     } catch (e) {
@@ -765,7 +765,7 @@ app.post('/:org/api/support/inbox/:id/forward', authMiddleware, async (req, res)
   if (org?.supportReadOnly) return res.status(403).json({ ok: false, error: 'Support actions are disabled for this org while the feature is in testing' });
   let thread = null;
   if (intercomLive.liveEnabled() && org?.intercomOrg) {
-    try { thread = await intercomLive.liveSupportThread(org, req.params.id); } catch (e) { /* fall through to snapshot */ }
+    try { thread = await intercomLive.liveSupportThread(org, req.params.id, req.orgSlug); } catch (e) { /* fall through to snapshot */ }
   }
   if (!thread) thread = getSupportThread(req.orgSlug, req.params.id);
   if (!thread) return res.status(404).json({ ok: false, error: 'Conversation not found' });
@@ -1347,11 +1347,16 @@ async function pollEscalations() {
     for (const { conv, contact } of tagged) {
       if (notified.has(String(conv.id))) continue;
       const attrs = contact.custom_attributes || {};
-      // Unmatched conversations are skipped but stay eligible — if the
-      // contact's Organization/user_role attributes get corrected later
-      // (or an org gets recipients configured), the next poll notifies.
-      const match = Object.entries(ORGS).find(([slug, o]) =>
-        o.intercomOrg && o.supportNotify?.length && attrs.Organization === o.intercomOrg && attrs.user_role === 'user');
+      // Routing: an explicit org:<slug> tag wins (staff override for
+      // conversations whose author has missing/wrong Organization data —
+      // those attributes are synced from the Rec app, not editable in
+      // Intercom). Otherwise route by the author's contact attributes.
+      // Unmatched conversations are skipped but stay eligible for later.
+      const match =
+        Object.entries(ORGS).find(([slug, o]) =>
+          o.supportNotify?.length && intercomLive.hasOrgRouteTag(conv, slug, o)) ||
+        Object.entries(ORGS).find(([slug, o]) =>
+          o.intercomOrg && o.supportNotify?.length && attrs.Organization === o.intercomOrg && attrs.user_role === 'user');
       if (!match) continue;
       const [orgSlug, org] = match;
       const { _first, ...entry } = intercomLive.toInboxEntry(conv);
