@@ -2371,7 +2371,14 @@ function SupportInbox({ actionsDisabled, onConversationSeen, notifyEmails, dateR
                   <div className="th-subject">{thread.subject}
                     {' '}{thread.orgEscalated && !thread.orgResolved && <span className="ii-chip org" style={{verticalAlign:'middle'}}>{'📤'} Sent to staff</span>}
                     {' '}{thread.orgResolved && <span className="ii-chip done" style={{verticalAlign:'middle'}}>{'✅'} Resolved by staff</span>}</div>
-                  <div className="th-meta">{thread.contact.name} {'·'} {thread.contact.email} {'·'} {thread.channel} {'·'} {thread.topic}
+                  <div className="th-meta">
+                    {thread.recProfileUrl ? (
+                      <a href={thread.recProfileUrl} target="_blank" rel="noopener noreferrer" title="Open this resident's profile in your Rec admin console"
+                        style={{color:'#3b82f6',textDecoration:'none',fontWeight:600}}
+                        onClick={() => track('support_profile_opened', { conversationId: thread.id })}>
+                        {thread.contact.name} {'·'} {thread.contact.email} {'↗'}</a>
+                    ) : (<span>{thread.contact.name} {'·'} {thread.contact.email}</span>)}
+                    {' ·'} {thread.channel} {'·'} {thread.topic}
                     {'·'} <span style={{color: thread.state === 'open' ? 'var(--green)' : 'var(--text-muted)', fontWeight:600}}>{thread.state}</span></div>
                 </div>
                 {!actionsDisabled && (

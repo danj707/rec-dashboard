@@ -255,7 +255,10 @@ function toInboxEntry(c) {
   const first = stripHtml(c.source?.body || '').split(/\nOn .{5,80} wrote:\n/)[0].trim();
   const res = resolutionOf(c);
   const tagNames = (c.tags?.tags || []).map(t => t.name);
+  // Intercom external_id on the author contact IS the Rec platform user id
+  const recUserId = (c.contacts?.contacts || []).find(x => x.id === a.id)?.external_id || null;
   return {
+    recUserId,
     orgEscalated: tagNames.some(isRoutingTagName),
     orgResolved: tagNames.includes(ORG_RESOLVED_TAG),
     id: String(c.id),
@@ -303,6 +306,12 @@ async function taggedOrgConversations(org, orgSlug, { start, end }, excludeIds) 
   }
 }
 
+// Deep link into the Rec admin: the org staff viewing the dashboard are
+// admins of this org, so hand them the resident's profile in their console.
+function recProfileUrl(org, recUserId) {
+  return org?.orgId && recUserId ? `https://www.rec.us/admin/o/${org.orgId}/users/${recUserId}` : null;
+}
+
 async function liveSupportRows(org, query, orgSlug) {
   if (!liveEnabled() || !org?.intercomOrg) return null;
   const convs = [...await searchOrgConversations(org, query)];
@@ -330,7 +339,7 @@ async function liveSupportInbox(org, query, orgSlug, force) {
   }
   return convs
     .sort((x, y) => y.created_at - x.created_at)
-    .map(c => { const { _first, ...e } = toInboxEntry(c); return { ...e, messageCount: (c.statistics?.count_conversation_parts || 0) + 1 }; });
+    .map(c => { const { _first, ...e } = toInboxEntry(c); return { ...e, recProfileUrl: recProfileUrl(org, e.recUserId), messageCount: (c.statistics?.count_conversation_parts || 0) + 1 }; });
 }
 
 // Same shape as getSupportThread() in support-inbox-data.js
@@ -358,7 +367,7 @@ async function liveSupportThread(org, id, orgSlug) {
     messages.push({ role: partRole(p), name: p.author?.name || '', at: p.created_at, text: display });
   }
   const { _first, ...rest } = entry;
-  return { ...rest, messages };
+  return { ...rest, recProfileUrl: recProfileUrl(org, rest.recUserId), messages };
 }
 
 // ── Escalate-to-org write-back ──
