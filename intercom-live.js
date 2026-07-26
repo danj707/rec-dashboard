@@ -302,7 +302,10 @@ async function liveEscalatedConversations() {
   for (const c of page.conversations || []) {
     const author = c.source?.author;
     if (author?.type !== 'user' || !author.id) continue;
-    const contact = await getContact(author.id);
+    // Fetch fresh (no cache): escalation routing must see attribute edits
+    // immediately — e.g. a contact's Organization corrected after tagging.
+    let contact = null;
+    try { contact = await ic(`/contacts/${author.id}`); } catch (e) { /* deleted/merged */ }
     if (contact) out.push({ conv: c, contact });
   }
   return out;

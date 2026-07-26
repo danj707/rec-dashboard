@@ -1291,7 +1291,9 @@ async function warmCache() {
 //  (the admin was already emailed directly).
 // ═══════════════════════════════════════════
 const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || 'https://rec-dashboard-production.up.railway.app';
-const NOTIFIED_FILE = path.join(DATA_DIR, 'support-notified.json');
+// v2: v1 wrongly marked unmatched conversations as processed forever; fresh
+// file so tagged-but-unrouted test conversations become eligible again.
+const NOTIFIED_FILE = path.join(DATA_DIR, 'support-notified-v2.json');
 let _notified = null;
 function loadNotified() {
   if (_notified) return _notified;
@@ -1345,9 +1347,12 @@ async function pollEscalations() {
     for (const { conv, contact } of tagged) {
       if (notified.has(String(conv.id))) continue;
       const attrs = contact.custom_attributes || {};
+      // Unmatched conversations are skipped but stay eligible — if the
+      // contact's Organization/user_role attributes get corrected later
+      // (or an org gets recipients configured), the next poll notifies.
       const match = Object.entries(ORGS).find(([slug, o]) =>
         o.intercomOrg && o.supportNotify?.length && attrs.Organization === o.intercomOrg && attrs.user_role === 'user');
-      if (!match) { markNotified(conv.id); continue; } // tagged, but no org configured to notify
+      if (!match) continue;
       const [orgSlug, org] = match;
       const { _first, ...entry } = intercomLive.toInboxEntry(conv);
       await sendEscalationEmail(orgSlug, org, entry);
