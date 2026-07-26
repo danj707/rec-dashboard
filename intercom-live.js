@@ -173,6 +173,14 @@ function toSupportRow(c) {
 // dashboard reads it back so the escalated state survives refreshes.
 const ORG_ESCALATED_TAG = 'Org Escalated';
 
+// Explicit routing override: a conversation tagged `org:<slug>` (e.g.
+// org:niagarafalls) belongs to that org's dashboard regardless of the
+// author's contact attributes. Contact attributes are synced from the Rec
+// app and aren't editable in Intercom — this tag is how Rec staff route a
+// conversation whose author has missing or wrong Organization data.
+function orgTagName(slug) { return `org:${slug}`; }
+function hasTag(c, name) { return (c.tags?.tags || []).some(t => t.name === name); }
+
 function toInboxEntry(c) {
   const ca = c.custom_attributes || {}, a = c.source?.author || {};
   const first = stripHtml(c.source?.body || '').split(/\nOn .{5,80} wrote:\n/)[0].trim();
@@ -212,21 +220,33 @@ async function liveSupportRows(org, query) {
 }
 
 // Same shape as getSupportInbox() in support-inbox-data.js
-async function liveSupportInbox(org, query) {
+async function liveSupportInbox(org, query, orgSlug) {
   if (!liveEnabled() || !org?.intercomOrg) return null;
   const convs = await searchOrgConversations(org, query);
+  // Merge in escalated conversations explicitly routed here via org:<slug> —
+  // their authors aren't org residents, so the sweep alone misses them.
+  if (orgSlug) {
+    try {
+      const seen = new Set(convs.map(c => String(c.id)));
+      const tagged = await liveEscalatedConversations();
+      for (const { conv } of tagged || []) {
+        if (hasTag(conv, orgTagName(orgSlug)) && !seen.has(String(conv.id))) convs.push(conv);
+      }
+    } catch (e) { /* override merge is best-effort */ }
+  }
   return convs
     .sort((x, y) => y.created_at - x.created_at)
     .map(c => { const { _first, ...e } = toInboxEntry(c); return { ...e, messageCount: (c.statistics?.count_conversation_parts || 0) + 1 }; });
 }
 
 // Same shape as getSupportThread() in support-inbox-data.js
-async function liveSupportThread(org, id) {
+async function liveSupportThread(org, id, orgSlug) {
   if (!liveEnabled() || !org?.intercomOrg) return null;
   const c = await ic(`/conversations/${id}`);
   const author = c.source?.author;
   const contact = author?.id ? await getContact(author.id) : null;
-  if (!contact || !isOrgResident(contact, org.intercomOrg)) return null; // never leak another org's thread
+  const explicitlyRouted = orgSlug && hasTag(c, orgTagName(orgSlug));
+  if (!explicitlyRouted && (!contact || !isOrgResident(contact, org.intercomOrg))) return null; // never leak another org's thread
   const entry = toInboxEntry(c);
   const messages = [{ role: 'resident', name: entry.contact.name, at: c.created_at, text: entry._first }];
   for (const p of c.conversation_parts?.conversation_parts || []) {
@@ -311,4 +331,4 @@ async function liveEscalatedConversations() {
   return out;
 }
 
-module.exports = { liveEnabled, liveSupportRows, liveSupportInbox, liveSupportThread, markEscalatedToOrg, liveEscalatedConversations, toInboxEntry, ORG_ESCALATED_TAG };
+module.exports = { liveEnabled, liveSupportRows, liveSupportInbox, liveSupportThread, markEscalatedToOrg, liveEscalatedConversations, toInboxEntry, hasTag, orgTagName, ORG_ESCALATED_TAG };
