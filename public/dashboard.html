@@ -2161,6 +2161,26 @@ function SupportInbox({ actionsDisabled, onConversationSeen }) {
   const [forwardOpen, setForwardOpen] = useState(false);
   const [statusOpen, setStatusOpen] = useState(false);
   const [statusBusy, setStatusBusy] = useState(false);
+  const [noteText, setNoteText] = useState('');
+  const [noteBusy, setNoteBusy] = useState(false);
+
+  async function sendNote() {
+    const text = noteText.trim();
+    if (!thread || !text || noteBusy) return;
+    setNoteBusy(true);
+    try {
+      const resp = await fetch(`/${ORG_SLUG}/api/support/inbox/${thread.id}/note?token=${TOKEN}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
+      const json = await resp.json();
+      if (json.ok) {
+        setThread(t => t && t.id === thread.id ? { ...t, messages: [...t.messages,
+          { role: 'note', name: 'Your team', at: Math.floor(Date.now() / 1000), text: `💬 Note to Rec Support: ${text}` }] } : t);
+        setNoteText('');
+        track('support_note_added', { conversationId: thread.id });
+      }
+    } catch (e) {}
+    setNoteBusy(false);
+  }
 
   async function setStatus(status) {
     if (!thread || statusBusy) return;
@@ -2299,13 +2319,22 @@ function SupportInbox({ actionsDisabled, onConversationSeen }) {
                   <div key={i} className={`msg ${m.role}`}>
                     <div className="msg-meta">
                       <span style={{fontWeight:700,color:'var(--text-secondary)'}}>{m.name}</span>
-                      {m.role !== 'resident' && <span className={`msg-role-badge ${m.role}`}>{m.role === 'ai' ? '✨ Rec AI' : m.role === 'note' ? 'Internal note' : 'Rec Support'}</span>}
+                      {m.role !== 'resident' && <span className={`msg-role-badge ${m.role}`}>{m.role === 'ai' ? '✨ Rec AI' : m.role === 'note' ? 'Note · not visible to resident' : 'Rec Support'}</span>}
                       <span>{msgTime(m.at)}</span>
                     </div>
                     <div className="msg-bubble">{m.text}</div>
                   </div>
                 ))}
               </div>
+              {!actionsDisabled && (
+                <div style={{borderTop:'1px solid var(--border-subtle)',padding:'10px 14px',display:'flex',gap:8,alignItems:'flex-end'}}>
+                  <textarea className="date-input" style={{flex:1,height:44,resize:'vertical',fontFamily:'var(--font-body)',fontSize:12}}
+                    placeholder="Note to Rec Support — e.g. 'Residency approved on our side, please let them know.' The resident never sees this."
+                    value={noteText} onChange={e => setNoteText(e.target.value)} />
+                  <button className="btn" disabled={noteBusy || !noteText.trim()} onClick={sendNote}>
+                    {noteBusy ? 'Sending…' : '💬 Send note'}</button>
+                </div>
+              )}
             </React.Fragment>
           ) : (
             <div style={{display:'flex',alignItems:'center',justifyContent:'center',flex:1,color:'var(--text-muted)',fontSize:12}}>
