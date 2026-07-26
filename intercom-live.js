@@ -202,7 +202,7 @@ function toInboxEntry(c) {
   const res = resolutionOf(c);
   const tagNames = (c.tags?.tags || []).map(t => t.name);
   return {
-    orgEscalated: tagNames.includes(ORG_ESCALATED_TAG),
+    orgEscalated: tagNames.some(isRoutingTagName),
     id: String(c.id),
     subject: stripHtml(c.source?.subject || '') || ca['AI Title'] || '(no subject)',
     contact: { name: a.name || 'Resident', email: a.email || '' },
@@ -322,14 +322,31 @@ async function markEscalatedToOrg(conversationId, { orgName, to, note }) {
 // Conversations carrying the Org Escalated tag (recently updated), each with
 // its author contact so the caller can map conversation → org. Powers the
 // poller that emails org admins when Rec staff tag a conversation in Intercom.
+// Any escalation-flavored tag counts — the base "Org Escalated" OR a
+// per-org routing tag ("Org Escalated: Niagara Falls", "org:<slug>").
+// One tag is enough: a city tag alone both triggers and routes.
+function isRoutingTagName(name) {
+  return /^org escalated(:|$)/i.test(String(name || '').trim()) || /^org:/i.test(String(name || '').trim());
+}
+
+let _routingTagIds = { ids: null, at: 0 };
+async function getRoutingTagIds() {
+  if (_routingTagIds.ids && Date.now() - _routingTagIds.at < 10 * 60 * 1000) return _routingTagIds.ids;
+  const res = await ic('/tags');
+  const ids = (res.data || []).filter(t => isRoutingTagName(t.name)).map(t => t.id);
+  _routingTagIds = { ids, at: Date.now() };
+  return ids;
+}
+
 async function liveEscalatedConversations() {
   if (!liveEnabled()) return null;
-  const tagId = await getEscalatedTagId();
+  const tagIds = await getRoutingTagIds();
+  if (!tagIds.length) return [];
   // No time filter: tagging an old conversation doesn't reliably bump
   // updated_at, and the tag population is small (only this feature applies
   // it). The caller's notified-set prevents re-sends.
   const body = {
-    query: { field: 'tag_ids', operator: 'IN', value: [tagId] },
+    query: { field: 'tag_ids', operator: 'IN', value: tagIds },
     pagination: { per_page: 50 },
   };
   const page = await ic('/conversations/search', { method: 'POST', body: JSON.stringify(body) });
