@@ -794,11 +794,12 @@ app.get('/:org/api/support/inbox', authMiddleware, async (req, res) => {
   const eff = effectiveSupportOrg(req.orgSlug);
   const query = { start: req.query.start || new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10), end: req.query.end };
   if (intercomLive.liveEnabled() && eff.intercomOrg) {
+    const fresh = req.query.fresh === '1'; // manual refresh: skip caches, still repopulate them
     const cacheKey = `${req.orgSlug}:support-inbox:${query.start}:${query.end}`;
-    const cached = getCached(cacheKey);
+    const cached = fresh ? null : getCached(cacheKey);
     if (cached) return res.json({ conversations: cached, live: true });
     try {
-      const list = await intercomLive.liveSupportInbox(eff, query, req.orgSlug);
+      const list = await intercomLive.liveSupportInbox(eff, query, req.orgSlug, fresh);
       console.log(`[DATA] ${req.orgSlug}/support-inbox: ${list.length} conversations (intercom LIVE)`);
       setCache(cacheKey, list, 5 * 60 * 1000);
       return res.json({ conversations: list, live: true });

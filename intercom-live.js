@@ -102,8 +102,9 @@ async function mapConcurrent(items, limit, fn) {
 const sweepCache = new Map();
 const SWEEP_TTL = 5 * 60 * 1000;
 
-function searchOrgConversations(org, query) {
+function searchOrgConversations(org, query, force) {
   const key = `${org.intercomOrg}:${query.start}:${query.end}`;
+  if (force) sweepCache.delete(key); // manual refresh wants truly fresh data
   const hit = sweepCache.get(key);
   if (hit && Date.now() - hit.at < SWEEP_TTL) return hit.promise;
   const promise = doSearchOrgConversations(org, query).catch(e => { sweepCache.delete(key); throw e; });
@@ -310,9 +311,9 @@ async function liveSupportRows(org, query, orgSlug) {
 }
 
 // Same shape as getSupportInbox() in support-inbox-data.js
-async function liveSupportInbox(org, query, orgSlug) {
+async function liveSupportInbox(org, query, orgSlug, force) {
   if (!liveEnabled() || !org?.intercomOrg) return null;
-  const convs = await searchOrgConversations(org, query);
+  const convs = await searchOrgConversations(org, query, force);
   // Merge in escalated conversations explicitly routed here via org:<slug> —
   // their authors aren't org residents, so the sweep alone misses them.
   if (orgSlug) {
