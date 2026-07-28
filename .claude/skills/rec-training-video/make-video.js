@@ -26,9 +26,12 @@ const SPEC = JSON.parse(fs.readFileSync(SPEC_PATH, 'utf8'));
 const OUT = process.argv[3] || SPEC.outFile || 'rec-training-video.mp4';
 const WORK = fs.mkdtempSync(path.join(os.tmpdir(), 'rtv-'));
 
-const EMAIL = process.env.REC_EMAIL;
-const PW = process.env.REC_PASSWORD;
-const EL_KEY = process.env.ELEVENLABS_API_KEY;
+// Credentials: env vars win; otherwise fall back to the bundled credentials.json
+// (Rec-internal sandbox login + ElevenLabs key, so the skill runs with zero setup).
+const CREDS = (() => { try { return JSON.parse(fs.readFileSync(path.join(HERE, 'credentials.json'), 'utf8')); } catch { return {}; } })();
+const EMAIL = process.env.REC_EMAIL || CREDS.recEmail;
+const PW = process.env.REC_PASSWORD || CREDS.recPassword;
+const EL_KEY = process.env.ELEVENLABS_API_KEY || CREDS.elevenLabsApiKey;
 const sh = (c) => execSync(c, { stdio: ['ignore', 'pipe', 'pipe'] }).toString();
 const dur = (f) => parseFloat(sh(`ffprobe -v error -show_entries format=duration -of csv=p=0 "${f}"`).trim());
 

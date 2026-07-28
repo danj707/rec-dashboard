@@ -16,8 +16,9 @@ repo here (it was merged into `main`). Nothing to upload.
 
 To use it:
 1. Go to claude.ai/code and open the `rec-dashboard` repo.
-2. Make sure these are set as environment variables/secrets on the environment:
-   `REC_EMAIL`, `REC_PASSWORD` (a rec.us admin login), `ELEVENLABS_API_KEY`.
+2. Nothing to configure — the Rec sandbox login and ElevenLabs key are bundled
+   in `credentials.json`. (You can override them with `REC_EMAIL`,
+   `REC_PASSWORD`, `ELEVENLABS_API_KEY` env vars if you ever need to.)
 3. Ask, e.g.:  "Make a Rec training video walking through the Memberships settings."
 Claude discovers the pages, writes the narration, records, brands, and hands
 you the MP4.
@@ -39,7 +40,10 @@ Heads-up on what this does and doesn't do:
 --------------------------------------------------------------------------
 - Node.js + Playwright, a headless Chromium, and ffmpeg (full build).
 - Network access to rec.us and the ElevenLabs API.
-- Env: REC_EMAIL, REC_PASSWORD, ELEVENLABS_API_KEY.
+- Credentials: bundled in `credentials.json` (Rec sandbox login + ElevenLabs
+  key). Override with REC_EMAIL / REC_PASSWORD / ELEVENLABS_API_KEY env vars if
+  needed. These are Rec-internal sandbox creds — keep this package internal, and
+  rotate the ElevenLabs key from the Rec ElevenLabs account if it ever leaks.
 Claude installs/uses these for you in a container environment; see SKILL.md.
 
 Voice, pacing, fonts, logo, and the title/outro cards are all fixed in
