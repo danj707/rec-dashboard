@@ -1,0 +1,10 @@
+{
+  "name": "rec-training-video",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Rec-branded narrated/captioned admin walkthrough video builder",
+  "bin": { "rec-training-video": "make-video.js" },
+  "dependencies": {
+    "playwright": "^1.48.0"
+  }
+}

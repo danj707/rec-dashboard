@@ -1,0 +1,55 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  @font-face { font-family:'Inter'; font-weight:400; src:url('fonts/Inter-Regular.ttf'); }
+  @font-face { font-family:'Inter'; font-weight:500; src:url('fonts/Inter-Medium.ttf'); }
+  @font-face { font-family:'Inter'; font-weight:600; src:url('fonts/Inter-SemiBold.ttf'); }
+  @font-face { font-family:'Inter'; font-weight:700; src:url('fonts/Inter-Bold.ttf'); }
+  @font-face { font-family:'InterDisplay'; font-weight:800; src:url('fonts/InterDisplay-ExtraBold.ttf'); }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { width:1280px; height:720px; overflow:hidden; }
+  body {
+    background: radial-gradient(120% 120% at 50% 0%, #ffffff 0%, #f5f5f4 100%);
+    font-family:'Inter',sans-serif; color:#0B100E;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .wrap { width:960px; text-align:center; display:flex; flex-direction:column; align-items:center; }
+  .logo { margin-bottom:44px; }
+  .logo svg { height:46px; width:auto; display:block; }
+  .eyebrow { font-weight:600; font-size:16px; letter-spacing:.28em; text-transform:uppercase; color:#78716C; margin-bottom:22px; }
+  .rule { width:52px; height:4px; background:#0B100E; border-radius:2px; margin:0 0 26px; }
+  h1 { font-family:'InterDisplay','Inter',sans-serif; font-weight:800; font-size:76px; line-height:1.04; letter-spacing:-0.02em; color:#0B100E; }
+  h1.sm { font-size:60px; }
+  .sub { font-weight:400; font-size:23px; line-height:1.5; color:#57534E; margin-top:26px; max-width:760px; }
+  .email { display:inline-block; margin-top:30px; font-weight:600; font-size:24px; color:#0B100E;
+           background:#ffffff; border:1px solid #E7E5E4; border-radius:999px; padding:12px 26px; box-shadow:0 6px 20px rgba(11,16,14,.06); }
+  .foot { position:fixed; bottom:34px; left:0; right:0; text-align:center; font-weight:500; font-size:14px; letter-spacing:.16em; text-transform:uppercase; color:#A8A29E; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="logo" id="logo"></div>
+    <div class="eyebrow" id="eyebrow"></div>
+    <div class="rule"></div>
+    <h1 id="title"></h1>
+    <div class="sub" id="sub"></div>
+    <div class="email" id="email" style="display:none"></div>
+  </div>
+  <div class="foot" id="foot"></div>
+<script>
+  const REC_LOGO = `<svg fill="none" viewBox="0 0 65 26" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Rec"><path d="M32.1986 19.8707C29.2227 19.8707 26.7087 18.0913 25.9391 15.0266H44.8715C45.3846 6.42586 40.4077 0 31.9933 0C24.9129 0 18.7047 5.48669 18.7047 13C18.7047 20.4639 24.9129 26 32.1986 26C37.1754 26 41.4339 23.8251 43.8966 19.9202L38.4068 16.2624C36.9188 18.4867 35.2257 19.8707 32.1986 19.8707ZM32.0446 6.07985C35.3796 6.07985 37.1241 8.20532 37.4832 10.3308H26.1956C27.1191 7.6616 29.428 6.07985 32.0446 6.07985Z" fill="#0B100E"/><path d="M59.6127 0C52.2245 0 45.8624 5.48669 45.8624 13C45.8624 20.5133 52.2245 26 59.6127 26C61.665 26 63.3582 25.654 65 25.0114V17.6958C63.666 18.6844 62.1781 19.3764 60.0232 19.3764C56.483 19.3764 53.3532 16.8555 53.3532 13C53.3532 9.14449 56.483 6.62357 60.0232 6.62357C62.1781 6.62357 63.666 7.26616 64.9487 8.30418V0.988593C63.3582 0.346007 61.665 0 59.6127 0Z" fill="#0B100E"/><path d="M0 0H7.8161V26H0V0Z" fill="#0B100E"/><path d="M19.1836 5.2725C19.1836 8.18442 16.7334 10.545 13.7108 10.545C10.6883 10.545 8.23806 8.18442 8.23806 5.2725C8.23806 2.36058 10.6883 0 13.7108 0C16.7334 0 19.1836 2.36058 19.1836 5.2725Z" fill="#0B100E"/></svg>`;
+  const q = new URLSearchParams(location.search);
+  document.getElementById('logo').innerHTML = REC_LOGO;
+  const set = (id,v,show=true)=>{ const e=document.getElementById(id); if(v){e.textContent=v; if(!show)e.style.display='none';} else {e.style.display='none';} };
+  set('eyebrow', q.get('eyebrow')||'REC TRAINING VIDEO');
+  const title = q.get('title')||'';
+  const t=document.getElementById('title'); t.textContent=title; if(title.length>18) t.classList.add('sm');
+  set('sub', q.get('sub')||'');
+  const email=q.get('email');
+  if(email){ const e=document.getElementById('email'); e.textContent=email; e.style.display='inline-block'; }
+  set('foot', q.get('foot')||'');
+</script>
+</body>
+</html>
