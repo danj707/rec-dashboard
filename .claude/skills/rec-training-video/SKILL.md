@@ -26,7 +26,7 @@ builder. All the production settings (voice, tempo, fonts, logo, cards) are fixe
 
 ## Prerequisites (check first, tell the user if missing)
 
-- Env: `REC_EMAIL`, `REC_PASSWORD` (a rec.us admin login with access to the target org), and `ELEVENLABS_API_KEY`.
+- Credentials: **bundled** in `credentials.json` (Rec-internal sandbox rec.us login + ElevenLabs key), so no setup is needed. Env vars `REC_EMAIL` / `REC_PASSWORD` / `ELEVENLABS_API_KEY` override the bundled values if set. The bundled login is a sandbox account (no real data); rotate the ElevenLabs key from the Rec ElevenLabs account if it ever leaks outside Rec.
 - Tools: `node` with Playwright, `ffmpeg` (full build, for the MP4 muxer), Chromium (pre-installed at `/opt/pw-browsers`). If `ffmpeg` is the minimal Playwright build, `apt-get install -y ffmpeg`.
 - Behind the CCR agent proxy, the builder handles TLS itself (pins the proxy CA, caps TLS at 1.2, reads `HTTPS_PROXY`). No action needed.
 
@@ -57,10 +57,9 @@ Keep narration tight and factual; the pacing auto-fits each section to its narra
 ### 5. Build
 ```bash
 cd .claude/skills/rec-training-video
-REC_EMAIL=… REC_PASSWORD=… ELEVENLABS_API_KEY=… \
-  node make-video.js examples/finance-settings.spec.json ../../Finance-Settings.mp4
+node make-video.js examples/finance-settings.spec.json ../../Finance-Settings.mp4
 ```
-Runs narrate → record → mux → brand and writes the MP4. ~2–4 min depending on length (the login + full-page loads go through the proxy).
+Credentials come from the bundled `credentials.json` (override with `REC_EMAIL` / `REC_PASSWORD` / `ELEVENLABS_API_KEY` env vars if needed). Runs narrate → record → mux → brand and writes the MP4. ~2–4 min depending on length (the login + full-page loads go through the proxy).
 
 ### 6. Verify before delivering
 - Confirm duration ≈ title(4.8s) + sum(section dwells) + outro, and that both a video and audio stream exist (`ffprobe`).
