@@ -295,6 +295,22 @@ body { font-family: var(--font-body); background: var(--bg-page); color: var(--t
   .dashboard-section { break-inside: avoid; }
 }
 .print-header .dash-header-center, .print-header .dash-header-right { display: none !important; }
+/* ── Revenue Streams Widget ── */
+.streams-wrap { border-radius: 8px; padding: 0; }
+.streams-row { display: grid; grid-template-columns: 160px 1fr 70px; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background 0.15s; }
+.streams-row:hover { background: var(--hover); }
+.streams-row:last-of-type { border-bottom: none; }
+.streams-swatch { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+.streams-name { font-size: 12px; font-weight: 500; color: var(--text-primary); display: flex; align-items: center; gap: 8px; }
+.streams-bar-track { flex: 1; height: 18px; background: var(--border); border-radius: 3px; overflow: hidden; }
+.streams-bar-fill { height: 100%; border-radius: 3px; transition: width 0.5s ease; }
+.streams-pct { font-size: 11px; color: var(--text-muted); min-width: 32px; text-align: right; }
+.streams-amt { font-size: 13px; font-weight: 600; color: var(--text-primary); text-align: right; font-variant-numeric: tabular-nums; }
+.streams-total { display: grid; grid-template-columns: 160px 1fr 70px; align-items: center; gap: 10px; padding: 8px 12px; border-top: 2px solid var(--text-muted); margin-top: 2px; }
+.streams-total-label { font-size: 12px; font-weight: 600; color: var(--text-muted); padding-left: 18px; }
+.streams-total-amt { font-size: 14px; font-weight: 700; color: var(--text-primary); text-align: right; font-variant-numeric: tabular-nums; }
+.streams-link-icon { font-size: 11px; color: var(--text-muted); margin-left: auto; opacity: 0; transition: opacity 0.15s; }
+.streams-row:hover .streams-link-icon { opacity: 1; }
 </style>
 </head>
 <body>
@@ -333,7 +349,7 @@ function getMonthRange(offset = 0) {
 const SECTIONS = {
   revenue: { id: 'revenue', label: 'Revenue Overview', icon: '\uD83D\uDCB0', color: '#22c55e',
     description: 'Financial summary from GL data',
-    defaultWidgets: ['gl-total-revenue','gl-total-refunds','gl-net-revenue','gl-transactions','gl-by-code','gl-by-payment-method'] },
+    defaultWidgets: ['rev-streams','gl-total-revenue','gl-total-refunds','gl-net-revenue','gl-transactions','gl-by-code','gl-by-payment-method'] },
   facility: { id: 'facility', label: 'Facility Rentals', icon: '\uD83C\uDFE2', color: '#f59e0b',
     description: 'Booking counts, revenue, and trends',
     defaultWidgets: ['rental-count','rental-revenue','rental-locations','rental-by-location','rental-daily-trend','rental-day-of-week'] },
@@ -419,6 +435,32 @@ const W = {
       });
       const s = Object.entries(methods).filter(e => e[1] > 0).sort((a,b) => b[1]-a[1]);
       return { labels: s.map(e=>e[0]), values: s.map(e=>e[1]), format: 'currency' };
+    }},
+
+  // ── Revenue by Stream (multi-source) ──
+  'rev-streams': { label: 'Revenue by Stream', description: 'Cross-functional revenue breakdown', note: 'Revenue split across programs, facility, memberships, and POS', section: 'revenue',
+    reportType: 'gl', size: 'lg', icon: '\uD83C\uDFAF', component: 'streams',
+    _multiSource: true, _extraReportTypes: ['facility', 'programs', 'memberships', 'products'],
+    transform: function(rows, allData) {
+      var streams = [];
+      var progRows = (allData && allData['programs']) || [];
+      var progRev = progRows.reduce(function(s,r){ return s + pf(r['net_total'] || r['charged']); }, 0);
+      if (progRev > 0) streams.push({ type: 'Programs', amount: progRev, color: '#3b82f6', report: 'programs' });
+      var facRows = (allData && allData['facility']) || [];
+      var facRev = facRows.reduce(function(s,r){ return s + pf(r['Total']); }, 0);
+      if (facRev > 0) streams.push({ type: 'Facility rentals', amount: facRev, color: '#f59e0b', report: 'facility' });
+      var memRows = (allData && allData['memberships']) || [];
+      var memRev = memRows.reduce(function(s,r){ return s + pf(r['paid'] || r['Paid'] || r['price'] || r['Price']); }, 0);
+      if (memRev > 0) streams.push({ type: 'Memberships', amount: memRev, color: '#ec4899', report: 'memberships' });
+      var prodRows = (allData && allData['products']) || [];
+      var prodRev = prodRows.reduce(function(s,r){ return s + pf(r['Gross Revenue'] || r['Net Revenue'] || r['revenue']); }, 0);
+      if (prodRev > 0) streams.push({ type: 'Products / POS', amount: prodRev, color: '#ef4444', report: 'products' });
+      var glTotal = rows.reduce(function(s,r){ return s + pf(r['Total Payments']); }, 0);
+      streams.sort(function(a,b){ return b.amount - a.amount; });
+      var streamTotal = streams.reduce(function(s,x){ return s + x.amount; }, 0);
+      if (glTotal > streamTotal * 1.01) streams.push({ type: 'Other / fees', amount: glTotal - streamTotal, color: '#6b7280', report: 'gl' });
+      var grandTotal = Math.max(glTotal, streamTotal);
+      return { streams: streams, total: grandTotal };
     }},
 
   // ── Facility Rentals ──
@@ -997,7 +1039,7 @@ const W = {
 const TEMPLATES = {
   general: { label: 'General Overview', icon: '\uD83D\uDCCA', description: 'Revenue, rentals, programs, and courts at a glance',
     sections: [
-      { id: 'revenue', widgets: ['gl-total-revenue','gl-total-refunds','gl-net-revenue','gl-transactions'] },
+      { id: 'revenue', widgets: ['rev-streams','gl-total-revenue','gl-total-refunds','gl-net-revenue','gl-transactions'] },
       { id: 'facility', widgets: ['rental-count','rental-revenue','rental-locations','rental-by-location'] },
       { id: 'programs', widgets: ['program-enrollments','program-revenue','program-fill-rate','program-top'] },
       { id: 'courts', widgets: ['court-total','court-instant','court-managed','court-by-court'] },
@@ -1005,7 +1047,7 @@ const TEMPLATES = {
     ]},
   financial: { label: 'Revenue Focus', icon: '\uD83D\uDCB0', description: 'Deep dive into all revenue streams',
     sections: [
-      { id: 'revenue', widgets: ['gl-total-revenue','gl-total-refunds','gl-net-revenue','gl-transactions','gl-by-code','gl-by-payment-method','tbl-gl'] },
+      { id: 'revenue', widgets: ['rev-streams','gl-total-revenue','gl-total-refunds','gl-net-revenue','gl-transactions','gl-by-code','gl-by-payment-method','tbl-gl'] },
       { id: 'facility', widgets: ['rental-revenue','rental-avg-value','rental-by-location','rental-revenue-trend'] },
       { id: 'products', widgets: ['prod-gross','prod-net','prod-refunds','prod-units','prod-by-product'] },
       { id: 'instructors', widgets: ['instr-net','instr-payout','instr-org-ret','instr-top'] },
@@ -1287,13 +1329,52 @@ function HeatmapWidget({ data }) {
   );
 }
 
-const COMP = { metric: MetricCard, bar: BarChartWidget, donut: DonutChartWidget, line: LineChartWidget, table: TableWidget, map: MapWidget, heatmap: HeatmapWidget };
+function StreamsChart({ data }) {
+  if (!data || !data.streams || !data.streams.length) return <div style={{color:'var(--text-muted)',fontSize:12,padding:16,textAlign:'center'}}>No revenue data for this period</div>;
+  var maxAmt = Math.max.apply(null, data.streams.map(function(s){ return s.amount; }).concat([1]));
+  var total = data.total || data.streams.reduce(function(s,x){ return s + x.amount; }, 0);
+  var baseUrl = (window._orgMeta && window._orgMeta.reportingBaseUrl) || '';
+  var hasLinks = baseUrl && window._orgMeta && window._orgMeta.toggles && window._orgMeta.toggles.reportLinks;
+  return (
+    <div className="streams-wrap">
+      {data.streams.map(function(s, i) {
+        var pct = total > 0 ? Math.round(s.amount / total * 100) : 0;
+        var barW = maxAmt > 0 ? Math.round(s.amount / maxAmt * 100) : 0;
+        var href = hasLinks ? baseUrl + '/' + ORG_SLUG + '/' + s.report + '?token=' + TOKEN : null;
+        return (
+          <div key={i} className="streams-row" onClick={href ? function(){ window.open(href, '_blank'); } : undefined} title={href ? 'Open ' + s.type + ' report \u2192' : s.type}>
+            <div className="streams-name">
+              <div className="streams-swatch" style={{background:s.color}} />
+              {s.type}
+              {href && <span className="streams-link-icon">\u2192</span>}
+            </div>
+            <div style={{display:'flex',alignItems:'center',gap:8}}>
+              <div className="streams-bar-track">
+                <div className="streams-bar-fill" style={{width:barW+'%',background:s.color,opacity:0.8}} />
+              </div>
+              <span className="streams-pct">{pct}%</span>
+            </div>
+            <div className="streams-amt">{'$' + Math.round(s.amount).toLocaleString()}</div>
+          </div>
+        );
+      })}
+      <div className="streams-total">
+        <div className="streams-total-label">Total</div>
+        <div />
+        <div className="streams-total-amt">{'$' + Math.round(total).toLocaleString()}</div>
+      </div>
+    </div>
+  );
+}
+
+const COMP = {
+  streams: StreamsChart, metric: MetricCard, bar: BarChartWidget, donut: DonutChartWidget, line: LineChartWidget, table: TableWidget, map: MapWidget, heatmap: HeatmapWidget };
 
 function WidgetCard({ widgetId, reportData, loading, target, onTargetChange, dateRange, reportingBaseUrl }) {
   const def = W[widgetId]; if (!def) return null;
   const Comp = COMP[def.component]; if (!Comp) return null;
   const raw = reportData[def.reportType];
-  const data = raw ? def.transform(raw) : null;
+  const data = raw ? (def._multiSource ? def.transform(raw, reportData) : def.transform(raw)) : null;
   const sizeClass = def.size==='sm'?'widget-sm':def.size==='lg'?'widget-lg':'widget-md';
   const isMetric = def.component === 'metric';
   const [editingTarget, setEditingTarget] = useState(false);
@@ -2551,7 +2632,9 @@ function DashboardApp() {
         const resp = await fetch(configUrl);
         const json = await resp.json();
         setAvailableReports(json.availableReports || {});
-        setOrgMeta({ name: json.orgName, logoUrl: json.logoUrl, city: json.city, state: json.state, toggles: json.toggles || {}, reportingBaseUrl: json.reportingBaseUrl || '', reportVisibility: json.reportVisibility || null, readOnly: json.readOnly || false, expiresAt: json.expiresAt || null, supportReadOnly: json.supportReadOnly || false, supportNotify: json.supportNotify || [] });
+        var _m = { name: json.orgName, logoUrl: json.logoUrl, city: json.city, state: json.state, toggles: json.toggles || {}, reportingBaseUrl: json.reportingBaseUrl || '', reportVisibility: json.reportVisibility || null, readOnly: json.readOnly || false, expiresAt: json.expiresAt || null, supportReadOnly: json.supportReadOnly || false, supportNotify: json.supportNotify || [] };
+        window._orgMeta = _m;
+        setOrgMeta(_m);
         window._orgGeo = json.city && json.state ? `${json.city}, ${json.state}` : '';
         window._reportVisibility = json.reportVisibility || null;
         if (json.dateRange) { setDateRange(json.dateRange); setDatePreset(''); }
@@ -2571,7 +2654,9 @@ function DashboardApp() {
   useEffect(() => {
     if (!config || config === 'new') { setLoading(false); return; }
     const allWidgetIds = config.sections.flatMap(s => s.widgets);
-    const rts = [...new Set(allWidgetIds.map(id => W[id]?.reportType).filter(Boolean))];
+    const baseRts = allWidgetIds.map(id => W[id]?.reportType).filter(Boolean);
+    allWidgetIds.forEach(id => { var def = W[id]; if (def && def._extraReportTypes) def._extraReportTypes.forEach(function(rt){ baseRts.push(rt); }); });
+    const rts = [...new Set(baseRts)];
     // The Customer Support tab is outside section config — load its data whenever the org has it
     if (availableReports.support && !rts.includes('support')) rts.push('support');
     if (!rts.length) { setLoading(false); return; }
