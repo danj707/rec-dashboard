@@ -1,0 +1,31 @@
+{
+  "baseUrl": "https://www.rec.us",
+  "viewport": { "width": 1280, "height": 720 },
+  "fps": 25,
+  "tts": {
+    "provider": "elevenlabs",
+    "voiceId": "pNInz6obpgDQGcFmaJgB",
+    "voiceName": "Adam",
+    "model": "eleven_turbo_v2_5",
+    "voiceSettings": { "stability": 0.5, "similarity_boost": 0.75, "style": 0.0, "use_speaker_boost": true }
+  },
+  "tempo": {
+    "leadMs": 300,
+    "tailMs": 2600,
+    "settleMs": 2200,
+    "returnMs": 1500,
+    "scrollChunks": 4
+  },
+  "brand": {
+    "font": "Inter",
+    "eyebrow": "REC TRAINING VIDEO",
+    "foot": "rec.us",
+    "titleCardSeconds": 4.8,
+    "outro": {
+      "eyebrow": "THANKS FOR WATCHING",
+      "title": "Questions?",
+      "sub": "Reach out to the Rec Customer Experience team.",
+      "email": "partnersupport@rec.us"
+    }
+  }
+}
