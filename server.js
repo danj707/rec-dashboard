@@ -300,6 +300,12 @@ async function fetchMetabaseData(orgSlug, reportType, query) {
 //  UPDATES LOG
 // ═══════════════════════════════════════════
 const UPDATES = [
+  
+  { date: '2026-07-28', title: 'Cross-Project Org Dedup', items: [
+    'Add Org now checks the reporting project first; if the org already exists there, adopts its token instead of generating a new one.',
+    'Prevents token overwrites and broken URLs when onboarding an org that was already in the reporting project.',
+    'Skips the sync POST when the token was adopted (no-op write avoided).',
+  ]},
   { date: '2026-07-18', title: 'Users & Demographics promoted to #1 section', items: [
     'Users & Demographics section now always renders first regardless of config order',
     'KPI metrics (Total Users, New Users) collapsed into a compact summary strip',
@@ -618,18 +624,40 @@ app.post('/:org/api/support/notify-emails', authMiddleware, (req, res) => {
 });
 
 // ── POST /admin/api/orgs — add new org via admin panel ───────────────
-app.post('/admin/api/orgs', adminAuth, (req, res) => {
+app.post('/admin/api/orgs', adminAuth, async (req, res) => {
   const { slug, name, orgId, city, state, logoUrl } = req.body;
   if (!slug || !orgId) return res.status(400).json({ error: 'slug and orgId are required' });
   if (ORGS[slug]) return res.status(409).json({ error: `Org "${slug}" already exists` });
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) return res.status(400).json({ error: 'Slug must be lowercase alphanumeric with hyphens' });
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(orgId)) return res.status(400).json({ error: 'Invalid org UUID format' });
 
-  // Generate 16-char base62 token
-  const crypto = require('crypto');
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let token = '';
-  for (let i = 0; i < 16; i++) token += chars[crypto.randomInt(chars.length)];
+  let token;
+  let adoptedFromReporting = false;
+
+  // Check if org already exists in the reporting project — if so, adopt its token
+  if (REPORTING_BASE_URL) {
+    try {
+      const check = await fetch(`${REPORTING_BASE_URL}/api/admin/org/${encodeURIComponent(slug)}`);
+      if (check.ok) {
+        const existing = await check.json();
+        if (existing.exists && existing.token) {
+          token = existing.token;
+          adoptedFromReporting = true;
+          console.log(`[orgs] Adopted existing token from reporting project for: ${slug}`);
+        }
+      }
+    } catch (e) {
+      console.warn(`[orgs] Could not check reporting project for ${slug}:`, e.message);
+    }
+  }
+
+  // Generate new token only if reporting project didn't have one
+  if (!token) {
+    const crypto = require('crypto');
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    token = '';
+    for (let i = 0; i < 16; i++) token += chars[crypto.randomInt(chars.length)];
+  }
 
   const org = {
     name: name || slug,
@@ -644,10 +672,11 @@ app.post('/admin/api/orgs', adminAuth, (req, res) => {
 
   ORGS[slug] = org;
   saveDynamicOrgs();
-  console.log(`[orgs] Added new org: ${slug} (${orgId})`);
+  console.log(`[orgs] Added new org: ${slug} (${orgId})${adoptedFromReporting ? ' (token from reporting)' : ''}`);
 
   // Sync to rental-report so report links work with the same token
-  if (REPORTING_BASE_URL) {
+  // (even if we adopted the token, this ensures logoUrl/displayName stay in sync)
+  if (REPORTING_BASE_URL && !adoptedFromReporting) {
     fetch(`${REPORTING_BASE_URL}/api/admin/add-org`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -659,7 +688,7 @@ app.post('/admin/api/orgs', adminAuth, (req, res) => {
     });
   }
 
-  res.json({ ok: true, slug, token, org: { ...org, _dynamic: undefined } });
+  res.json({ ok: true, slug, token, adoptedFromReporting, org: { ...org, _dynamic: undefined } });
 });
 
 // ═══════════════════════════════════════════
