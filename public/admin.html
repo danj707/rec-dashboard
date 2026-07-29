@@ -565,7 +565,7 @@ async function submitAddOrg() {
 }
 
 // ══ Project Update composer ══════════════════════════════════════════
-var updState = { orgs: [], visibility: {}, reports: [], changelog: [], published: [], rows: null, mode: 'smart', title: null };
+var updState = { orgs: [], visibility: {}, features: [], changelog: [], published: [], rows: null, mode: 'smart', title: null };
 
 function openUpd() { document.getElementById('add-update-modal').classList.add('open'); loadUpd(); }
 function closeUpd() { document.getElementById('add-update-modal').classList.remove('open'); }
@@ -574,14 +574,14 @@ async function loadUpd() {
   var box = document.getElementById('upd-content');
   box.innerHTML = '<div class="loading">Loading…</div>';
   updState.rows = null;
-  if (updState.title == null) updState.title = '✨ What’s new in your reports';
+  if (updState.title == null) updState.title = '✨ What’s new on your dashboard';
   try {
     var r = await fetch('/admin/api/announcements');
     if (!r.ok) throw new Error('HTTP ' + r.status);
     var d = await r.json();
     updState.orgs = d.orgs || [];
     updState.visibility = d.visibility || {};
-    updState.reports = d.reports || [];
+    updState.features = d.features || [];
     updState.changelog = d.changelog || [];
     updState.published = d.announcements || [];
     renderUpd();
@@ -591,34 +591,29 @@ async function loadUpd() {
 }
 
 function updEsc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
-function updEmoji(t) { var m = updState.reports.find(function (x) { return x.type === t; }); return m ? m.emoji : '✨'; }
-function updLabel(t) { var m = updState.reports.find(function (x) { return x.type === t; }); return m ? m.label : t; }
-function updKnown(t) { return !!updState.reports.find(function (x) { return x.type === t; }); }
+function updEmoji(t) { var m = updState.features.find(function (x) { return x.key === t; }); return m ? m.emoji : '✨'; }
+function updLabel(t) { var m = updState.features.find(function (x) { return x.key === t; }); return m ? m.label : t; }
+function updKnown(t) { return !!updState.features.find(function (x) { return x.key === t; }); }
+function updTotalOrgs() { return updState.orgs.length; }
 
+// Infer which dashboard FEATURE(s) a changelog line is about (untagged = all orgs).
 var UPD_RULES = [
-  [/instructor|payout|pay ?slip/i, 'instructor-payout'],
-  [/facilit|rental|reservation|booking/i, 'facility'],
-  [/fast.?track|waitlist|pre-?reg/i, 'fasttrack'],
-  [/demographic/i, 'program-demographics'],
-  [/member/i, 'memberships'],
-  [/court/i, 'court-utilization'],
-  [/retention|churn|lapse/i, 'retention'],
-  [/product|merch|store|\bsales\b/i, 'products'],
-  [/check.?in/i, 'checkins'],
-  [/gl code|ledger|\bgl\b|revenue|refund|payment/i, 'gl'],
-  [/program|enrollment|section|roster|\bclass\b/i, 'programs'],
-  [/community intel|\busers?\b|household/i, 'users'],
+  [/ai briefing/i, 'aiBriefing'],
+  [/email digest|scheduled email|\bdigest\b/i, 'emailDigest'],
+  [/report link|linkage|view report/i, 'reportLinks'],
+  [/support|intercom|escalation|inbox/i, 'support'],
+  [/ai insight|rec insight|\binsights?\b|\bai\b|claude|haiku/i, 'ai'],
 ];
 function updInfer(text) {
   var out = [];
   UPD_RULES.forEach(function (rule) { if (rule[0].test(text) && out.indexOf(rule[1]) < 0 && updKnown(rule[1])) out.push(rule[1]); });
   return out;
 }
-function updCountOrgs(reports) {
-  var want = {}; reports.forEach(function (r) { want[r] = 1; });
+function updCountOrgs(features) {
+  var want = {}; features.forEach(function (f) { want[f] = 1; });
   var n = 0;
   Object.keys(updState.visibility).forEach(function (slug) {
-    if ((updState.visibility[slug] || []).some(function (r) { return want[r]; })) n++;
+    if ((updState.visibility[slug] || []).some(function (f) { return want[f]; })) n++;
   });
   return n;
 }
@@ -629,7 +624,7 @@ function renderUpd() {
     return '<button onclick="updSetMode(\'' + mode + '\')" style="flex:1;padding:9px;border:1px solid #ddd;background:' + (s.mode === mode ? '#111' : '#fff') + ';color:' + (s.mode === mode ? '#fff' : '#333') + ';border-radius:6px;font-size:13px;font-weight:600;cursor:pointer">' + label + '</button>';
   }
   var html = '<h2 style="margin-bottom:4px">📣 Project Updates</h2>';
-  html += '<div style="font-size:12px;color:#666;margin-bottom:14px">Tell orgs what shipped — auto-targeted to the orgs that actually have that report.</div>';
+  html += '<div style="font-size:12px;color:#666;margin-bottom:14px">Tell orgs what shipped on their dashboard — untagged lines go to everyone; tag a line with a feature to target just the orgs that have it on.</div>';
   html += '<div style="display:flex;gap:8px;margin-bottom:14px">' + tab('smart', '📰 From changelog') + tab('manual', '✍️ Write manually') + '</div>';
   html += '<label>Update title</label><input id="upd-title" value="' + updEsc(s.title) + '" oninput="updState.title=this.value" style="width:100%;margin-bottom:12px">';
   html += (s.mode === 'smart') ? renderSmart() : renderManual();
@@ -650,7 +645,7 @@ function renderSmart() {
     s.rows = (s.changelog || []).slice(0, 30).map(function (e) {
       var text = (e.title || (e.items && e.items[0]) || '').trim();
       var blob = [e.title].concat(e.items || []).join(' ');
-      return { text: text, reports: updInfer(blob), include: false, date: e.date || null };
+      return { text: text, features: updInfer(blob), include: false, date: e.date || null };
     });
   }
   var html = '<div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Recent shipped changes — tick to include</div>';
@@ -673,28 +668,29 @@ function renderSmart() {
 }
 function renderChips(i) {
   var row = updState.rows[i];
-  return (row.reports || []).map(function (rt) {
-    return '<span style="display:inline-flex;align-items:center;gap:3px;background:#ede9fe;color:#5b21b6;border-radius:12px;padding:2px 8px;font-size:11px">' + updEmoji(rt) + ' ' + updEsc(updLabel(rt)) + ' <span onclick="updRemoveChip(' + i + ',\'' + rt + '\')" style="cursor:pointer;font-weight:700">×</span></span>';
+  return (row.features || []).map(function (ft) {
+    return '<span style="display:inline-flex;align-items:center;gap:3px;background:#ede9fe;color:#5b21b6;border-radius:12px;padding:2px 8px;font-size:11px">' + updEmoji(ft) + ' ' + updEsc(updLabel(ft)) + ' <span onclick="updRemoveChip(' + i + ',\'' + ft + '\')" style="cursor:pointer;font-weight:700">×</span></span>';
   }).join(' ');
 }
 function updAddSelect(i) {
-  var opts = '<option value="">+ report</option>' + updState.reports.map(function (r) { return '<option value="' + r.type + '">' + updEsc(r.label) + '</option>'; }).join('');
+  var opts = '<option value="">+ feature</option>' + updState.features.map(function (f) { return '<option value="' + f.key + '">' + updEsc(f.label) + '</option>'; }).join('');
   return '<select onchange="updAddChip(' + i + ',this.value)" style="font-size:11px;border:1px solid #ddd;border-radius:4px;padding:2px 4px">' + opts + '</select>';
 }
 function updRowAudience(row) {
-  if (!row.reports || !row.reports.length) return 'no report — won’t send';
-  var n = updCountOrgs(row.reports);
+  if (!row.features || !row.features.length) return '→ all orgs';
+  var n = updCountOrgs(row.features);
   return '→ ' + n + ' org' + (n === 1 ? '' : 's');
 }
 function updToggleRow(i, on) { updState.rows[i].include = on; renderUpd(); }
-function updAddChip(i, rt) { if (!rt) return; var r = updState.rows[i]; if (r.reports.indexOf(rt) < 0) r.reports.push(rt); renderUpd(); }
-function updRemoveChip(i, rt) { var r = updState.rows[i]; r.reports = r.reports.filter(function (x) { return x !== rt; }); renderUpd(); }
+function updAddChip(i, ft) { if (!ft) return; var r = updState.rows[i]; if (r.features.indexOf(ft) < 0) r.features.push(ft); renderUpd(); }
+function updRemoveChip(i, ft) { var r = updState.rows[i]; r.features = r.features.filter(function (x) { return x !== ft; }); renderUpd(); }
 function updRecalc() {
   var el = document.getElementById('upd-audience'); if (!el) return;
-  var union = {}; (updState.rows || []).forEach(function (r) { if (r.include) (r.reports || []).forEach(function (rt) { union[rt] = 1; }); });
-  var reps = Object.keys(union);
-  if (!reps.length) { el.textContent = 'Tick a change above to see who gets it.'; return; }
-  var n = updCountOrgs(reps);
+  var ticked = (updState.rows || []).filter(function (r) { return r.include; });
+  if (!ticked.length) { el.textContent = 'Tick a change above to see who gets it.'; return; }
+  var n;
+  if (ticked.some(function (r) { return !r.features || !r.features.length; })) { n = updTotalOrgs(); }
+  else { var union = {}; ticked.forEach(function (r) { r.features.forEach(function (ft) { union[ft] = 1; }); }); n = updCountOrgs(Object.keys(union)); }
   el.textContent = '🎯 ' + n + ' org' + (n === 1 ? '' : 's') + ' will get this update.';
 }
 
@@ -727,10 +723,10 @@ function renderPublished() {
 
 async function submitSmart() {
   var title = (updState.title || '').trim();
-  var items = (updState.rows || []).filter(function (r) { return r.include && r.text.trim() && r.reports.length; })
-    .map(function (r) { return { text: r.text.trim(), reports: r.reports, date: r.date }; });
+  var items = (updState.rows || []).filter(function (r) { return r.include && r.text.trim(); })
+    .map(function (r) { return { text: r.text.trim(), features: r.features || [], date: r.date }; });
   if (!title) { alert('Title is required.'); return; }
-  if (!items.length) { alert('Tick at least one change that has a report tag.'); return; }
+  if (!items.length) { alert('Tick at least one change to include.'); return; }
   try {
     var resp = await fetch('/admin/api/announcements/from-updates', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: title, items: items }) });
     var d = await resp.json();

@@ -523,22 +523,16 @@ app.get('/admin/api/orgs', adminAuth, (req, res) => {
 //  Orgs see active announcements as a one-time dismissible popup (dismissal
 //  tracked client-side in localStorage; no server-side per-user state).
 // ═══════════════════════════════════════════
-const REPORT_META = {
-  facility:               { label: 'Facility Rental Schedule', emoji: '📅' },
-  programs:               { label: 'Programs',                 emoji: '🎯' },
-  gl:                     { label: 'GL Code Rollup',           emoji: '📊' },
-  fasttrack:              { label: 'Fast Track',               emoji: '⚡' },
-  'program-demographics': { label: 'Program Demographics',     emoji: '👥' },
-  users:                  { label: 'Community Intel',          emoji: '👥' },
-  memberships:            { label: 'Memberships',              emoji: '🎫' },
-  'court-utilization':    { label: 'Court Utilization',        emoji: '🎾' },
-  retention:              { label: 'Retention',                emoji: '🔁' },
-  products:               { label: 'Product Sales',            emoji: '🛒' },
-  'instructor-payout':    { label: 'Instructor Payout',        emoji: '💰' },
-  checkins:               { label: 'Check-Ins',                emoji: '✅' },
-  'program-checkins':     { label: 'Program Check-Ins',        emoji: '✅' },
+// Dashboard features (the per-org toggles) — announcements tag lines by these
+// so an update can auto-target the orgs that actually have that feature on.
+const FEATURE_META = {
+  ai:          { label: 'AI Insights',      emoji: '✨' },
+  aiBriefing:  { label: 'AI Briefing',      emoji: '📋' },
+  emailDigest: { label: 'Email Digest',     emoji: '📧' },
+  reportLinks: { label: 'Report Linkage',   emoji: '🔗' },
+  support:     { label: 'Customer Support', emoji: '💬' },
 };
-const REPORT_EMOJI_FALLBACK = '✨';
+const FEATURE_EMOJI_FALLBACK = '✨';
 
 const ANNOUNCEMENTS_FILE = path.join(DATA_DIR, 'announcements.json');
 function loadAnnouncements() {
@@ -549,25 +543,30 @@ function saveAnnouncements(list) { ensureDataDir(); fs.writeFileSync(ANNOUNCEMEN
 let announcements = loadAnnouncements();
 function newAnnId() { return 'upd_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
 
-// Reports actually available on an org's dashboard (shared + per-org).
-function visibleReportsForOrg(slug) {
-  const org = ORGS[slug];
-  if (!org) return [];
-  const set = new Set(Object.keys(SHARED_UUIDS));
-  for (const r of Object.keys(org.reports || {})) set.add(r);
-  return [...set];
+// Dashboard features currently enabled for an org (per-org toggles + support).
+function enabledFeaturesForOrg(slug) {
+  if (!ORGS[slug]) return [];
+  const t = (dashboardConfigs[slug] || {}).toggles || {};
+  const out = [];
+  if (t.ai !== false) out.push('ai');            // AI Insights defaults on
+  if (t.aiBriefing) out.push('aiBriefing');
+  if (t.emailDigest) out.push('emailDigest');
+  if (t.reportLinks) out.push('reportLinks');
+  try { if (supportSettings(slug).enabled) out.push('support'); } catch (e) {}
+  return out;
 }
 
-// Active announcements this org should see, newest first. Smart announcements
-// are filtered to only the items whose reports the org actually has.
+// Active announcements this org should see, newest first. For a smart
+// announcement, an item with NO feature tags is a general dashboard update
+// (shown to everyone); a tagged item only shows to orgs that have that feature.
 function activeAnnouncementsForOrg(slug) {
-  const visible = new Set(visibleReportsForOrg(slug));
+  const feats = new Set(enabledFeaturesForOrg(slug));
   const sorted = announcements.slice().sort((x, y) => (y.createdAt || 0) - (x.createdAt || 0));
   const out = [];
   for (const a of sorted) {
     if (a.active === false) continue;
     if (a.smart && Array.isArray(a.items)) {
-      const items = a.items.filter(it => Array.isArray(it.reports) && it.reports.some(r => visible.has(r)));
+      const items = a.items.filter(it => !it.features || it.features.length === 0 || it.features.some(f => feats.has(f)));
       if (items.length) out.push({ id: a.id, title: a.title, smart: true, items: items.map(it => ({ text: it.text, emoji: it.emoji })) });
     } else if (a.allOrgs || (Array.isArray(a.orgs) && a.orgs.includes(slug))) {
       out.push({ id: a.id, title: a.title, body: a.body });
@@ -576,12 +575,15 @@ function activeAnnouncementsForOrg(slug) {
   return out;
 }
 
-// How many orgs currently see at least one of the given report types.
-function smartAudienceCount(reportTypes) {
-  const wanted = new Set(reportTypes);
+// How many orgs would see at least one of the given smart items. An untagged
+// item counts as all orgs; a tagged item counts orgs with that feature on.
+function smartAudienceCount(items) {
+  const list = Array.isArray(items) ? items : [];
+  if (list.some(it => !it.features || it.features.length === 0)) return Object.keys(ORGS).length;
+  const wanted = new Set(); list.forEach(it => (it.features || []).forEach(f => wanted.add(f)));
   let n = 0;
   for (const slug of Object.keys(ORGS)) {
-    if (visibleReportsForOrg(slug).some(r => wanted.has(r))) n++;
+    if (enabledFeaturesForOrg(slug).some(f => wanted.has(f))) n++;
   }
   return n;
 }
@@ -590,17 +592,16 @@ function smartAudienceCount(reportTypes) {
 app.get('/admin/api/announcements', adminAuth, (req, res) => {
   const orgs = Object.keys(ORGS).map(slug => ({ slug, name: ORGS[slug].name || slug })).sort((a, b) => a.name.localeCompare(b.name));
   const visibility = {};
-  for (const slug of Object.keys(ORGS)) visibility[slug] = visibleReportsForOrg(slug);
-  const reports = Object.keys(REPORT_META).map(type => ({
-    type, label: REPORT_META[type].label, emoji: REPORT_META[type].emoji,
-    orgs: Object.keys(ORGS).filter(slug => visibleReportsForOrg(slug).includes(type)).length,
+  for (const slug of Object.keys(ORGS)) visibility[slug] = enabledFeaturesForOrg(slug);
+  const features = Object.keys(FEATURE_META).map(key => ({
+    key, label: FEATURE_META[key].label, emoji: FEATURE_META[key].emoji,
+    orgs: Object.keys(ORGS).filter(slug => enabledFeaturesForOrg(slug).includes(key)).length,
   }));
   const list = announcements.slice().sort((x, y) => (y.createdAt || 0) - (x.createdAt || 0)).map(a => {
     if (!a.smart) return a;
-    const union = new Set(); (a.items || []).forEach(it => (it.reports || []).forEach(r => union.add(r)));
-    return Object.assign({}, a, { audience: smartAudienceCount([...union]) });
+    return Object.assign({}, a, { audience: smartAudienceCount(a.items) });
   });
-  res.json({ announcements: list, orgs, visibility, reports, changelog: UPDATES });
+  res.json({ announcements: list, orgs, visibility, features, changelog: UPDATES });
 });
 
 // POST — create a MANUAL announcement (title + body, targeted by allOrgs/orgs[])
@@ -619,25 +620,25 @@ app.post('/admin/api/announcements', adminAuth, (req, res) => {
   res.json({ ok: true, announcement: ann });
 });
 
-// POST — create a SMART announcement from picked changelog lines (auto-targeted by report)
+// POST — create a SMART announcement from picked changelog lines. Each line may
+// carry feature tags (auto-target orgs with that feature) or none (all orgs).
 app.post('/admin/api/announcements/from-updates', adminAuth, (req, res) => {
   const { title, items } = req.body || {};
   const t = (title || '').trim();
   const clean = (Array.isArray(items) ? items : []).map(it => {
     const text = (it && it.text || '').trim();
-    const reports = (it && Array.isArray(it.reports) ? it.reports : []).filter(r => REPORT_META[r] || SHARED_UUIDS[r]);
-    if (!text || !reports.length) return null;
-    return { text, reports, emoji: (REPORT_META[reports[0]] && REPORT_META[reports[0]].emoji) || REPORT_EMOJI_FALLBACK, date: (it && it.date) || null };
+    const features = (it && Array.isArray(it.features) ? it.features : []).filter(f => FEATURE_META[f]);
+    if (!text) return null;
+    return { text, features, emoji: (features[0] && FEATURE_META[features[0]] ? FEATURE_META[features[0]].emoji : FEATURE_EMOJI_FALLBACK), date: (it && it.date) || null };
   }).filter(Boolean);
   if (!t) return res.status(400).json({ error: 'Title is required' });
-  if (!clean.length) return res.status(400).json({ error: 'Pick at least one changelog line tagged with a report' });
+  if (!clean.length) return res.status(400).json({ error: 'Tick at least one change to include' });
   const ann = {
     id: newAnnId(), smart: true, title: t, items: clean,
     active: true, createdAt: Date.now(), createdISO: new Date().toISOString(),
   };
   announcements.push(ann); saveAnnouncements(announcements);
-  const union = new Set(); clean.forEach(it => it.reports.forEach(r => union.add(r)));
-  res.json({ ok: true, announcement: ann, audience: smartAudienceCount([...union]) });
+  res.json({ ok: true, announcement: ann, audience: smartAudienceCount(clean) });
 });
 
 // POST — pause / unpause an announcement
