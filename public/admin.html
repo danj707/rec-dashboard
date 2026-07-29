@@ -115,6 +115,15 @@ code { font-family: 'JetBrains Mono', monospace; font-size: 0.85em; background: 
 .modal .error { color: #ef4444; font-size: 12px; margin-bottom: 10px; display: none; }
 .modal .success { background: #052e16; border: 1px solid #22c55e; border-radius: 8px; padding: 12px 16px; margin-bottom: 14px; }
 .modal .success .token { font-family: 'SF Mono', monospace; background: #111; padding: 4px 8px; border-radius: 4px; color: #22c55e; font-size: 13px; user-select: all; }
+    /* Project Update composer — light mode (admin is otherwise dark) */
+    #add-update-modal .modal { width: min(660px, 92vw); max-width: none; background: #fff; color: #1a1a1a; border-color: #e5e7eb; max-height: 90vh; overflow: auto; }
+    #add-update-modal .modal h2 { color: #111; }
+    #add-update-modal .modal label { color: #374151; }
+    #add-update-modal .modal input, #add-update-modal .modal textarea { background: #fff; border-color: #d1d5db; color: #111; }
+    #add-update-modal .modal input:focus, #add-update-modal .modal textarea:focus { border-color: #7c3aed; }
+    #add-update-modal .modal-cancel { background: #eee; color: #333; }
+    #add-update-modal .modal-cancel:hover { background: #ddd; }
+    #add-update-modal .loading { color: #666; padding: 30px; }
 </style>
 </head>
 <body>
@@ -122,7 +131,10 @@ code { font-family: 'JetBrains Mono', monospace; font-size: 0.85em; background: 
   <div class="header">
     <div class="header-inner">
       <h1><span>rec.us</span> Dashboard Platform</h1>
-      <div class="header-meta" id="header-meta">Loading...</div>
+      <div style="display:flex;align-items:center;gap:16px">
+        <button class="add-org-btn" onclick="openUpd()">📣 Add Update</button>
+        <div class="header-meta" id="header-meta">Loading...</div>
+      </div>
     </div>
   </div>
   <div id="content"><div class="loading">Loading admin data...</div></div>
@@ -156,7 +168,7 @@ code { font-family: 'JetBrains Mono', monospace; font-size: 0.85em; background: 
 
   <!-- Add Update (Project Updates) Modal -->
   <div class="modal-overlay" id="add-update-modal" onclick="if(event.target===this)this.classList.remove('open')">
-    <div class="modal" style="max-width:660px">
+    <div class="modal">
       <div id="upd-content"><div class="loading">Loading…</div></div>
     </div>
   </div>
@@ -483,7 +495,6 @@ async function saveNotify(slug) {
       <div class="collapsible-header" onclick="toggleSection('sec-updates')">
         <span class="icon">\uD83D\uDCDD</span>
         <span class="flex">Updates</span>
-        <button class="add-org-btn" style="margin-right:10px" onclick="event.stopPropagation(); openUpd()">📣 Add Update</button>
         <span style="font-size:12px;color:#666;font-weight:400">${updates.length} entries</span>
         <span class="chevron">\u25BC</span>
       </div>
