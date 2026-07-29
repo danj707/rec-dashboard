@@ -297,7 +297,7 @@ body { font-family: var(--font-body); background: var(--bg-page); color: var(--t
 .print-header .dash-header-center, .print-header .dash-header-right { display: none !important; }
 /* ── Revenue Streams Widget ── */
 .streams-wrap { border-radius: 8px; padding: 0; }
-.streams-row { display: grid; grid-template-columns: 160px 1fr 70px; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background 0.15s; }
+.streams-row { display: grid; grid-template-columns: 140px 1fr 120px; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background 0.15s; }
 .streams-row:hover { background: var(--hover); }
 .streams-row:last-of-type { border-bottom: none; }
 .streams-swatch { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
@@ -306,7 +306,7 @@ body { font-family: var(--font-body); background: var(--bg-page); color: var(--t
 .streams-bar-fill { height: 100%; border-radius: 3px; transition: width 0.5s ease; }
 .streams-pct { font-size: 11px; color: var(--text-muted); min-width: 32px; text-align: right; }
 .streams-amt { font-size: 13px; font-weight: 600; color: var(--text-primary); text-align: right; font-variant-numeric: tabular-nums; }
-.streams-total { display: grid; grid-template-columns: 160px 1fr 70px; align-items: center; gap: 10px; padding: 8px 12px; border-top: 2px solid var(--text-muted); margin-top: 2px; }
+.streams-total { display: grid; grid-template-columns: 140px 1fr 120px; align-items: center; gap: 10px; padding: 8px 12px; border-top: 2px solid var(--text-muted); margin-top: 2px; }
 .streams-total-label { font-size: 12px; font-weight: 600; color: var(--text-muted); padding-left: 18px; }
 .streams-total-amt { font-size: 14px; font-weight: 700; color: var(--text-primary); text-align: right; font-variant-numeric: tabular-nums; }
 .streams-link-icon { font-size: 11px; color: var(--text-muted); margin-left: auto; opacity: 0; transition: opacity 0.15s; }
@@ -349,7 +349,7 @@ function getMonthRange(offset = 0) {
 const SECTIONS = {
   revenue: { id: 'revenue', label: 'Revenue Overview', icon: '\uD83D\uDCB0', color: '#22c55e',
     description: 'Financial summary from GL data',
-    defaultWidgets: ['rev-streams','gl-total-revenue','gl-total-refunds','gl-net-revenue','gl-transactions','gl-by-code','gl-by-payment-method'] },
+    defaultWidgets: ['gl-total-revenue','gl-total-refunds','gl-net-revenue','gl-transactions','rev-streams','gl-by-code','gl-by-payment-method'] },
   facility: { id: 'facility', label: 'Facility Rentals', icon: '\uD83C\uDFE2', color: '#f59e0b',
     description: 'Booking counts, revenue, and trends',
     defaultWidgets: ['rental-count','rental-revenue','rental-locations','rental-by-location','rental-daily-trend','rental-day-of-week'] },
@@ -439,7 +439,7 @@ const W = {
 
   // ── Revenue by Stream (multi-source) ──
   'rev-streams': { label: 'Revenue by Stream', description: 'Cross-functional revenue breakdown', note: 'Revenue split across programs, facility, memberships, and POS', section: 'revenue',
-    reportType: 'gl', size: 'lg', icon: '\uD83C\uDFAF', component: 'streams',
+    reportType: 'gl', size: 'md', icon: '\uD83C\uDFAF', component: 'streams',
     _multiSource: true, _extraReportTypes: ['facility', 'programs', 'memberships', 'products'],
     transform: function(rows, allData) {
       var streams = [];
@@ -1039,7 +1039,7 @@ const W = {
 const TEMPLATES = {
   general: { label: 'General Overview', icon: '\uD83D\uDCCA', description: 'Revenue, rentals, programs, and courts at a glance',
     sections: [
-      { id: 'revenue', widgets: ['rev-streams','gl-total-revenue','gl-total-refunds','gl-net-revenue','gl-transactions'] },
+      { id: 'revenue', widgets: ['gl-total-revenue','gl-total-refunds','gl-net-revenue','gl-transactions','rev-streams'] },
       { id: 'facility', widgets: ['rental-count','rental-revenue','rental-locations','rental-by-location'] },
       { id: 'programs', widgets: ['program-enrollments','program-revenue','program-fill-rate','program-top'] },
       { id: 'courts', widgets: ['court-total','court-instant','court-managed','court-by-court'] },
@@ -1047,7 +1047,7 @@ const TEMPLATES = {
     ]},
   financial: { label: 'Revenue Focus', icon: '\uD83D\uDCB0', description: 'Deep dive into all revenue streams',
     sections: [
-      { id: 'revenue', widgets: ['rev-streams','gl-total-revenue','gl-total-refunds','gl-net-revenue','gl-transactions','gl-by-code','gl-by-payment-method','tbl-gl'] },
+      { id: 'revenue', widgets: ['gl-total-revenue','gl-total-refunds','gl-net-revenue','gl-transactions','rev-streams','gl-by-code','gl-by-payment-method','tbl-gl'] },
       { id: 'facility', widgets: ['rental-revenue','rental-avg-value','rental-by-location','rental-revenue-trend'] },
       { id: 'products', widgets: ['prod-gross','prod-net','prod-refunds','prod-units','prod-by-product'] },
       { id: 'instructors', widgets: ['instr-net','instr-payout','instr-org-ret','instr-top'] },
@@ -1342,11 +1342,10 @@ function StreamsChart({ data }) {
         var barW = maxAmt > 0 ? Math.round(s.amount / maxAmt * 100) : 0;
         var href = hasLinks ? baseUrl + '/' + ORG_SLUG + '/' + s.report + '?token=' + TOKEN : null;
         return (
-          <div key={i} className="streams-row" onClick={href ? function(){ window.open(href, '_blank'); } : undefined} title={href ? 'Open ' + s.type + ' report \u2192' : s.type}>
+          <div key={i} className="streams-row" onClick={href ? function(){ window.open(href, '_blank'); } : undefined} title={href ? 'View full ' + s.type + ' report' : s.type}>
             <div className="streams-name">
               <div className="streams-swatch" style={{background:s.color}} />
               {s.type}
-              {href && <span className="streams-link-icon">\u2192</span>}
             </div>
             <div style={{display:'flex',alignItems:'center',gap:8}}>
               <div className="streams-bar-track">
@@ -1354,7 +1353,10 @@ function StreamsChart({ data }) {
               </div>
               <span className="streams-pct">{pct}%</span>
             </div>
-            <div className="streams-amt">{'$' + Math.round(s.amount).toLocaleString()}</div>
+            <div style={{display:'flex',alignItems:'center',gap:6}}>
+              <div className="streams-amt">{'$' + Math.round(s.amount).toLocaleString()}</div>
+              {href && <a onClick={function(e){ e.stopPropagation(); window.open(href, '_blank'); }} style={{fontSize:10,fontWeight:600,color:s.color,cursor:'pointer',whiteSpace:'nowrap',display:'flex',alignItems:'center',gap:3,textDecoration:'none',opacity:0.85,padding:'2px 6px',borderRadius:4,border:'1px solid ' + s.color + '33',background:s.color + '0d'}}>View →</a>}
+            </div>
           </div>
         );
       })}
