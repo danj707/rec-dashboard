@@ -119,7 +119,9 @@ code { font-family: 'JetBrains Mono', monospace; font-size: 0.85em; background: 
     #add-update-modal .modal { width: min(660px, 92vw); max-width: none; background: #fff; color: #1a1a1a; border-color: #e5e7eb; max-height: 90vh; overflow: auto; }
     #add-update-modal .modal h2 { color: #111; }
     #add-update-modal .modal label { color: #374151; }
-    #add-update-modal .modal input, #add-update-modal .modal textarea { background: #fff; border-color: #d1d5db; color: #111; }
+    #add-update-modal .modal input, #add-update-modal .modal textarea { background: #fff; border-color: #d1d5db; color: #111; margin-bottom: 0; }
+    /* Base admin CSS makes every .modal input width:100% — that balloons row checkboxes and crushes the text field. Constrain checkboxes. */
+    #add-update-modal .modal input[type=checkbox] { width: 16px; height: 16px; flex: 0 0 auto; margin: 0; accent-color: #7c3aed; cursor: pointer; }
     #add-update-modal .modal input:focus, #add-update-modal .modal textarea:focus { border-color: #7c3aed; }
     #add-update-modal .modal-cancel { background: #eee; color: #333; }
     #add-update-modal .modal-cancel:hover { background: #ddd; }
