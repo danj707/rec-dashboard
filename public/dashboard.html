@@ -2555,6 +2555,48 @@ function SupportTab({ reportData, loading, targets, onTargetChange, dateRange, a
   );
 }
 
+// One-time dismissible "What's New" popup. Shows the first announcement whose
+// id isn't in this browser's dismissed set (localStorage, per org). Server has
+// already filtered `announcements` to what this org should see.
+function WhatsNewPopup({ announcements, orgSlug }) {
+  const KEY = 'rec-updates-dismissed-' + orgSlug;
+  const readSeen = () => { try { return new Set(JSON.parse(localStorage.getItem(KEY) || '[]')); } catch (e) { return new Set(); } };
+  const [seen, setSeen] = useState(readSeen);
+  const list = announcements || [];
+  const next = list.find(a => !seen.has(a.id));
+  if (!next) return null;
+  const dismiss = () => {
+    const s = new Set(seen); s.add(next.id);
+    try { localStorage.setItem(KEY, JSON.stringify([...s])); } catch (e) {}
+    setSeen(s);
+  };
+  const body = (next.items && next.items.length)
+    ? (
+      <ul style={{ margin: 0, padding: 0, listStyle: 'none' }}>
+        {next.items.map((it, i) => (
+          <li key={i} style={{ padding: '7px 0', borderBottom: i < next.items.length - 1 ? '1px solid #eee' : 'none', fontSize: 14, lineHeight: 1.5, color: '#333' }}>
+            <span style={{ marginRight: 6 }}>{it.emoji || '✨'}</span>{it.text}
+          </li>
+        ))}
+      </ul>
+    )
+    : (<div style={{ fontSize: 14, lineHeight: 1.6, color: '#333', whiteSpace: 'pre-wrap' }}>{next.body || ''}</div>);
+  return (
+    <div onClick={e => { if (e.target === e.currentTarget) dismiss(); }}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+      <div style={{ background: '#fff', borderRadius: 14, maxWidth: 440, width: '100%', overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', fontFamily: 'var(--font-body)' }}>
+        <div style={{ background: 'linear-gradient(135deg,#6d28d9,#7c3aed)', color: '#fff', padding: '16px 20px', fontWeight: 700, fontSize: 16 }}>
+          {'📣'} {next.title || 'What’s new'}
+        </div>
+        <div style={{ padding: '16px 20px', maxHeight: '55vh', overflow: 'auto' }}>{body}</div>
+        <div style={{ padding: '0 20px 18px', textAlign: 'right' }}>
+          <button onClick={dismiss} style={{ background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 8, padding: '9px 20px', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>Got it</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function DashboardApp() {
   const [config, setConfig] = useState(null);
   const [orgMeta, setOrgMeta] = useState({});
@@ -2656,7 +2698,7 @@ function DashboardApp() {
         const resp = await fetch(configUrl);
         const json = await resp.json();
         setAvailableReports(json.availableReports || {});
-        var _m = { name: json.orgName, logoUrl: json.logoUrl, city: json.city, state: json.state, toggles: json.toggles || {}, reportingBaseUrl: json.reportingBaseUrl || '', reportVisibility: json.reportVisibility || null, readOnly: json.readOnly || false, expiresAt: json.expiresAt || null, supportReadOnly: json.supportReadOnly || false, supportNotify: json.supportNotify || [] };
+        var _m = { name: json.orgName, logoUrl: json.logoUrl, city: json.city, state: json.state, toggles: json.toggles || {}, reportingBaseUrl: json.reportingBaseUrl || '', reportVisibility: json.reportVisibility || null, readOnly: json.readOnly || false, expiresAt: json.expiresAt || null, supportReadOnly: json.supportReadOnly || false, supportNotify: json.supportNotify || [], announcements: json.announcements || [] };
         window._orgMeta = _m;
         setOrgMeta(_m);
         window._orgGeo = json.city && json.state ? `${json.city}, ${json.state}` : '';
@@ -2785,6 +2827,7 @@ function DashboardApp() {
 
   return (
     <div>
+      {!IS_PRINT && !isReadOnly && <WhatsNewPopup announcements={orgMeta.announcements} orgSlug={ORG_SLUG} />}
       {!IS_PRINT && !isReadOnly && (
         <div style={{background:'linear-gradient(135deg,#ea580c,#f97316)',padding:'8px 24px',textAlign:'center',
           fontSize:13,fontWeight:600,color:'#fff',fontFamily:'var(--font-body)',letterSpacing:'0.02em'}}>

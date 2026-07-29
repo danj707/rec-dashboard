@@ -301,6 +301,11 @@ async function fetchMetabaseData(orgSlug, reportType, query) {
 // ═══════════════════════════════════════════
 const UPDATES = [
   
+  { date: '2026-07-29', title: 'Project Updates / notifications', items: [
+    'New admin "Add Update" composer publishes announcements to org dashboards — auto-drafted from the changelog (each line tagged by report and auto-targeted to the orgs that have that report) or written manually and sent to all or specific orgs.',
+    'Org admins see published updates as a one-time dismissible popup on their dashboard, tracked per browser.',
+    'Pause or delete any published update from the same composer.',
+  ]},
   { date: '2026-07-28', title: 'Cross-Project Org Dedup', items: [
     'Add Org now checks the reporting project first; if the org already exists there, adopts its token instead of generating a new one.',
     'Prevents token overwrites and broken URLs when onboarding an org that was already in the reporting project.',
@@ -507,6 +512,150 @@ app.get('/admin/api/orgs', adminAuth, (req, res) => {
     };
   });
   res.json({ orgs, updates: UPDATES, sharedReports: Object.keys(SHARED_UUIDS) });
+});
+
+// ═══════════════════════════════════════════
+//  PROJECT UPDATES / ANNOUNCEMENTS
+//  Admin-published dashboard notifications. Two kinds share one store:
+//   • smart  — items[] each tagged with report types; auto-targeted to the
+//              orgs that actually have one of those reports.
+//   • manual — title + markdown body; targeted by allOrgs or an orgs[] list.
+//  Orgs see active announcements as a one-time dismissible popup (dismissal
+//  tracked client-side in localStorage; no server-side per-user state).
+// ═══════════════════════════════════════════
+const REPORT_META = {
+  facility:               { label: 'Facility Rental Schedule', emoji: '📅' },
+  programs:               { label: 'Programs',                 emoji: '🎯' },
+  gl:                     { label: 'GL Code Rollup',           emoji: '📊' },
+  fasttrack:              { label: 'Fast Track',               emoji: '⚡' },
+  'program-demographics': { label: 'Program Demographics',     emoji: '👥' },
+  users:                  { label: 'Community Intel',          emoji: '👥' },
+  memberships:            { label: 'Memberships',              emoji: '🎫' },
+  'court-utilization':    { label: 'Court Utilization',        emoji: '🎾' },
+  retention:              { label: 'Retention',                emoji: '🔁' },
+  products:               { label: 'Product Sales',            emoji: '🛒' },
+  'instructor-payout':    { label: 'Instructor Payout',        emoji: '💰' },
+  checkins:               { label: 'Check-Ins',                emoji: '✅' },
+  'program-checkins':     { label: 'Program Check-Ins',        emoji: '✅' },
+};
+const REPORT_EMOJI_FALLBACK = '✨';
+
+const ANNOUNCEMENTS_FILE = path.join(DATA_DIR, 'announcements.json');
+function loadAnnouncements() {
+  try { if (fs.existsSync(ANNOUNCEMENTS_FILE)) { const a = JSON.parse(fs.readFileSync(ANNOUNCEMENTS_FILE, 'utf8')); return Array.isArray(a) ? a : []; } } catch (e) {}
+  return [];
+}
+function saveAnnouncements(list) { ensureDataDir(); fs.writeFileSync(ANNOUNCEMENTS_FILE, JSON.stringify(list, null, 2)); }
+let announcements = loadAnnouncements();
+function newAnnId() { return 'upd_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+
+// Reports actually available on an org's dashboard (shared + per-org).
+function visibleReportsForOrg(slug) {
+  const org = ORGS[slug];
+  if (!org) return [];
+  const set = new Set(Object.keys(SHARED_UUIDS));
+  for (const r of Object.keys(org.reports || {})) set.add(r);
+  return [...set];
+}
+
+// Active announcements this org should see, newest first. Smart announcements
+// are filtered to only the items whose reports the org actually has.
+function activeAnnouncementsForOrg(slug) {
+  const visible = new Set(visibleReportsForOrg(slug));
+  const sorted = announcements.slice().sort((x, y) => (y.createdAt || 0) - (x.createdAt || 0));
+  const out = [];
+  for (const a of sorted) {
+    if (a.active === false) continue;
+    if (a.smart && Array.isArray(a.items)) {
+      const items = a.items.filter(it => Array.isArray(it.reports) && it.reports.some(r => visible.has(r)));
+      if (items.length) out.push({ id: a.id, title: a.title, smart: true, items: items.map(it => ({ text: it.text, emoji: it.emoji })) });
+    } else if (a.allOrgs || (Array.isArray(a.orgs) && a.orgs.includes(slug))) {
+      out.push({ id: a.id, title: a.title, body: a.body });
+    }
+  }
+  return out;
+}
+
+// How many orgs currently see at least one of the given report types.
+function smartAudienceCount(reportTypes) {
+  const wanted = new Set(reportTypes);
+  let n = 0;
+  for (const slug of Object.keys(ORGS)) {
+    if (visibleReportsForOrg(slug).some(r => wanted.has(r))) n++;
+  }
+  return n;
+}
+
+// GET — powers the admin composer (published list + org roster + report directory + changelog)
+app.get('/admin/api/announcements', adminAuth, (req, res) => {
+  const orgs = Object.keys(ORGS).map(slug => ({ slug, name: ORGS[slug].name || slug })).sort((a, b) => a.name.localeCompare(b.name));
+  const visibility = {};
+  for (const slug of Object.keys(ORGS)) visibility[slug] = visibleReportsForOrg(slug);
+  const reports = Object.keys(REPORT_META).map(type => ({
+    type, label: REPORT_META[type].label, emoji: REPORT_META[type].emoji,
+    orgs: Object.keys(ORGS).filter(slug => visibleReportsForOrg(slug).includes(type)).length,
+  }));
+  const list = announcements.slice().sort((x, y) => (y.createdAt || 0) - (x.createdAt || 0)).map(a => {
+    if (!a.smart) return a;
+    const union = new Set(); (a.items || []).forEach(it => (it.reports || []).forEach(r => union.add(r)));
+    return Object.assign({}, a, { audience: smartAudienceCount([...union]) });
+  });
+  res.json({ announcements: list, orgs, visibility, reports, changelog: UPDATES });
+});
+
+// POST — create a MANUAL announcement (title + body, targeted by allOrgs/orgs[])
+app.post('/admin/api/announcements', adminAuth, (req, res) => {
+  const { title, body, orgs, allOrgs } = req.body || {};
+  const t = (title || '').trim();
+  if (!t) return res.status(400).json({ error: 'Title is required' });
+  const orgList = Array.isArray(orgs) ? orgs.filter(s => ORGS[s]) : [];
+  if (!allOrgs && orgList.length === 0) return res.status(400).json({ error: 'Pick All orgs or at least one org' });
+  const ann = {
+    id: newAnnId(), title: t, body: (body || '').trim(),
+    allOrgs: !!allOrgs, orgs: allOrgs ? [] : orgList,
+    active: true, createdAt: Date.now(), createdISO: new Date().toISOString(),
+  };
+  announcements.push(ann); saveAnnouncements(announcements);
+  res.json({ ok: true, announcement: ann });
+});
+
+// POST — create a SMART announcement from picked changelog lines (auto-targeted by report)
+app.post('/admin/api/announcements/from-updates', adminAuth, (req, res) => {
+  const { title, items } = req.body || {};
+  const t = (title || '').trim();
+  const clean = (Array.isArray(items) ? items : []).map(it => {
+    const text = (it && it.text || '').trim();
+    const reports = (it && Array.isArray(it.reports) ? it.reports : []).filter(r => REPORT_META[r] || SHARED_UUIDS[r]);
+    if (!text || !reports.length) return null;
+    return { text, reports, emoji: (REPORT_META[reports[0]] && REPORT_META[reports[0]].emoji) || REPORT_EMOJI_FALLBACK, date: (it && it.date) || null };
+  }).filter(Boolean);
+  if (!t) return res.status(400).json({ error: 'Title is required' });
+  if (!clean.length) return res.status(400).json({ error: 'Pick at least one changelog line tagged with a report' });
+  const ann = {
+    id: newAnnId(), smart: true, title: t, items: clean,
+    active: true, createdAt: Date.now(), createdISO: new Date().toISOString(),
+  };
+  announcements.push(ann); saveAnnouncements(announcements);
+  const union = new Set(); clean.forEach(it => it.reports.forEach(r => union.add(r)));
+  res.json({ ok: true, announcement: ann, audience: smartAudienceCount([...union]) });
+});
+
+// POST — pause / unpause an announcement
+app.post('/admin/api/announcements/toggle', adminAuth, (req, res) => {
+  const { id } = req.body || {};
+  const a = announcements.find(x => x.id === id);
+  if (!a) return res.status(404).json({ error: 'Announcement not found' });
+  a.active = a.active === false; // paused (active:false) -> active; anything else -> paused
+  saveAnnouncements(announcements);
+  res.json({ ok: true, active: a.active });
+});
+
+// POST — delete an announcement
+app.post('/admin/api/announcements/delete', adminAuth, (req, res) => {
+  const { id } = req.body || {};
+  announcements = announcements.filter(x => x.id !== id);
+  saveAnnouncements(announcements);
+  res.json({ ok: true });
 });
 
 app.get('/admin/api/events/summary', adminAuth, (req, res) => {
@@ -1010,6 +1159,7 @@ app.get('/:org/api/config', authMiddleware, async (req, res) => {
     reportingBaseUrl: REPORTING_BASE_URL,
     supportReadOnly: !!org.supportReadOnly,
     supportNotify: ss.notify,
+    announcements: activeAnnouncementsForOrg(req.orgSlug),
     reportVisibility: reportVisibility?.available || null });
 });
 
