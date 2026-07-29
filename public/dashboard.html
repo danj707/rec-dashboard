@@ -349,7 +349,7 @@ function getMonthRange(offset = 0) {
 const SECTIONS = {
   revenue: { id: 'revenue', label: 'Revenue Overview', icon: '\uD83D\uDCB0', color: '#22c55e',
     description: 'Financial summary from GL data',
-    defaultWidgets: ['gl-total-revenue','gl-total-refunds','gl-net-revenue','gl-transactions','rev-streams','gl-by-code','gl-by-payment-method'] },
+    defaultWidgets: ['gl-total-revenue','gl-total-refunds','gl-net-revenue','gl-transactions','rev-streams','rev-daily-trend','gl-by-code','gl-by-payment-method'] },
   facility: { id: 'facility', label: 'Facility Rentals', icon: '\uD83C\uDFE2', color: '#f59e0b',
     description: 'Booking counts, revenue, and trends',
     defaultWidgets: ['rental-count','rental-revenue','rental-locations','rental-by-location','rental-daily-trend','rental-day-of-week'] },
@@ -461,6 +461,28 @@ const W = {
       if (glTotal > streamTotal * 1.01) streams.push({ type: 'Other / fees', amount: glTotal - streamTotal, color: '#6b7280', report: 'gl' });
       var grandTotal = Math.max(glTotal, streamTotal);
       return { streams: streams, total: grandTotal };
+    }},
+
+  'rev-daily-trend': { label: 'Revenue Trend', description: 'Daily revenue over time across all streams', note: 'Combined daily revenue from facility bookings, programs, and memberships', section: 'revenue',
+    reportType: 'gl', size: 'md', icon: '\uD83D\uDCC8', component: 'line',
+    _multiSource: true, _extraReportTypes: ['facility', 'programs', 'memberships'],
+    transform: function(rows, allData) {
+      var g = {};
+      var facRows = (allData && allData['facility']) || [];
+      facRows.forEach(function(r) { var d = r['Date']; if (d) g[d] = (g[d]||0) + pf(r['Total']); });
+      var progRows = (allData && allData['programs']) || [];
+      progRows.forEach(function(r) {
+        var d = r['start_date'] || r['Start Date'] || r['created_at'];
+        if (d) { d = d.slice(0,10); g[d] = (g[d]||0) + pf(r['net_total'] || r['charged']); }
+      });
+      var memRows = (allData && allData['memberships']) || [];
+      memRows.forEach(function(r) {
+        var d = r['created_at'] || r['Created'] || r['Start Date'] || r['start_date'];
+        if (d) { d = d.slice(0,10); g[d] = (g[d]||0) + pf(r['paid'] || r['Paid'] || r['price'] || r['Price']); }
+      });
+      var s = Object.entries(g).sort(function(a,b){ return a[0].localeCompare(b[0]); });
+      if (s.length === 0) return { labels: [], values: [] };
+      return { labels: s.map(function(e){ return shortDate(e[0]); }), values: s.map(function(e){ return e[1]; }), format: 'currency' };
     }},
 
   // ── Facility Rentals ──
@@ -1039,7 +1061,7 @@ const W = {
 const TEMPLATES = {
   general: { label: 'General Overview', icon: '\uD83D\uDCCA', description: 'Revenue, rentals, programs, and courts at a glance',
     sections: [
-      { id: 'revenue', widgets: ['gl-total-revenue','gl-total-refunds','gl-net-revenue','gl-transactions','rev-streams'] },
+      { id: 'revenue', widgets: ['gl-total-revenue','gl-total-refunds','gl-net-revenue','gl-transactions','rev-streams','rev-daily-trend'] },
       { id: 'facility', widgets: ['rental-count','rental-revenue','rental-locations','rental-by-location'] },
       { id: 'programs', widgets: ['program-enrollments','program-revenue','program-fill-rate','program-top'] },
       { id: 'courts', widgets: ['court-total','court-instant','court-managed','court-by-court'] },
@@ -1047,7 +1069,7 @@ const TEMPLATES = {
     ]},
   financial: { label: 'Revenue Focus', icon: '\uD83D\uDCB0', description: 'Deep dive into all revenue streams',
     sections: [
-      { id: 'revenue', widgets: ['gl-total-revenue','gl-total-refunds','gl-net-revenue','gl-transactions','rev-streams','gl-by-code','gl-by-payment-method','tbl-gl'] },
+      { id: 'revenue', widgets: ['gl-total-revenue','gl-total-refunds','gl-net-revenue','gl-transactions','rev-streams','rev-daily-trend','gl-by-code','gl-by-payment-method','tbl-gl'] },
       { id: 'facility', widgets: ['rental-revenue','rental-avg-value','rental-by-location','rental-revenue-trend'] },
       { id: 'products', widgets: ['prod-gross','prod-net','prod-refunds','prod-units','prod-by-product'] },
       { id: 'instructors', widgets: ['instr-net','instr-payout','instr-org-ret','instr-top'] },
