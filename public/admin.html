@@ -8,30 +8,30 @@
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: 'Inter', sans-serif; background: #0a0a0a; color: #e5e5e5; line-height: 1.6; }
-a { color: #f59e0b; text-decoration: none; }
+body { font-family: 'Inter', sans-serif; background: #f6f7f9; color: #1a1a1a; line-height: 1.6; }
+a { color: #d97706; text-decoration: none; }
 a:hover { text-decoration: underline; }
-code { font-family: 'JetBrains Mono', monospace; font-size: 0.85em; background: #1e1e1e; padding: 2px 6px; border-radius: 4px; }
+code { font-family: 'JetBrains Mono', monospace; font-size: 0.85em; background: #eef0f2; padding: 2px 6px; border-radius: 4px; }
 
 .container { max-width: 1100px; margin: 0 auto; padding: 0 24px; }
 
-.header { border-bottom: 1px solid #1e1e1e; padding: 20px 0; margin-bottom: 32px; }
+.header { border-bottom: 1px solid #e5e7eb; padding: 20px 0; margin-bottom: 32px; }
 .header-inner { display: flex; align-items: center; justify-content: space-between; }
 .header h1 { font-family: 'DM Sans', sans-serif; font-size: 22px; font-weight: 700; }
 .header h1 span { color: #f59e0b; }
-.header-meta { font-size: 12px; color: #666; }
+.header-meta { font-size: 12px; color: #6b7280; }
 
 /* Collapsible sections */
 .collapsible { margin-bottom: 24px; }
 .collapsible-header {
   font-family: 'DM Sans', sans-serif; font-size: 18px; font-weight: 600;
-  padding: 12px 0; border-bottom: 1px solid #1e1e1e; cursor: pointer;
+  padding: 12px 0; border-bottom: 1px solid #e5e7eb; cursor: pointer;
   display: flex; align-items: center; gap: 10px; user-select: none;
 }
-.collapsible-header:hover { color: #f59e0b; }
+.collapsible-header:hover { color: #d97706; }
 .collapsible-header .icon { font-size: 20px; }
 .collapsible-header .flex { flex: 1; }
-.chevron { font-size: 14px; color: #555; transition: transform 0.25s ease; display: inline-block; }
+.chevron { font-size: 14px; color: #9ca3af; transition: transform 0.25s ease; display: inline-block; }
 .collapsible.open .chevron { transform: rotate(180deg); }
 .collapsible-body { overflow: hidden; max-height: 0; transition: max-height 0.35s ease; }
 .collapsible.open .collapsible-body { max-height: 5000px; }
@@ -39,32 +39,32 @@ code { font-family: 'JetBrains Mono', monospace; font-size: 0.85em; background: 
 
 /* Org cards */
 .org-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(480px, 1fr)); gap: 16px; }
-.org-card { background: #141414; border: 1px solid #1e1e1e; border-radius: 12px; padding: 20px; transition: border-color 0.2s; }
-.org-card:hover { border-color: #333; }
+.org-card { background: #ffffff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 20px; transition: border-color 0.2s, box-shadow 0.2s; }
+.org-card:hover { border-color: #cbd5e1; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
 .org-card-header { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; }
 .org-logo { height: 40px; width: auto; max-width: 160px; border-radius: 6px; object-fit: contain; }
 .org-name { font-family: 'DM Sans', sans-serif; font-size: 16px; font-weight: 600; }
-.org-slug { font-size: 12px; color: #666; font-family: 'JetBrains Mono', monospace; }
+.org-slug { font-size: 12px; color: #6b7280; font-family: 'JetBrains Mono', monospace; }
 .org-meta { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 14px; }
-.org-stat { background: #1a1a1a; border-radius: 8px; padding: 10px 12px; }
-.org-stat-label { font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 2px; }
+.org-stat { background: #f1f3f5; border-radius: 8px; padding: 10px 12px; }
+.org-stat-label { font-size: 10px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 2px; }
 .org-stat-value { font-family: 'DM Sans', sans-serif; font-size: 18px; font-weight: 600; }
 .org-badges { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
 .badge { font-size: 10px; padding: 3px 8px; border-radius: 4px; font-weight: 600; }
-.badge-green { background: rgba(34,197,94,0.15); color: #22c55e; }
-.badge-amber { background: rgba(245,158,11,0.15); color: #f59e0b; }
-.badge-gray { background: rgba(136,136,136,0.15); color: #888; }
-.badge-blue { background: rgba(59,130,246,0.15); color: #3b82f6; }
+.badge-green { background: rgba(34,197,94,0.15); color: #15803d; }
+.badge-amber { background: rgba(245,158,11,0.18); color: #b45309; }
+.badge-gray { background: rgba(100,116,139,0.15); color: #64748b; }
+.badge-blue { background: rgba(59,130,246,0.15); color: #2563eb; }
 .org-link { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500;
-  padding: 6px 14px; border-radius: 6px; background: #f59e0b; color: #000; transition: background 0.15s; }
+  padding: 6px 14px; border-radius: 6px; background: #f59e0b; color: #1a1a1a; transition: background 0.15s; }
 .org-link:hover { background: #d97706; text-decoration: none; }
-.org-updated { font-size: 11px; color: #555; margin-top: 10px; }
+.org-updated { font-size: 11px; color: #9ca3af; margin-top: 10px; }
 
 /* How it works */
 .how-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; margin-top: 20px; }
-.how-card { background: #141414; border: 1px solid #1e1e1e; border-radius: 10px; padding: 18px; }
+.how-card { background: #ffffff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 18px; }
 .how-card h3 { font-family: 'DM Sans', sans-serif; font-size: 14px; font-weight: 600; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
-.how-card p { font-size: 13px; color: #aaa; line-height: 1.7; }
+.how-card p { font-size: 13px; color: #4b5563; line-height: 1.7; }
 .how-card p code { font-size: 0.85em; }
 
 /* SVG container */
@@ -74,47 +74,47 @@ code { font-family: 'JetBrains Mono', monospace; font-size: 0.85em; background: 
 /* Architecture text */
 .arch-detail { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 20px; }
 @media (max-width: 700px) { .arch-detail { grid-template-columns: 1fr; } }
-.arch-block { background: #141414; border: 1px solid #1e1e1e; border-radius: 10px; padding: 18px; }
-.arch-block h4 { font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 600; color: #f59e0b; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.04em; }
-.arch-block p { font-size: 13px; color: #aaa; line-height: 1.7; }
+.arch-block { background: #ffffff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 18px; }
+.arch-block h4 { font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 600; color: #b45309; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.04em; }
+.arch-block p { font-size: 13px; color: #4b5563; line-height: 1.7; }
 
 /* Shared reports */
 .shared-grid { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-.shared-tag { font-family: 'JetBrains Mono', monospace; font-size: 11px; background: #1a1a1a;
-  border: 1px solid #262626; border-radius: 6px; padding: 4px 10px; color: #aaa; }
+.shared-tag { font-family: 'JetBrains Mono', monospace; font-size: 11px; background: #f1f3f5;
+  border: 1px solid #e2e5e9; border-radius: 6px; padding: 4px 10px; color: #475569; }
 
 /* Updates */
-.update-entry { background: #141414; border: 1px solid #1e1e1e; border-radius: 10px; padding: 16px 18px; margin-bottom: 10px; }
+.update-entry { background: #ffffff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 16px 18px; margin-bottom: 10px; }
 .update-header { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
-.update-date { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #f59e0b; background: rgba(245,158,11,0.1); padding: 2px 8px; border-radius: 4px; }
+.update-date { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #b45309; background: rgba(245,158,11,0.12); padding: 2px 8px; border-radius: 4px; }
 .update-title { font-family: 'DM Sans', sans-serif; font-size: 14px; font-weight: 600; }
 .update-items { list-style: none; padding: 0; }
-.update-items li { font-size: 13px; color: #aaa; padding: 2px 0 2px 16px; position: relative; }
-.update-items li::before { content: ''; position: absolute; left: 0; top: 10px; width: 6px; height: 6px; border-radius: 50%; background: #333; }
+.update-items li { font-size: 13px; color: #4b5563; padding: 2px 0 2px 16px; position: relative; }
+.update-items li::before { content: ''; position: absolute; left: 0; top: 10px; width: 6px; height: 6px; border-radius: 50%; background: #cbd5e1; }
 
-.loading { text-align: center; padding: 60px; color: #666; font-size: 14px; }
-.footer { border-top: 1px solid #1e1e1e; padding: 20px 0; margin-top: 20px; text-align: center; font-size: 11px; color: #444; }
+.loading { text-align: center; padding: 60px; color: #9ca3af; font-size: 14px; }
+.footer { border-top: 1px solid #e5e7eb; padding: 20px 0; margin-top: 20px; text-align: center; font-size: 11px; color: #9ca3af; }
 .add-org-btn { background: #22c55e; color: #fff; border: none; padding: 6px 14px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; letter-spacing: 0.02em; transition: background 0.2s; }
 .add-org-btn:hover { background: #16a34a; }
-.modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 1000; align-items: center; justify-content: center; }
+.modal-overlay { display: none; position: fixed; inset: 0; background: rgba(15,23,42,0.45); z-index: 1000; align-items: center; justify-content: center; }
 .modal-overlay.open { display: flex; }
-.modal { background: #1a1a1a; border: 1px solid #333; border-radius: 14px; padding: 28px 32px; width: 440px; max-width: 90vw; }
-.modal h2 { font-size: 18px; color: #f1f1f1; margin: 0 0 20px; font-family: 'DM Sans', sans-serif; }
-.modal label { display: block; font-size: 11px; color: #999; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; font-weight: 500; }
-.modal input { width: 100%; background: #111; border: 1px solid #333; border-radius: 6px; padding: 8px 10px; color: #eee; font-size: 13px; margin-bottom: 14px; box-sizing: border-box; font-family: 'Inter', sans-serif; outline: none; transition: border-color 0.2s; }
+.modal { background: #ffffff; border: 1px solid #e5e7eb; border-radius: 14px; padding: 28px 32px; width: 440px; max-width: 90vw; box-shadow: 0 20px 60px rgba(0,0,0,0.18); }
+.modal h2 { font-size: 18px; color: #111; margin: 0 0 20px; font-family: 'DM Sans', sans-serif; }
+.modal label { display: block; font-size: 11px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; font-weight: 500; }
+.modal input { width: 100%; background: #fff; border: 1px solid #d1d5db; border-radius: 6px; padding: 8px 10px; color: #111; font-size: 13px; margin-bottom: 14px; box-sizing: border-box; font-family: 'Inter', sans-serif; outline: none; transition: border-color 0.2s; }
 .modal input:focus { border-color: #22c55e; }
 .modal .row { display: flex; gap: 12px; }
 .modal .row > div { flex: 1; }
 .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 8px; }
 .modal-actions button { padding: 8px 18px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; border: none; }
-.modal-cancel { background: #333; color: #ccc; }
-.modal-cancel:hover { background: #444; }
+.modal-cancel { background: #e5e7eb; color: #374151; }
+.modal-cancel:hover { background: #d1d5db; }
 .modal-submit { background: #22c55e; color: #fff; }
 .modal-submit:hover { background: #16a34a; }
 .modal-submit:disabled { opacity: 0.5; cursor: not-allowed; }
-.modal .error { color: #ef4444; font-size: 12px; margin-bottom: 10px; display: none; }
-.modal .success { background: #052e16; border: 1px solid #22c55e; border-radius: 8px; padding: 12px 16px; margin-bottom: 14px; }
-.modal .success .token { font-family: 'SF Mono', monospace; background: #111; padding: 4px 8px; border-radius: 4px; color: #22c55e; font-size: 13px; user-select: all; }
+.modal .error { color: #dc2626; font-size: 12px; margin-bottom: 10px; display: none; }
+.modal .success { background: #ecfdf5; border: 1px solid #22c55e; border-radius: 8px; padding: 12px 16px; margin-bottom: 14px; }
+.modal .success .token { font-family: 'SF Mono', monospace; background: #f1f3f5; padding: 4px 8px; border-radius: 4px; color: #15803d; font-size: 13px; user-select: all; }
     /* Project Update composer — light mode (admin is otherwise dark) */
     #add-update-modal .modal { width: min(660px, 92vw); max-width: none; background: #fff; color: #1a1a1a; border-color: #e5e7eb; max-height: 90vh; overflow: auto; }
     #add-update-modal .modal h2 { color: #111; }
@@ -262,27 +262,27 @@ async function saveNotify(slug) {
                 ${o.perOrgReports.length ? '<span class="badge badge-amber">custom: ' + o.perOrgReports.join(', ') + '</span>' : ''}
               </div>
               <a href="${BASE}/${o.slug}?token=${o.token}" class="org-link" target="_blank">\u2192 Open Dashboard</a>
-              <div style="display:flex;gap:16px;margin-top:12px;padding-top:10px;border-top:1px solid #1e1e1e">
-                <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:#aaa;cursor:pointer">
+              <div style="display:flex;gap:16px;margin-top:12px;padding-top:10px;border-top:1px solid #e5e7eb">
+                <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:#4b5563;cursor:pointer">
                   <input type="checkbox" ${o.toggles.ai ? 'checked' : ''} onchange="toggleOrg('${o.slug}','ai',this.checked)" style="accent-color:#7c3aed;width:16px;height:16px">
                   <span>\u2728 AI Insights</span>
                 </label>
-                <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:#aaa;cursor:pointer">
+                <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:#4b5563;cursor:pointer">
                   <input type="checkbox" ${o.toggles.reportLinks ? 'checked' : ''} onchange="toggleOrg('${o.slug}','reportLinks',this.checked)" style="accent-color:#f59e0b;width:16px;height:16px">
                   <span>\uD83D\uDD17 Report Linkage</span>
                 </label>
-                <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:#aaa;cursor:pointer">
+                <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:#4b5563;cursor:pointer">
                   <input type="checkbox" ${o.toggles.aiBriefing ? 'checked' : ''} onchange="toggleOrg('${o.slug}','aiBriefing',this.checked)" style="accent-color:#a855f7;width:16px;height:16px">
                   <span>\uD83D\uDCCB AI Briefing</span>
                 </label>
-                <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:#aaa;cursor:pointer">
+                <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:#4b5563;cursor:pointer">
                   <input type="checkbox" ${o.toggles.emailDigest ? 'checked' : ''} onchange="toggleOrg('${o.slug}','emailDigest',this.checked)" style="accent-color:#06b6d4;width:16px;height:16px">
                   <span>\uD83D\uDCE7 Email Digest</span>
                 </label>
               </div>
-              <div style="margin-top:10px;padding-top:10px;border-top:1px solid #1e1e1e">
+              <div style="margin-top:10px;padding-top:10px;border-top:1px solid #e5e7eb">
                 <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-                  <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:#aaa;cursor:${o.supportLockedOn ? 'default' : 'pointer'}">
+                  <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:#4b5563;cursor:${o.supportLockedOn ? 'default' : 'pointer'}">
                     <input type="checkbox" ${o.support ? 'checked' : ''} ${o.supportLockedOn ? 'disabled' : ''} onchange="toggleOrg('${o.slug}','support',this.checked)" style="accent-color:#14b8a6;width:16px;height:16px">
                     <span>\uD83D\uDCAC Customer Support</span>
                   </label>
@@ -292,7 +292,7 @@ async function saveNotify(slug) {
                 ${o.support ? `
                 <div style="display:flex;gap:6px;margin-top:8px;align-items:center">
                   <input id="sn-${o.slug}" type="text" placeholder="escalation emails, comma-separated" value="${(o.supportNotify || []).join(', ')}"
-                    style="flex:1;background:#111;border:1px solid #2a2a2a;border-radius:6px;padding:6px 10px;font-size:11px;color:#ddd;font-family:inherit">
+                    style="flex:1;background:#fff;border:1px solid #d1d5db;border-radius:6px;padding:6px 10px;font-size:11px;color:#111;font-family:inherit">
                   <button id="snb-${o.slug}" onclick="saveNotify('${o.slug}')"
                     style="background:#14b8a6;color:#000;border:none;border-radius:6px;padding:6px 12px;font-size:11px;font-weight:600;cursor:pointer">Save</button>
                 </div>
@@ -319,102 +319,102 @@ async function saveNotify(slug) {
         <div class="svg-wrap">
           <svg viewBox="0 0 880 520" xmlns="http://www.w3.org/2000/svg" style="max-width:880px">
             <defs>
-              <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#f59e0b"/></marker>
-              <marker id="arrow-dim" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#555"/></marker>
+              <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#b45309"/></marker>
+              <marker id="arrow-dim" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8"/></marker>
               <linearGradient id="glow" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#f59e0b" stop-opacity="0.1"/><stop offset="100%" stop-color="#f59e0b" stop-opacity="0"/></linearGradient>
-              <filter id="cardShadow"><feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#000" flood-opacity="0.4"/></filter>
+              <filter id="cardShadow"><feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#0f172a" flood-opacity="0.12"/></filter>
             </defs>
 
             <!-- Background -->
-            <rect width="880" height="520" rx="12" fill="#0d0d0d"/>
+            <rect width="880" height="520" rx="12" fill="#ffffff" stroke="#e2e8f0"/>
 
             <!-- ── User / Browser ── -->
-            <rect x="330" y="16" width="220" height="56" rx="10" fill="#1a1a1a" stroke="#333" stroke-width="1" filter="url(#cardShadow)"/>
-            <text x="382" y="39" font-family="DM Sans,sans-serif" font-size="11" fill="#888" font-weight="500">USER / BROWSER</text>
-            <text x="362" y="57" font-family="Inter,sans-serif" font-size="12" fill="#ccc">Metabase iframe embed</text>
+            <rect x="330" y="16" width="220" height="56" rx="10" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1" filter="url(#cardShadow)"/>
+            <text x="382" y="39" font-family="DM Sans,sans-serif" font-size="11" fill="#64748b" font-weight="500">USER / BROWSER</text>
+            <text x="362" y="57" font-family="Inter,sans-serif" font-size="12" fill="#334155">Metabase iframe embed</text>
             <text x="345" y="39" font-size="14">\uD83C\uDF10</text>
 
             <!-- Arrow down -->
             <line x1="440" y1="72" x2="440" y2="105" stroke="#f59e0b" stroke-width="1.5" marker-end="url(#arrow)"/>
-            <text x="448" y="93" font-family="JetBrains Mono,monospace" font-size="9" fill="#f59e0b">/:org?token=</text>
+            <text x="448" y="93" font-family="JetBrains Mono,monospace" font-size="9" fill="#b45309">/:org?token=</text>
 
             <!-- ── Railway Server ── -->
-            <rect x="120" y="108" width="640" height="220" rx="12" fill="#111" stroke="#262626" stroke-width="1" filter="url(#cardShadow)"/>
-            <rect x="120" y="108" width="640" height="32" rx="12" fill="#181818"/>
-            <rect x="120" y="128" width="640" height="2" fill="#262626"/>
-            <text x="148" y="127" font-family="DM Sans,sans-serif" font-size="12" fill="#f59e0b" font-weight="600">Railway: rec-dashboard-production</text>
-            <circle cx="722" cy="122" r="5" fill="#22c55e"/><text x="732" y="126" font-family="Inter,sans-serif" font-size="9" fill="#666">running</text>
+            <rect x="120" y="108" width="640" height="220" rx="12" fill="#ffffff" stroke="#e2e8f0" stroke-width="1" filter="url(#cardShadow)"/>
+            <rect x="120" y="108" width="640" height="32" rx="12" fill="#eef2f6"/>
+            <rect x="120" y="128" width="640" height="2" fill="#e2e8f0"/>
+            <text x="148" y="127" font-family="DM Sans,sans-serif" font-size="12" fill="#b45309" font-weight="600">Railway: rec-dashboard-production</text>
+            <circle cx="722" cy="122" r="5" fill="#22c55e"/><text x="732" y="126" font-family="Inter,sans-serif" font-size="9" fill="#64748b">running</text>
 
             <!-- Server internals -->
             <!-- Routes -->
-            <rect x="140" y="145" width="175" height="80" rx="8" fill="#1a1a1a" stroke="#262626" stroke-width="1"/>
-            <text x="156" y="164" font-family="DM Sans,sans-serif" font-size="11" fill="#aaa" font-weight="600">Express Routes</text>
-            <text x="156" y="182" font-family="JetBrains Mono,monospace" font-size="9.5" fill="#666">GET  /           admin</text>
-            <text x="156" y="195" font-family="JetBrains Mono,monospace" font-size="9.5" fill="#666">GET  /:org       dashboard</text>
-            <text x="156" y="208" font-family="JetBrains Mono,monospace" font-size="9.5" fill="#666">GET  /api/data   proxy</text>
-            <text x="156" y="221" font-family="JetBrains Mono,monospace" font-size="9.5" fill="#666">POST /api/events tracking</text>
+            <rect x="140" y="145" width="175" height="80" rx="8" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1"/>
+            <text x="156" y="164" font-family="DM Sans,sans-serif" font-size="11" fill="#475569" font-weight="600">Express Routes</text>
+            <text x="156" y="182" font-family="JetBrains Mono,monospace" font-size="9.5" fill="#64748b">GET  /           admin</text>
+            <text x="156" y="195" font-family="JetBrains Mono,monospace" font-size="9.5" fill="#64748b">GET  /:org       dashboard</text>
+            <text x="156" y="208" font-family="JetBrains Mono,monospace" font-size="9.5" fill="#64748b">GET  /api/data   proxy</text>
+            <text x="156" y="221" font-family="JetBrains Mono,monospace" font-size="9.5" fill="#64748b">POST /api/events tracking</text>
 
             <!-- Widget Engine -->
-            <rect x="333" y="145" width="175" height="80" rx="8" fill="#1a1a1a" stroke="#262626" stroke-width="1"/>
-            <text x="349" y="164" font-family="DM Sans,sans-serif" font-size="11" fill="#aaa" font-weight="600">Widget Engine</text>
-            <text x="349" y="182" font-family="Inter,sans-serif" font-size="10" fill="#666">75 widgets in registry</text>
-            <text x="349" y="196" font-family="Inter,sans-serif" font-size="10" fill="#666">Section-based layout</text>
-            <text x="349" y="210" font-family="Inter,sans-serif" font-size="10" fill="#666">Chart.js + React CDN</text>
+            <rect x="333" y="145" width="175" height="80" rx="8" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1"/>
+            <text x="349" y="164" font-family="DM Sans,sans-serif" font-size="11" fill="#475569" font-weight="600">Widget Engine</text>
+            <text x="349" y="182" font-family="Inter,sans-serif" font-size="10" fill="#64748b">75 widgets in registry</text>
+            <text x="349" y="196" font-family="Inter,sans-serif" font-size="10" fill="#64748b">Section-based layout</text>
+            <text x="349" y="210" font-family="Inter,sans-serif" font-size="10" fill="#64748b">Chart.js + React CDN</text>
 
             <!-- Cache -->
-            <rect x="526" y="145" width="215" height="80" rx="8" fill="#1a1a1a" stroke="#262626" stroke-width="1"/>
-            <text x="542" y="164" font-family="DM Sans,sans-serif" font-size="11" fill="#aaa" font-weight="600">In-Memory Cache</text>
-            <text x="542" y="182" font-family="Inter,sans-serif" font-size="10" fill="#666">Per-org configurable TTL</text>
-            <text x="542" y="196" font-family="Inter,sans-serif" font-size="10" fill="#666">Key: org:report:dateRange</text>
-            <text x="542" y="210" font-family="Inter,sans-serif" font-size="10" fill="#666">Stale-on-restart, warm on demand</text>
+            <rect x="526" y="145" width="215" height="80" rx="8" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1"/>
+            <text x="542" y="164" font-family="DM Sans,sans-serif" font-size="11" fill="#475569" font-weight="600">In-Memory Cache</text>
+            <text x="542" y="182" font-family="Inter,sans-serif" font-size="10" fill="#64748b">Per-org configurable TTL</text>
+            <text x="542" y="196" font-family="Inter,sans-serif" font-size="10" fill="#64748b">Key: org:report:dateRange</text>
+            <text x="542" y="210" font-family="Inter,sans-serif" font-size="10" fill="#64748b">Stale-on-restart, warm on demand</text>
 
             <!-- Persistent Volume -->
-            <rect x="140" y="240" width="175" height="75" rx="8" fill="#1a1a1a" stroke="#262626" stroke-width="1"/>
+            <rect x="140" y="240" width="175" height="75" rx="8" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1"/>
             <text x="152" y="259" font-size="13">\uD83D\uDCBE</text>
-            <text x="170" y="259" font-family="DM Sans,sans-serif" font-size="11" fill="#aaa" font-weight="600">Persistent Volume /data</text>
-            <text x="156" y="278" font-family="JetBrains Mono,monospace" font-size="9.5" fill="#666">dashboards.json  configs</text>
-            <text x="156" y="292" font-family="JetBrains Mono,monospace" font-size="9.5" fill="#666">events.jsonl     tracking</text>
+            <text x="170" y="259" font-family="DM Sans,sans-serif" font-size="11" fill="#475569" font-weight="600">Persistent Volume /data</text>
+            <text x="156" y="278" font-family="JetBrains Mono,monospace" font-size="9.5" fill="#64748b">dashboards.json  configs</text>
+            <text x="156" y="292" font-family="JetBrains Mono,monospace" font-size="9.5" fill="#64748b">events.jsonl     tracking</text>
 
             <!-- Auth -->
-            <rect x="333" y="240" width="175" height="75" rx="8" fill="#1a1a1a" stroke="#262626" stroke-width="1"/>
+            <rect x="333" y="240" width="175" height="75" rx="8" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1"/>
             <text x="345" y="259" font-size="13">\uD83D\uDD12</text>
-            <text x="363" y="259" font-family="DM Sans,sans-serif" font-size="11" fill="#aaa" font-weight="600">Token Auth</text>
-            <text x="349" y="278" font-family="Inter,sans-serif" font-size="10" fill="#666">URL token per org</text>
-            <text x="349" y="292" font-family="Inter,sans-serif" font-size="10" fill="#666">Same as reporting project</text>
+            <text x="363" y="259" font-family="DM Sans,sans-serif" font-size="11" fill="#475569" font-weight="600">Token Auth</text>
+            <text x="349" y="278" font-family="Inter,sans-serif" font-size="10" fill="#64748b">URL token per org</text>
+            <text x="349" y="292" font-family="Inter,sans-serif" font-size="10" fill="#64748b">Same as reporting project</text>
 
             <!-- Data Batching -->
-            <rect x="526" y="240" width="215" height="75" rx="8" fill="#1a1a1a" stroke="#262626" stroke-width="1"/>
+            <rect x="526" y="240" width="215" height="75" rx="8" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1"/>
             <text x="538" y="259" font-size="13">\u26A1</text>
-            <text x="555" y="259" font-family="DM Sans,sans-serif" font-size="11" fill="#aaa" font-weight="600">Smart Data Batching</text>
-            <text x="542" y="278" font-family="Inter,sans-serif" font-size="10" fill="#666">Dedup report types from widgets</text>
-            <text x="542" y="292" font-family="Inter,sans-serif" font-size="10" fill="#666">Parallel fetch, shared response</text>
+            <text x="555" y="259" font-family="DM Sans,sans-serif" font-size="11" fill="#475569" font-weight="600">Smart Data Batching</text>
+            <text x="542" y="278" font-family="Inter,sans-serif" font-size="10" fill="#64748b">Dedup report types from widgets</text>
+            <text x="542" y="292" font-family="Inter,sans-serif" font-size="10" fill="#64748b">Parallel fetch, shared response</text>
 
             <!-- Arrow to Metabase -->
             <line x1="440" y1="328" x2="440" y2="370" stroke="#f59e0b" stroke-width="1.5" marker-end="url(#arrow)"/>
-            <text x="448" y="350" font-family="JetBrains Mono,monospace" font-size="9" fill="#f59e0b">org_id injection</text>
+            <text x="448" y="350" font-family="JetBrains Mono,monospace" font-size="9" fill="#b45309">org_id injection</text>
 
             <!-- ── Metabase ── -->
-            <rect x="170" y="373" width="540" height="74" rx="12" fill="#111" stroke="#262626" stroke-width="1" filter="url(#cardShadow)"/>
-            <rect x="170" y="373" width="540" height="28" rx="12" fill="#181818"/>
-            <rect x="170" y="393" width="540" height="2" fill="#262626"/>
+            <rect x="170" y="373" width="540" height="74" rx="12" fill="#ffffff" stroke="#e2e8f0" stroke-width="1" filter="url(#cardShadow)"/>
+            <rect x="170" y="373" width="540" height="28" rx="12" fill="#eef2f6"/>
+            <rect x="170" y="393" width="540" height="2" fill="#e2e8f0"/>
             <text x="198" y="392" font-family="DM Sans,sans-serif" font-size="12" fill="#3b82f6" font-weight="600">Metabase: rec.metabaseapp.com</text>
 
-            <text x="190" y="418" font-family="Inter,sans-serif" font-size="11" fill="#888">Shared public cards</text>
-            <text x="190" y="434" font-family="JetBrains Mono,monospace" font-size="9.5" fill="#555">/api/public/card/{uuid}/query/json?parameters=[{org_id}]</text>
+            <text x="190" y="418" font-family="Inter,sans-serif" font-size="11" fill="#64748b">Shared public cards</text>
+            <text x="190" y="434" font-family="JetBrains Mono,monospace" font-size="9.5" fill="#94a3b8">/api/public/card/{uuid}/query/json?parameters=[{org_id}]</text>
 
-            <text x="520" y="418" font-family="Inter,sans-serif" font-size="11" fill="#888">One set of SQL</text>
-            <text x="520" y="434" font-family="Inter,sans-serif" font-size="10" fill="#555">serves all ~59 orgs</text>
+            <text x="520" y="418" font-family="Inter,sans-serif" font-size="11" fill="#64748b">One set of SQL</text>
+            <text x="520" y="434" font-family="Inter,sans-serif" font-size="10" fill="#94a3b8">serves all ~59 orgs</text>
 
             <!-- Arrow to Postgres -->
-            <line x1="440" y1="447" x2="440" y2="475" stroke="#555" stroke-width="1" marker-end="url(#arrow-dim)"/>
+            <line x1="440" y1="447" x2="440" y2="475" stroke="#94a3b8" stroke-width="1" marker-end="url(#arrow-dim)"/>
 
             <!-- Postgres -->
-            <rect x="330" y="478" width="220" height="32" rx="8" fill="#1a1a1a" stroke="#262626" stroke-width="1"/>
-            <text x="358" y="499" font-family="DM Sans,sans-serif" font-size="11" fill="#666" font-weight="500">PostgreSQL (rec.us read replica)</text>
+            <rect x="330" y="478" width="220" height="32" rx="8" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1"/>
+            <text x="358" y="499" font-family="DM Sans,sans-serif" font-size="11" fill="#64748b" font-weight="500">PostgreSQL (rec.us read replica)</text>
 
             <!-- Side labels -->
-            <text x="18" y="200" font-family="Inter,sans-serif" font-size="10" fill="#333" transform="rotate(-90 18 200)">SERVER SIDE</text>
-            <text x="860" y="200" font-family="Inter,sans-serif" font-size="10" fill="#333" transform="rotate(90 860 200)">NO CORS ISSUES</text>
+            <text x="18" y="200" font-family="Inter,sans-serif" font-size="10" fill="#cbd5e1" transform="rotate(-90 18 200)">SERVER SIDE</text>
+            <text x="860" y="200" font-family="Inter,sans-serif" font-size="10" fill="#cbd5e1" transform="rotate(90 860 200)">NO CORS ISSUES</text>
           </svg>
         </div>
 
