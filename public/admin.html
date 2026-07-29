@@ -153,6 +153,13 @@ code { font-family: 'JetBrains Mono', monospace; font-size: 0.85em; background: 
       <div id="add-org-success" class="success" style="display:none"></div>
     </div>
   </div>
+
+  <!-- Add Update (Project Updates) Modal -->
+  <div class="modal-overlay" id="add-update-modal" onclick="if(event.target===this)this.classList.remove('open')">
+    <div class="modal" style="max-width:660px">
+      <div id="upd-content"><div class="loading">Loading…</div></div>
+    </div>
+  </div>
   <div class="footer">rec.us Dashboard Platform &middot; Powered by shared Metabase cards, zero per-org duplication</div>
 </div>
 
@@ -476,6 +483,7 @@ async function saveNotify(slug) {
       <div class="collapsible-header" onclick="toggleSection('sec-updates')">
         <span class="icon">\uD83D\uDCDD</span>
         <span class="flex">Updates</span>
+        <button class="add-org-btn" style="margin-right:10px" onclick="event.stopPropagation(); openUpd()">📣 Add Update</button>
         <span style="font-size:12px;color:#666;font-weight:400">${updates.length} entries</span>
         <span class="chevron">\u25BC</span>
       </div>
@@ -541,6 +549,206 @@ async function submitAddOrg() {
     btn.disabled = false;
     btn.textContent = 'Add Organization';
   }
+}
+
+// ══ Project Update composer ══════════════════════════════════════════
+var updState = { orgs: [], visibility: {}, reports: [], changelog: [], published: [], rows: null, mode: 'smart', title: null };
+
+function openUpd() { document.getElementById('add-update-modal').classList.add('open'); loadUpd(); }
+function closeUpd() { document.getElementById('add-update-modal').classList.remove('open'); }
+
+async function loadUpd() {
+  var box = document.getElementById('upd-content');
+  box.innerHTML = '<div class="loading">Loading…</div>';
+  updState.rows = null;
+  if (updState.title == null) updState.title = '✨ What’s new in your reports';
+  try {
+    var r = await fetch('/admin/api/announcements');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    var d = await r.json();
+    updState.orgs = d.orgs || [];
+    updState.visibility = d.visibility || {};
+    updState.reports = d.reports || [];
+    updState.changelog = d.changelog || [];
+    updState.published = d.announcements || [];
+    renderUpd();
+  } catch (e) {
+    box.innerHTML = '<div class="error" style="display:block">Failed to load: ' + e.message + '</div>';
+  }
+}
+
+function updEsc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+function updEmoji(t) { var m = updState.reports.find(function (x) { return x.type === t; }); return m ? m.emoji : '✨'; }
+function updLabel(t) { var m = updState.reports.find(function (x) { return x.type === t; }); return m ? m.label : t; }
+function updKnown(t) { return !!updState.reports.find(function (x) { return x.type === t; }); }
+
+var UPD_RULES = [
+  [/instructor|payout|pay ?slip/i, 'instructor-payout'],
+  [/facilit|rental|reservation|booking/i, 'facility'],
+  [/fast.?track|waitlist|pre-?reg/i, 'fasttrack'],
+  [/demographic/i, 'program-demographics'],
+  [/member/i, 'memberships'],
+  [/court/i, 'court-utilization'],
+  [/retention|churn|lapse/i, 'retention'],
+  [/product|merch|store|\bsales\b/i, 'products'],
+  [/check.?in/i, 'checkins'],
+  [/gl code|ledger|\bgl\b|revenue|refund|payment/i, 'gl'],
+  [/program|enrollment|section|roster|\bclass\b/i, 'programs'],
+  [/community intel|\busers?\b|household/i, 'users'],
+];
+function updInfer(text) {
+  var out = [];
+  UPD_RULES.forEach(function (rule) { if (rule[0].test(text) && out.indexOf(rule[1]) < 0 && updKnown(rule[1])) out.push(rule[1]); });
+  return out;
+}
+function updCountOrgs(reports) {
+  var want = {}; reports.forEach(function (r) { want[r] = 1; });
+  var n = 0;
+  Object.keys(updState.visibility).forEach(function (slug) {
+    if ((updState.visibility[slug] || []).some(function (r) { return want[r]; })) n++;
+  });
+  return n;
+}
+
+function renderUpd() {
+  var s = updState;
+  function tab(mode, label) {
+    return '<button onclick="updSetMode(\'' + mode + '\')" style="flex:1;padding:9px;border:1px solid #ddd;background:' + (s.mode === mode ? '#111' : '#fff') + ';color:' + (s.mode === mode ? '#fff' : '#333') + ';border-radius:6px;font-size:13px;font-weight:600;cursor:pointer">' + label + '</button>';
+  }
+  var html = '<h2 style="margin-bottom:4px">📣 Project Updates</h2>';
+  html += '<div style="font-size:12px;color:#666;margin-bottom:14px">Tell orgs what shipped — auto-targeted to the orgs that actually have that report.</div>';
+  html += '<div style="display:flex;gap:8px;margin-bottom:14px">' + tab('smart', '📰 From changelog') + tab('manual', '✍️ Write manually') + '</div>';
+  html += '<label>Update title</label><input id="upd-title" value="' + updEsc(s.title) + '" oninput="updState.title=this.value" style="width:100%;margin-bottom:12px">';
+  html += (s.mode === 'smart') ? renderSmart() : renderManual();
+  html += '<div class="modal-actions" style="margin-top:16px"><button class="modal-cancel" onclick="closeUpd()">Cancel</button>';
+  html += (s.mode === 'smart')
+    ? '<button class="modal-submit" onclick="submitSmart()">🚀 Publish to matched orgs</button>'
+    : '<button class="modal-submit" onclick="submitManual()">🚀 Publish</button>';
+  html += '</div>';
+  html += renderPublished();
+  document.getElementById('upd-content').innerHTML = html;
+  if (s.mode === 'smart') updRecalc();
+}
+function updSetMode(m) { updState.mode = m; renderUpd(); }
+
+function renderSmart() {
+  var s = updState;
+  if (!s.rows) {
+    s.rows = (s.changelog || []).slice(0, 30).map(function (e) {
+      var text = (e.title || (e.items && e.items[0]) || '').trim();
+      var blob = [e.title].concat(e.items || []).join(' ');
+      return { text: text, reports: updInfer(blob), include: false, date: e.date || null };
+    });
+  }
+  var html = '<div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Recent shipped changes — tick to include</div>';
+  html += '<div style="max-height:280px;overflow:auto;border:1px solid #eee;border-radius:8px;padding:6px">';
+  s.rows.forEach(function (row, i) {
+    html += '<div style="border:1px solid #eee;border-radius:6px;padding:8px;margin-bottom:6px;background:' + (row.include ? '#f5f3ff' : '#fff') + '">';
+    html += '<div style="display:flex;gap:8px;align-items:flex-start">';
+    html += '<input type="checkbox" ' + (row.include ? 'checked' : '') + ' onchange="updToggleRow(' + i + ',this.checked)" style="margin-top:5px">';
+    html += '<input value="' + updEsc(row.text) + '" oninput="updState.rows[' + i + '].text=this.value" style="flex:1;font-size:13px;padding:4px 6px;border:1px solid #ddd;border-radius:4px">';
+    html += '</div>';
+    html += '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:6px;padding-left:26px">';
+    html += renderChips(i);
+    html += updAddSelect(i);
+    html += '<span style="margin-left:auto;font-size:11px;color:#7c3aed;font-weight:600">' + updRowAudience(row) + '</span>';
+    html += '</div></div>';
+  });
+  html += '</div>';
+  html += '<div id="upd-audience" style="margin-top:10px;padding:8px 12px;background:#f5f3ff;border-radius:6px;font-size:13px;font-weight:600;color:#5b21b6"></div>';
+  return html;
+}
+function renderChips(i) {
+  var row = updState.rows[i];
+  return (row.reports || []).map(function (rt) {
+    return '<span style="display:inline-flex;align-items:center;gap:3px;background:#ede9fe;color:#5b21b6;border-radius:12px;padding:2px 8px;font-size:11px">' + updEmoji(rt) + ' ' + updEsc(updLabel(rt)) + ' <span onclick="updRemoveChip(' + i + ',\'' + rt + '\')" style="cursor:pointer;font-weight:700">×</span></span>';
+  }).join(' ');
+}
+function updAddSelect(i) {
+  var opts = '<option value="">+ report</option>' + updState.reports.map(function (r) { return '<option value="' + r.type + '">' + updEsc(r.label) + '</option>'; }).join('');
+  return '<select onchange="updAddChip(' + i + ',this.value)" style="font-size:11px;border:1px solid #ddd;border-radius:4px;padding:2px 4px">' + opts + '</select>';
+}
+function updRowAudience(row) {
+  if (!row.reports || !row.reports.length) return 'no report — won’t send';
+  var n = updCountOrgs(row.reports);
+  return '→ ' + n + ' org' + (n === 1 ? '' : 's');
+}
+function updToggleRow(i, on) { updState.rows[i].include = on; renderUpd(); }
+function updAddChip(i, rt) { if (!rt) return; var r = updState.rows[i]; if (r.reports.indexOf(rt) < 0) r.reports.push(rt); renderUpd(); }
+function updRemoveChip(i, rt) { var r = updState.rows[i]; r.reports = r.reports.filter(function (x) { return x !== rt; }); renderUpd(); }
+function updRecalc() {
+  var el = document.getElementById('upd-audience'); if (!el) return;
+  var union = {}; (updState.rows || []).forEach(function (r) { if (r.include) (r.reports || []).forEach(function (rt) { union[rt] = 1; }); });
+  var reps = Object.keys(union);
+  if (!reps.length) { el.textContent = 'Tick a change above to see who gets it.'; return; }
+  var n = updCountOrgs(reps);
+  el.textContent = '🎯 ' + n + ' org' + (n === 1 ? '' : 's') + ' will get this update.';
+}
+
+function renderManual() {
+  var orgChecks = updState.orgs.map(function (o) {
+    return '<label style="display:inline-flex;align-items:center;gap:4px;font-size:12px;margin:2px 10px 2px 0"><input type="checkbox" class="upd-org" value="' + o.slug + '"> ' + updEsc(o.name) + '</label>';
+  }).join('');
+  var html = '<label>Message (markdown ok)</label>';
+  html += '<textarea id="upd-body" rows="5" placeholder="What’s new…" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:5px;font-family:inherit;font-size:13px"></textarea>';
+  html += '<label style="display:inline-flex;align-items:center;gap:6px;margin:10px 0"><input type="checkbox" id="upd-all" onchange="document.getElementById(\'upd-orglist\').style.opacity=this.checked?0.4:1"> All orgs (including future)</label>';
+  html += '<div id="upd-orglist" style="max-height:160px;overflow:auto;border:1px solid #eee;border-radius:6px;padding:8px">' + orgChecks + '</div>';
+  return html;
+}
+
+function renderPublished() {
+  var list = updState.published || [];
+  if (!list.length) return '<div style="margin-top:18px;font-size:12px;color:#999">No published updates yet.</div>';
+  var html = '<div style="margin-top:20px;border-top:1px solid #eee;padding-top:12px"><div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Published updates</div>';
+  list.forEach(function (a) {
+    var target = a.smart ? ('📰 smart · ' + (a.audience || 0) + ' orgs') : (a.allOrgs ? 'all orgs' : ((a.orgs || []).length + ' orgs'));
+    html += '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #f3f3f3">';
+    html += '<span style="flex:1;font-size:13px;' + (a.active === false ? 'opacity:.5;text-decoration:line-through' : '') + '">' + updEsc(a.title) + ' <span style="color:#999;font-size:11px">(' + target + ')</span></span>';
+    html += '<button onclick="updToggle(\'' + a.id + '\')" style="font-size:11px;padding:3px 8px;border:1px solid #ddd;border-radius:4px;background:#fff;cursor:pointer">' + (a.active === false ? 'Resume' : 'Pause') + '</button>';
+    html += '<button onclick="updDelete(\'' + a.id + '\')" style="font-size:11px;padding:3px 8px;border:1px solid #fca5a5;color:#dc2626;border-radius:4px;background:#fff;cursor:pointer">Delete</button>';
+    html += '</div>';
+  });
+  html += '</div>';
+  return html;
+}
+
+async function submitSmart() {
+  var title = (updState.title || '').trim();
+  var items = (updState.rows || []).filter(function (r) { return r.include && r.text.trim() && r.reports.length; })
+    .map(function (r) { return { text: r.text.trim(), reports: r.reports, date: r.date }; });
+  if (!title) { alert('Title is required.'); return; }
+  if (!items.length) { alert('Tick at least one change that has a report tag.'); return; }
+  try {
+    var resp = await fetch('/admin/api/announcements/from-updates', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: title, items: items }) });
+    var d = await resp.json();
+    if (!resp.ok) throw new Error(d.error || 'Failed');
+    alert('🚀 Published to ' + d.audience + ' org' + (d.audience === 1 ? '' : 's') + '.');
+    loadUpd();
+  } catch (e) { alert(e.message); }
+}
+async function submitManual() {
+  var title = (document.getElementById('upd-title').value || '').trim();
+  var body = (document.getElementById('upd-body').value || '').trim();
+  var allOrgs = document.getElementById('upd-all').checked;
+  var orgs = [].slice.call(document.querySelectorAll('.upd-org:checked')).map(function (c) { return c.value; });
+  if (!title) { alert('Title is required.'); return; }
+  if (!allOrgs && !orgs.length) { alert('Pick All orgs or at least one org.'); return; }
+  try {
+    var resp = await fetch('/admin/api/announcements', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: title, body: body, orgs: orgs, allOrgs: allOrgs }) });
+    var d = await resp.json();
+    if (!resp.ok) throw new Error(d.error || 'Failed');
+    alert('🚀 Published.');
+    loadUpd();
+  } catch (e) { alert(e.message); }
+}
+async function updToggle(id) {
+  await fetch('/admin/api/announcements/toggle', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: id }) });
+  loadUpd();
+}
+async function updDelete(id) {
+  if (!confirm('Delete this update?')) return;
+  await fetch('/admin/api/announcements/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: id }) });
+  loadUpd();
 }
 </script>
 </body>
