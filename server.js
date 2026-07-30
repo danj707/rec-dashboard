@@ -129,10 +129,7 @@ const SHARED_UUIDS = {
   // (programs / facility / memberships / passes / products / events /
   // deposits / fees_tax / other) — reconciles exactly with the GL rollup.
   // Metabase card #19141 "Org Dashboard — Revenue by Stream (payment-dated)".
-  // null until public sharing is enabled on the card; while null the
-  // Revenue by Stream widget falls back to inferring streams from the
-  // section-dated reports.
-  revstreams: null
+  revstreams: '4c75c2e7-b4c0-44f3-b5bc-f8aac598730b'
 };
 
 // Reports that don't accept date parameters
@@ -243,11 +240,12 @@ function buildMetabaseParams(reportType, query) {
   if (!NO_DATE_REPORTS.has(reportType)) {
     const start = parseToISO(query.start);
     const end = parseToISO(query.end);
-    // The revstreams card's start/end template tags are text variables (its
-    // SQL casts them with ::date), so date/single params would be rejected —
-    // send them the same way org_id goes over. Don't change those tags to
-    // Date in the Metabase UI or this stops matching.
-    const dateType = reportType === 'revstreams' ? 'string/=' : 'date/single';
+    // The revstreams card's template tags are plain text variables (its SQL
+    // casts them with ::date), and Metabase's public API only accepts
+    // 'category' params against those — 'date/single' and 'string/=' both
+    // 400 (verified against the live public card). Don't change those tags
+    // to Date in the Metabase UI or this stops matching.
+    const dateType = reportType === 'revstreams' ? 'category' : 'date/single';
     if (start) params.push({ type: dateType, target: ['variable', ['template-tag', 'start_date']], value: start });
     if (end) params.push({ type: dateType, target: ['variable', ['template-tag', 'end_date']], value: end });
   }
@@ -283,9 +281,11 @@ async function fetchMetabaseData(orgSlug, reportType, query) {
   if (!uuid) return null;
 
   const params = buildMetabaseParams(reportType, query);
-  // Shared UUIDs need org_id to filter data
+  // Shared UUIDs need org_id to filter data. The revstreams card's org_id is
+  // a plain text variable, which the public API only accepts as 'category'.
   if (isShared && org.orgId) {
-    params.push({ type: 'string/=', target: ['variable', ['template-tag', 'org_id']], value: org.orgId });
+    const orgIdType = reportType === 'revstreams' ? 'category' : 'string/=';
+    params.push({ type: orgIdType, target: ['variable', ['template-tag', 'org_id']], value: org.orgId });
   }
   const cacheKey = `${orgSlug}:${reportType}:${JSON.stringify(params)}`;
   
