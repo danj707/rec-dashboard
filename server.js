@@ -124,7 +124,15 @@ const SHARED_UUIDS = {
   products: 'b9678f5f-b5fb-48f7-96da-f22a1b4e8d8a',
   'instructor-payout': 'a8db6d86-eddc-4511-a28c-ad4bf636859e',
   checkins: '574324e0-b5a1-46c5-8770-8c466631fdcf',
-  'program-checkins': 'cb6fd909-72d3-446b-930b-c0382da02d62'
+  'program-checkins': 'cb6fd909-72d3-446b-930b-c0382da02d62',
+  // Payment-dated revenue split by what each payment actually bought
+  // (programs / facility / memberships / passes / products / events /
+  // deposits / fees_tax / other) — reconciles exactly with the GL rollup.
+  // Metabase card #19141 "Org Dashboard — Revenue by Stream (payment-dated)".
+  // null until public sharing is enabled on the card; while null the
+  // Revenue by Stream widget falls back to inferring streams from the
+  // section-dated reports.
+  revstreams: null
 };
 
 // Reports that don't accept date parameters
@@ -235,8 +243,13 @@ function buildMetabaseParams(reportType, query) {
   if (!NO_DATE_REPORTS.has(reportType)) {
     const start = parseToISO(query.start);
     const end = parseToISO(query.end);
-    if (start) params.push({ type: 'date/single', target: ['variable', ['template-tag', 'start_date']], value: start });
-    if (end) params.push({ type: 'date/single', target: ['variable', ['template-tag', 'end_date']], value: end });
+    // The revstreams card's start/end template tags are text variables (its
+    // SQL casts them with ::date), so date/single params would be rejected —
+    // send them the same way org_id goes over. Don't change those tags to
+    // Date in the Metabase UI or this stops matching.
+    const dateType = reportType === 'revstreams' ? 'string/=' : 'date/single';
+    if (start) params.push({ type: dateType, target: ['variable', ['template-tag', 'start_date']], value: start });
+    if (end) params.push({ type: dateType, target: ['variable', ['template-tag', 'end_date']], value: end });
   }
   return params;
 }
