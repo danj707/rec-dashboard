@@ -440,8 +440,46 @@ const W = {
   // ── Revenue by Stream (multi-source) ──
   'rev-streams': { label: 'Revenue by Stream', description: 'Cross-functional revenue breakdown', note: 'Revenue split across programs, facility, memberships, and POS', section: 'revenue',
     reportType: 'gl', size: 'md', icon: '\uD83C\uDFAF', component: 'streams',
-    _multiSource: true, _extraReportTypes: ['facility', 'programs', 'memberships', 'products'],
+    _multiSource: true, _extraReportTypes: ['revstreams', 'facility', 'programs', 'memberships', 'products'],
     transform: function(rows, allData) {
+      var glTotal = rows.reduce(function(s,r){ return s + pf(r['Total Payments']); }, 0);
+      // Preferred source: the payment-dated revstreams card. Every payment in
+      // the range is classified by what it actually bought, so registration
+      // money collected before a program starts still counts as Programs and
+      // the split reconciles with the GL rollup. The section-dated fallback
+      // below can't see those pre-season payments and dumps them in
+      // "Other / fees".
+      var rsRows = (allData && allData['revstreams']) || [];
+      if (rsRows.length) {
+        var META = {
+          programs:    { type: 'Programs',         color: '#3b82f6', report: 'programs' },
+          facility:    { type: 'Facility rentals', color: '#f59e0b', report: 'facility' },
+          memberships: { type: 'Memberships',      color: '#ec4899', report: 'memberships' },
+          passes:      { type: 'Passes',           color: '#8b5cf6', report: 'memberships' },
+          products:    { type: 'Products / POS',   color: '#ef4444', report: 'products' },
+          events:      { type: 'Event tickets',    color: '#06b6d4', report: 'gl' },
+          deposits:    { type: 'Deposits',         color: '#84cc16', report: 'gl' },
+          fees_tax:    { type: 'Fees & tax',       color: '#6b7280', report: 'gl' },
+          other:       { type: 'Other',            color: '#9ca3af', report: 'gl' }
+        };
+        var streams = [];
+        rsRows.forEach(function(r) {
+          var amt = pf(r['payments']);
+          if (amt <= 0) return;
+          var m = META[r['stream']] || META.other;
+          streams.push({ type: m.type, amount: amt, color: m.color, report: m.report });
+        });
+        streams.sort(function(a,b){ return b.amount - a.amount; });
+        var covered = streams.reduce(function(s,x){ return s + x.amount; }, 0);
+        // GL can still exceed the classified total (edge cases like stored-value
+        // quirks) \u2014 keep any gap visible instead of hiding it.
+        if (glTotal > covered * 1.01 && glTotal - covered > 1) {
+          streams.push({ type: 'Other / fees', amount: glTotal - covered, color: '#6b7280', report: 'gl' });
+        }
+        return { streams: streams, total: Math.max(glTotal, covered) };
+      }
+      // Fallback (revstreams card not available): infer streams from the
+      // section-dated reports.
       var streams = [];
       var progRows = (allData && allData['programs']) || [];
       var progRev = progRows.reduce(function(s,r){ return s + pf(r['net_total'] || r['charged']); }, 0);
@@ -455,7 +493,6 @@ const W = {
       var prodRows = (allData && allData['products']) || [];
       var prodRev = prodRows.reduce(function(s,r){ return s + pf(r['Gross Revenue'] || r['Net Revenue'] || r['revenue']); }, 0);
       if (prodRev > 0) streams.push({ type: 'Products / POS', amount: prodRev, color: '#ef4444', report: 'products' });
-      var glTotal = rows.reduce(function(s,r){ return s + pf(r['Total Payments']); }, 0);
       streams.sort(function(a,b){ return b.amount - a.amount; });
       var streamTotal = streams.reduce(function(s,x){ return s + x.amount; }, 0);
       if (glTotal > streamTotal * 1.01) streams.push({ type: 'Other / fees', amount: glTotal - streamTotal, color: '#6b7280', report: 'gl' });
