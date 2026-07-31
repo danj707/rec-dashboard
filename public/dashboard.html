@@ -141,6 +141,13 @@ body { font-family: var(--font-body); background: var(--bg-page); color: var(--t
 .metric-green { color: var(--green); }
 .metric-red { color: var(--red); }
 .metric-amber { color: var(--amber); }
+/* ── Prior-period delta pill ── */
+.delta-pill { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 10px; margin-top: 6px; font-variant-numeric: tabular-nums; white-space: nowrap; animation: pillIn .25s ease; }
+.delta-pill.good { background: rgba(34,197,94,.14); color: var(--green); }
+.delta-pill.bad  { background: rgba(239,68,68,.13); color: var(--red); }
+.delta-pill.flat { background: rgba(148,163,184,.15); color: var(--text-muted); }
+.delta-pill .dvs { font-weight: 500; opacity: .75; }
+@keyframes pillIn { from { opacity: 0; transform: translateY(2px); } to { opacity: 1; transform: none; } }
 
 /* ── Tabs (format borrowed from rental-report's g-tabs) ── */
 .g-tabs { display: flex; gap: 0; margin: 0; padding: 0 24px; border-bottom: 2px solid var(--border); flex-wrap: wrap; }
@@ -405,16 +412,16 @@ const ALL_TIME_REPORTS = new Set(['fasttrack', 'memberships', 'users', 'program-
 const W = {
   // ── Revenue / GL ──
   'gl-total-revenue': { label: 'Total Revenue', description: 'Sum of all payments across GL codes', note: 'All payments received across all GL codes', section: 'revenue',
-    reportType: 'gl', size: 'sm', icon: '\uD83D\uDCB0', component: 'metric',
+    reportType: 'gl', size: 'sm', icon: '\uD83D\uDCB0', component: 'metric', delta: true,
     transform: rows => ({ value: rows.reduce((s,r) => s + pf(r['Total Payments']), 0), format: 'currency', colorClass: 'metric-green' }) },
   'gl-total-refunds': { label: 'Total Refunds', description: 'Sum of all refunds', note: 'All refunds issued, all payment methods', section: 'revenue',
-    reportType: 'gl', size: 'sm', icon: '\uD83D\uDD04', component: 'metric',
+    reportType: 'gl', size: 'sm', icon: '\uD83D\uDD04', component: 'metric', delta: true, deltaGoodWhenDown: true,
     transform: rows => ({ value: rows.reduce((s,r) => s + pf(r['Total Refunds']), 0), format: 'currency', colorClass: 'metric-red' }) },
   'gl-net-revenue': { label: 'Net Revenue', description: 'Total payments minus refunds', note: 'Payments minus refunds across all GL codes', section: 'revenue',
-    reportType: 'gl', size: 'sm', icon: '\uD83D\uDCC8', component: 'metric',
+    reportType: 'gl', size: 'sm', icon: '\uD83D\uDCC8', component: 'metric', delta: true,
     transform: rows => ({ value: rows.reduce((s,r) => s + pf(r['Net Amount']), 0), format: 'currency', colorClass: 'metric-green' }) },
   'gl-transactions': { label: 'Transactions', description: 'Number of payment transactions', note: 'Total number of payment transactions processed', section: 'revenue',
-    reportType: 'gl', size: 'sm', icon: '\uD83D\uDCCB', component: 'metric',
+    reportType: 'gl', size: 'sm', icon: '\uD83D\uDCCB', component: 'metric', delta: true,
     transform: rows => ({ value: rows.reduce((s,r) => s + pf(r['Number of Payments']), 0), format: 'number' }) },
   'gl-by-code': { label: 'Revenue by GL Code', description: 'Net revenue broken out by GL code', note: 'Net revenue broken out by general ledger account', section: 'revenue',
     reportType: 'gl', size: 'md', icon: '\uD83D\uDCCA', component: 'bar',
@@ -524,10 +531,10 @@ const W = {
 
   // ── Facility Rentals ──
   'rental-count': { label: 'Total Bookings', description: 'Number of facility reservations', note: 'Total facility reservations in date range', section: 'facility',
-    reportType: 'facility', size: 'sm', icon: '\uD83D\uDCC5', component: 'metric',
+    reportType: 'facility', size: 'sm', icon: '\uD83D\uDCC5', component: 'metric', delta: true,
     transform: rows => ({ value: rows.length, format: 'number' }) },
   'rental-revenue': { label: 'Rental Revenue', description: 'Sum of facility booking revenue', note: 'Sum of booking totals for facility rentals', section: 'facility',
-    reportType: 'facility', size: 'sm', icon: '\uD83D\uDCB5', component: 'metric',
+    reportType: 'facility', size: 'sm', icon: '\uD83D\uDCB5', component: 'metric', delta: true,
     transform: rows => ({ value: rows.reduce((s,r) => s + pf(r['Total']), 0), format: 'currency', colorClass: 'metric-green' }) },
   'rental-daily-trend': { label: 'Daily Bookings', description: 'Booking count over time', note: 'Number of bookings per day over time', section: 'facility',
     reportType: 'facility', size: 'md', icon: '\uD83D\uDCC8', component: 'line',
@@ -561,13 +568,13 @@ const W = {
 
   // ── Programs ──
   'program-enrollments': { label: 'Total Enrollments', description: 'Sum of program enrollments', note: 'Total enrolled participants across all sections', section: 'programs',
-    reportType: 'programs', size: 'sm', icon: '\uD83C\uDF93', component: 'metric',
+    reportType: 'programs', size: 'sm', icon: '\uD83C\uDF93', component: 'metric', delta: true,
     transform: rows => ({ value: rows.reduce((s,r) => s + (parseInt(r['enrolled'])||0), 0), format: 'number' }) },
   'program-revenue': { label: 'Program Revenue', description: 'Net revenue from programs (all-time)', note: 'Lifetime net revenue for sections active in date range', section: 'programs',
-    reportType: 'programs', size: 'sm', icon: '\uD83D\uDCB0', component: 'metric',
+    reportType: 'programs', size: 'sm', icon: '\uD83D\uDCB0', component: 'metric', delta: true,
     transform: rows => ({ value: rows.reduce((s,r) => s + pf(r['net_total'] || r['charged']), 0), format: 'currency', colorClass: 'metric-green', sub: 'All-time' }) },
   'program-cancellations': { label: 'Program Refunds', description: 'Total refund amount from programs (all-time)', note: 'Lifetime refund total for sections in date range', section: 'programs',
-    reportType: 'programs', size: 'sm', icon: '\uD83D\uDD04', component: 'metric',
+    reportType: 'programs', size: 'sm', icon: '\uD83D\uDD04', component: 'metric', delta: true, deltaGoodWhenDown: true,
     transform: rows => ({ value: rows.reduce((s,r) => s + pf(r['refunds']), 0), format: 'currency', colorClass: 'metric-red', sub: 'All-time' }) },
   'program-fill-rate': { label: 'Avg Fill Rate', description: 'Average program capacity utilization', note: 'Average enrolled / capacity across sections', section: 'programs',
     reportType: 'programs', size: 'sm', icon: '\uD83D\uDCCA', component: 'metric',
@@ -623,7 +630,7 @@ const W = {
 
   // ── Courts ──
   'court-total': { label: 'Total Reservations', description: 'All court bookings', note: 'All court reservations (instant + managed)', section: 'courts',
-    reportType: 'court-utilization', size: 'sm', icon: '\uD83C\uDFBE', component: 'metric',
+    reportType: 'court-utilization', size: 'sm', icon: '\uD83C\uDFBE', component: 'metric', delta: true,
     transform: rows => ({ value: rows.length, format: 'number' }) },
   'court-instant': { label: 'Instant Bookings', description: 'Customer self-booked', note: 'Self-service bookings made by customers online', section: 'courts',
     reportType: 'court-utilization', size: 'sm', icon: '\u26A1', component: 'metric',
@@ -799,10 +806,10 @@ const W = {
 
   // ── Products ──
   'prod-gross': { label: 'Gross Revenue', description: 'Total product sales', note: 'Total product and POS sales before refunds', section: 'products',
-    reportType: 'products', size: 'sm', icon: '\uD83D\uDCB5', component: 'metric',
+    reportType: 'products', size: 'sm', icon: '\uD83D\uDCB5', component: 'metric', delta: true,
     transform: rows => ({ value: rows.reduce((s,r)=>s+pf(r['Revenue ($)']||r['Revenue']||r['revenue']),0), format:'currency', colorClass:'metric-green' }) },
   'prod-net': { label: 'Net Revenue', description: 'Gross minus refunds', note: 'Product sales minus refunds', section: 'products',
-    reportType: 'products', size: 'sm', icon: '\uD83D\uDCB0', component: 'metric',
+    reportType: 'products', size: 'sm', icon: '\uD83D\uDCB0', component: 'metric', delta: true,
     transform: rows => ({ value: rows.reduce((s,r)=>s+pf(r['Net Revenue ($)']||r['Net Revenue']||r['Net']||r['net']),0), format:'currency', colorClass:'metric-green' }) },
   'prod-refunds': { label: 'Refunds', description: 'Product refund total', note: 'Total refunded on product purchases', section: 'products',
     reportType: 'products', size: 'sm', icon: '\uD83D\uDD04', component: 'metric',
@@ -1205,7 +1212,56 @@ function ProgressRing({ pct, size = 68 }) {
   );
 }
 
-function MetricCard({ data, target }) {
+// ── Prior-period comparison ────────────────────────────────────────
+// Prior window mirrors the dashboard's selected timeframe: whole calendar
+// month(s) compare to the previous calendar month(s) ("July" vs "June");
+// anything else compares to the immediately preceding equal-length window.
+function priorWindow(dr) {
+  if (!dr || !dr.start || !dr.end) return null;
+  try {
+    const s = new Date(dr.start + 'T12:00:00'), e = new Date(dr.end + 'T12:00:00');
+    if (isNaN(s) || isNaN(e) || e < s) return null;
+    const iso = d => d.toISOString().split('T')[0];
+    const isMonthStart = s.getDate() === 1;
+    const isMonthEnd = e.getDate() === new Date(e.getFullYear(), e.getMonth() + 1, 0).getDate();
+    if (isMonthStart && isMonthEnd) {
+      const span = (e.getFullYear() - s.getFullYear()) * 12 + (e.getMonth() - s.getMonth()) + 1;
+      return { start: iso(new Date(s.getFullYear(), s.getMonth() - span, 1, 12)), end: iso(new Date(s.getFullYear(), s.getMonth(), 0, 12)) };
+    }
+    const days = Math.round((e - s) / 86400000) + 1;
+    const pe = new Date(s); pe.setDate(pe.getDate() - 1);
+    const ps = new Date(pe); ps.setDate(ps.getDate() - (days - 1));
+    return { start: iso(ps), end: iso(pe) };
+  } catch (e) { return null; }
+}
+
+function fmtRangeShort(dr) {
+  try {
+    const s = new Date(dr.start + 'T12:00:00'), e = new Date(dr.end + 'T12:00:00');
+    const sm = s.toLocaleDateString('en-US', { month: 'short' }), em = e.toLocaleDateString('en-US', { month: 'short' });
+    if (sm === em && s.getFullYear() === e.getFullYear()) return sm + ' ' + s.getDate() + '\u2013' + e.getDate();
+    return sm + ' ' + s.getDate() + ' \u2013 ' + em + ' ' + e.getDate();
+  } catch (e) { return 'prior period'; }
+}
+
+// Delta pill vs the prior window. goodWhenDown flips the color logic for
+// metrics where a decrease is the win (refunds).
+function DeltaPill({ cur, prev, goodWhenDown, label }) {
+  if (prev == null || cur == null || (prev === 0 && cur === 0)) return null;
+  const diff = cur - prev;
+  if (diff === 0) return <span className="delta-pill flat">\u2014 0% <span className="dvs">{label}</span></span>;
+  const up = diff > 0;
+  const pct = prev !== 0 ? Math.round(Math.abs(diff) / Math.abs(prev) * 100) : null;
+  const txt = (pct != null && pct <= 999) ? pct + '%' : Math.abs(diff).toLocaleString();
+  const good = goodWhenDown ? !up : up;
+  return (
+    <span className={'delta-pill ' + (good ? 'good' : 'bad')}>
+      {up ? '\u25B2 +' : '\u25BC \u2212'}{txt} <span className="dvs">{label}</span>
+    </span>
+  );
+}
+
+function MetricCard({ data, target, prior }) {
   if (!data) return <div className="skeleton skeleton-metric" />;
   const hasTarget = target != null && target > 0;
   const pct = hasTarget ? (data.value / target) * 100 : 0;
@@ -1217,6 +1273,7 @@ function MetricCard({ data, target }) {
           <div className={`metric-value ${data.colorClass || ''}`} style={{fontSize:30}}>{fmt(data.value, data.format)}</div>
           <div className="target-sub">{Math.round(pct)}% of {fmt(target, data.format)} target</div>
           {data.sub && <div style={{fontSize:10,color:'var(--text-muted)',marginTop:2}}>{data.sub}</div>}
+          {prior && <div><DeltaPill cur={data.value} prev={prior.value} goodWhenDown={prior.goodWhenDown} label={prior.label} /></div>}
         </div>
         <ProgressRing pct={pct} />
       </div>
@@ -1226,6 +1283,7 @@ function MetricCard({ data, target }) {
   return <div>
     <div className={`metric-value ${data.colorClass || ''}`}>{fmt(data.value, data.format)}</div>
     {data.sub && <div style={{fontSize:11,color:'var(--text-muted)',marginTop:4}}>{data.sub}</div>}
+    {prior && <div><DeltaPill cur={data.value} prev={prior.value} goodWhenDown={prior.goodWhenDown} label={prior.label} /></div>}
   </div>;
 }
 
@@ -1431,10 +1489,19 @@ function StreamsChart({ data }) {
 const COMP = {
   streams: StreamsChart, metric: MetricCard, bar: BarChartWidget, donut: DonutChartWidget, line: LineChartWidget, table: TableWidget, map: MapWidget, heatmap: HeatmapWidget };
 
-function WidgetCard({ widgetId, reportData, loading, target, onTargetChange, dateRange, reportingBaseUrl }) {
+function WidgetCard({ widgetId, reportData, loading, target, onTargetChange, dateRange, reportingBaseUrl, priorReportData }) {
   const def = W[widgetId]; if (!def) return null;
   const Comp = COMP[def.component]; if (!Comp) return null;
   const raw = reportData[def.reportType];
+  // Prior-period value for delta-flagged metric tiles (lazy — appears when
+  // the prior window's data arrives; hidden for all-time reports).
+  let prior = null;
+  if (def.delta && def.component === 'metric' && priorReportData && priorReportData._window && priorReportData[def.reportType] && !ALL_TIME_REPORTS.has(def.reportType)) {
+    try {
+      const pv = def.transform(priorReportData[def.reportType]);
+      if (pv && pv.value != null) prior = { value: pv.value, goodWhenDown: !!def.deltaGoodWhenDown, label: 'vs ' + fmtRangeShort(priorReportData._window) };
+    } catch (e) {}
+  }
   const data = raw ? (def._multiSource ? def.transform(raw, reportData) : def.transform(raw)) : null;
   const sizeClass = def.size==='sm'?'widget-sm':def.size==='lg'?'widget-lg':'widget-md';
   const isMetric = def.component === 'metric';
@@ -1473,7 +1540,7 @@ function WidgetCard({ widgetId, reportData, loading, target, onTargetChange, dat
         </div>
       )}
       {loading && !data ? <div className={isMetric?'skeleton skeleton-metric':'skeleton skeleton-chart'} />
-        : isMetric ? <MetricCard data={data} target={target} /> : <Comp data={data} onBarClick={
+        : isMetric ? <MetricCard data={data} target={target} prior={prior} /> : <Comp data={data} onBarClick={
           (def.component === 'bar' || def.component === 'table') && def.reportType === 'programs' && reportingBaseUrl
             ? (label) => { var u = reportingBaseUrl + '/' + ORG_SLUG + '/programs?token=' + TOKEN + '&tab=revenue&program=' + encodeURIComponent(label); if (dateRange) { u += '&start_date=' + dateRange.start + '&end_date=' + dateRange.end; } window.open(u, '_blank'); }
             : undefined
@@ -1612,7 +1679,7 @@ function BriefingSection({ reportData, loading, dateRange, briefingRef }) {
 // ═══════════════════════════════════════════════════════
 //  SECTION BLOCK
 // ═══════════════════════════════════════════════════════
-function SectionBlock({ sectionId, widgetIds, reportData, loading, targets, onTargetChange, dateRange, aiEnabled, reportLinksEnabled, reportingBaseUrl }) {
+function SectionBlock({ sectionId, widgetIds, reportData, loading, targets, onTargetChange, dateRange, aiEnabled, reportLinksEnabled, reportingBaseUrl, priorReportData }) {
   const sec = SECTIONS[sectionId]; if (!sec) return null;
   const [insight, setInsight] = useState(null);
   const [insightLoading, setInsightLoading] = useState(false);
@@ -1760,13 +1827,13 @@ function SectionBlock({ sectionId, widgetIds, reportData, loading, targets, onTa
           </div>}
           <div className="widget-grid">
             {chartIds.map(id => <WidgetCard key={id} widgetId={id} reportData={reportData} loading={loading} reportingBaseUrl={reportingBaseUrl}
-              target={targets?.[id]} onTargetChange={onTargetChange} dateRange={dateRange} />)}
+              target={targets?.[id]} onTargetChange={onTargetChange} dateRange={dateRange} priorReportData={priorReportData} />)}
           </div>
         </React.Fragment>;
       })() : (
         <div className="widget-grid">
           {widgetIds.map(id => <WidgetCard key={id} widgetId={id} reportData={reportData} loading={loading} reportingBaseUrl={reportingBaseUrl}
-            target={targets?.[id]} onTargetChange={onTargetChange} dateRange={dateRange} />)}
+            target={targets?.[id]} onTargetChange={onTargetChange} dateRange={dateRange} priorReportData={priorReportData} />)}
         </div>
       )}
     </div>
@@ -2585,7 +2652,7 @@ function SupportTab({ reportData, loading, targets, onTargetChange, dateRange, a
   return (
     <React.Fragment>
       <SupportInbox actionsDisabled={supportReadOnly} onConversationSeen={onConversationSeen} notifyEmails={notifyEmails} dateRange={dateRange} refreshNonce={refreshNonce} />
-      <SectionBlock sectionId="support" widgetIds={SECTIONS.support.defaultWidgets} reportData={reportData} loading={loading}
+      <SectionBlock sectionId="support" widgetIds={SECTIONS.support.defaultWidgets} reportData={reportData} loading={loading} priorReportData={priorReportData}
         targets={targets} onTargetChange={onTargetChange} dateRange={dateRange} aiEnabled={aiEnabled}
         reportLinksEnabled={false} reportingBaseUrl="" />
     </React.Fragment>
@@ -2641,6 +2708,7 @@ function DashboardApp() {
   const [dateRange, setDateRange] = useState(getMonthRange(0));
   const [datePreset, setDatePreset] = useState('thisMonth');
   const [reportData, setReportData] = useState({});
+  const [priorReportData, setPriorReportData] = useState(null); // { _window: {start,end}, [rt]: rows } — lazy, for delta pills
   const briefingRef = React.useRef(null);
 
   function buildDigestPayload() {
@@ -2763,12 +2831,26 @@ function DashboardApp() {
     // The Customer Support tab is outside section config — load its data whenever the org has it
     if (availableReports.support && !rts.includes('support')) rts.push('support');
     if (!rts.length) { setLoading(false); return; }
-    setLoading(true); clearDataStore();
+    setLoading(true); clearDataStore(); setPriorReportData(null);
     Promise.all(rts.map(rt => fetchReportData(rt, dateRange).then(rows => [rt, rows]).catch(() => [rt, []])))
       .then(results => {
         const rd = {}; results.forEach(([rt, rows]) => { rd[rt] = rows; });
         setReportData(rd); setLoading(false); setLastRefresh(new Date());
         track('dashboard_view', { sections: config.sections.length, widgets: allWidgetIds.length, reportTypes: rts, dateRange });
+        // ── Prior-period fetch for delta pills — lazy, never blocks the render.
+        // Only report types that respect the date picker AND have a delta-flagged
+        // metric tile; the pills fade in when this resolves.
+        const pw = priorWindow(dateRange);
+        if (!pw) return;
+        const deltaRts = [...new Set(Object.values(W).filter(d => d.delta && d.component === 'metric').map(d => d.reportType))]
+          .filter(rt => rts.includes(rt) && !ALL_TIME_REPORTS.has(rt));
+        if (!deltaRts.length) return;
+        Promise.all(deltaRts.map(rt => fetchReportData(rt, pw).then(rows => [rt, rows]).catch(() => [rt, null])))
+          .then(pres => {
+            const pd = { _window: pw };
+            pres.forEach(([rt, rows]) => { if (Array.isArray(rows)) pd[rt] = rows; });
+            setPriorReportData(pd);
+          });
       });
   }, [dataKey, dateRange]);
 
@@ -2934,7 +3016,7 @@ function DashboardApp() {
           <BriefingSection reportData={reportData} loading={loading} dateRange={dateRange} briefingRef={briefingRef} />
         )}
         {(IS_PRINT || activeTab === 'dashboard' || !availableReports.support) && displaySections.map((sec, i) => (
-          <SectionBlock key={sec.id+i+theme} sectionId={sec.id} widgetIds={sec.widgets} reportData={reportData} loading={loading}
+          <SectionBlock key={sec.id+i+theme} sectionId={sec.id} widgetIds={sec.widgets} reportData={reportData} loading={loading} priorReportData={priorReportData}
             targets={targets} onTargetChange={handleTargetChange} dateRange={dateRange} aiEnabled={!isReadOnly && orgMeta.toggles?.ai !== false}
             reportLinksEnabled={!isReadOnly && orgMeta.toggles?.reportLinks === true} reportingBaseUrl={orgMeta.reportingBaseUrl || ''} />
         ))}
