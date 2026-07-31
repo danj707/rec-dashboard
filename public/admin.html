@@ -648,7 +648,9 @@ function renderSmart() {
       return { text: text, features: updInfer(blob), include: false, date: e.date || null };
     });
   }
-  var html = '<div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Recent shipped changes — tick to include</div>';
+  var html = '<div id="upd-imgs" style="display:none;flex-wrap:wrap;gap:10px;margin-bottom:8px"></div>';
+  html += '<div style="font-size:10.5px;color:#aaa;margin:0 0 8px">📋 Paste a screenshot (Ctrl/Cmd+V) to attach it to this update</div>';
+  html += '<div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Recent shipped changes — tick to include</div>';
   html += '<div style="max-height:280px;overflow:auto;border:1px solid #eee;border-radius:8px;padding:6px">';
   s.rows.forEach(function (row, i) {
     html += '<div style="border:1px solid #eee;border-radius:6px;padding:8px;margin-bottom:6px;background:' + (row.include ? '#f5f3ff' : '#fff') + '">';
@@ -700,6 +702,8 @@ function renderManual() {
   }).join('');
   var html = '<label>Message (markdown ok)</label>';
   html += '<textarea id="upd-body" rows="5" placeholder="What’s new…" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:5px;font-family:inherit;font-size:13px"></textarea>';
+  html += '<div id="upd-imgs" style="display:none;flex-wrap:wrap;gap:10px;margin-top:8px"></div>';
+  html += '<div style="font-size:10.5px;color:#aaa;margin-top:4px">📋 Paste a screenshot (Ctrl/Cmd+V) to attach it — it ships with either publish path</div>';
   html += '<label style="display:inline-flex;align-items:center;gap:6px;margin:10px 0"><input type="checkbox" id="upd-all" onchange="document.getElementById(\'upd-orglist\').style.opacity=this.checked?0.4:1"> All orgs (including future)</label>';
   html += '<div id="upd-orglist" style="max-height:160px;overflow:auto;border:1px solid #eee;border-radius:6px;padding:8px">' + orgChecks + '</div>';
   return html;
@@ -721,6 +725,36 @@ function renderPublished() {
   return html;
 }
 
+// ── Pasted screenshots: Ctrl/Cmd+V in the Updates composer attaches the image ──
+var updImages = [];
+function renderUpdImgs() {
+  var s = document.getElementById('upd-imgs'); if (!s) return;
+  s.innerHTML = updImages.map(function (u, i) {
+    return '<span style="position:relative;display:inline-block"><img src="' + updEsc(u) + '" style="height:64px;border:1px solid #ddd;border-radius:6px;display:block">'
+      + '<span onclick="removeUpdImg(' + i + ')" title="Remove image" style="position:absolute;top:-6px;right:-6px;background:#333;color:#fff;border-radius:50%;width:16px;height:16px;font-size:10px;line-height:16px;text-align:center;cursor:pointer">&times;</span></span>';
+  }).join('');
+  s.style.display = updImages.length ? 'flex' : 'none';
+}
+function removeUpdImg(i) { updImages.splice(i, 1); renderUpdImgs(); }
+async function uploadUpdImage(file) {
+  if (file.size > 6 * 1024 * 1024) { alert('Image too large — crop or downscale the screenshot.'); return; }
+  var dataUrl = await new Promise(function (resolve, reject) { var r = new FileReader(); r.onload = function () { resolve(r.result); }; r.onerror = reject; r.readAsDataURL(file); });
+  try {
+    var resp = await fetch('/admin/api/announcements/image', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dataUrl: dataUrl }) });
+    var d = await resp.json();
+    if (!resp.ok) throw new Error(d.error || 'Upload failed');
+    updImages.push(d.url); renderUpdImgs();
+  } catch (e) { alert('Image upload failed: ' + e.message); }
+}
+document.addEventListener('paste', function (e) {
+  var modal = document.getElementById('upd-modal') || document.getElementById('upd-imgs');
+  if (!modal || !document.getElementById('upd-imgs')) return; // composer not on screen
+  var items = (e.clipboardData && e.clipboardData.items) || [];
+  for (var i = 0; i < items.length; i++) {
+    if (items[i].type && items[i].type.indexOf('image/') === 0) { e.preventDefault(); uploadUpdImage(items[i].getAsFile()); break; }
+  }
+});
+
 async function submitSmart() {
   var title = (updState.title || '').trim();
   var items = (updState.rows || []).filter(function (r) { return r.include && r.text.trim(); })
@@ -728,10 +762,11 @@ async function submitSmart() {
   if (!title) { alert('Title is required.'); return; }
   if (!items.length) { alert('Tick at least one change to include.'); return; }
   try {
-    var resp = await fetch('/admin/api/announcements/from-updates', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: title, items: items }) });
+    var resp = await fetch('/admin/api/announcements/from-updates', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: title, items: items, images: updImages }) });
     var d = await resp.json();
     if (!resp.ok) throw new Error(d.error || 'Failed');
     alert('🚀 Published to ' + d.audience + ' org' + (d.audience === 1 ? '' : 's') + '.');
+    updImages = []; renderUpdImgs();
     loadUpd();
   } catch (e) { alert(e.message); }
 }
@@ -743,10 +778,11 @@ async function submitManual() {
   if (!title) { alert('Title is required.'); return; }
   if (!allOrgs && !orgs.length) { alert('Pick All orgs or at least one org.'); return; }
   try {
-    var resp = await fetch('/admin/api/announcements', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: title, body: body, orgs: orgs, allOrgs: allOrgs }) });
+    var resp = await fetch('/admin/api/announcements', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: title, body: body, orgs: orgs, allOrgs: allOrgs, images: updImages }) });
     var d = await resp.json();
     if (!resp.ok) throw new Error(d.error || 'Failed');
     alert('🚀 Published.');
+    updImages = []; renderUpdImgs();
     loadUpd();
   } catch (e) { alert(e.message); }
 }

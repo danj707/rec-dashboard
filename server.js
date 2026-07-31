@@ -580,9 +580,9 @@ function activeAnnouncementsForOrg(slug) {
     if (a.active === false) continue;
     if (a.smart && Array.isArray(a.items)) {
       const items = a.items.filter(it => !it.features || it.features.length === 0 || it.features.some(f => feats.has(f)));
-      if (items.length) out.push({ id: a.id, title: a.title, smart: true, items: items.map(it => ({ text: it.text, emoji: it.emoji })) });
+      if (items.length) out.push({ id: a.id, title: a.title, smart: true, items: items.map(it => ({ text: it.text, emoji: it.emoji })), images: a.images || [] });
     } else if (a.allOrgs || (Array.isArray(a.orgs) && a.orgs.includes(slug))) {
-      out.push({ id: a.id, title: a.title, body: a.body });
+      out.push({ id: a.id, title: a.title, body: a.body, images: a.images || [] });
     }
   }
   return out;
@@ -602,6 +602,41 @@ function smartAudienceCount(items) {
 }
 
 // GET — powers the admin composer (published list + org roster + report directory + changelog)
+// ── Pasted screenshots attached to project updates ──────────────────
+const ANNOUNCE_IMG_DIR = path.join(DATA_DIR, 'announce-images');
+const ANNOUNCE_IMG_MIMES = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp' };
+// Keep only image refs our upload endpoint minted (defends the popup's <img src>)
+function cleanAnnounceImages(images) {
+  if (!Array.isArray(images)) return [];
+  return images.filter(u => typeof u === 'string' && /^\/announce-image\/[A-Za-z0-9_.-]+$/.test(u)).slice(0, 6);
+}
+// Upload (admin only): { dataUrl: "data:image/png;base64,..." } → { ok, url }
+app.post('/admin/api/announcements/image', adminAuth, express.json({ limit: '8mb' }), (req, res) => {
+  const dataUrl = String((req.body && req.body.dataUrl) || '');
+  const m = dataUrl.match(/^data:(image\/(?:png|jpeg|gif|webp));base64,(.+)$/);
+  if (!m) return res.status(400).json({ error: 'Expected a base64 image data URL (png/jpeg/gif/webp)' });
+  let buf;
+  try { buf = Buffer.from(m[2], 'base64'); } catch (e) { return res.status(400).json({ error: 'Invalid base64 payload' }); }
+  if (!buf.length) return res.status(400).json({ error: 'Empty image' });
+  if (buf.length > 4 * 1024 * 1024) return res.status(413).json({ error: 'Image too large (max 4MB) — crop or downscale the screenshot' });
+  const name = `img_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}.${ANNOUNCE_IMG_MIMES[m[1]]}`;
+  try { fs.mkdirSync(ANNOUNCE_IMG_DIR, { recursive: true }); fs.writeFileSync(path.join(ANNOUNCE_IMG_DIR, name), buf); }
+  catch (e) { return res.status(500).json({ error: 'Failed to store image: ' + e.message }); }
+  res.json({ ok: true, url: `/announce-image/${name}` });
+});
+// Serve (public path — org dashboards render these in the What's New popup)
+app.get('/announce-image/:name', (req, res) => {
+  const name = String(req.params.name || '');
+  if (!/^[A-Za-z0-9_.-]+$/.test(name) || name.includes('..')) return res.status(400).end();
+  const file = path.join(ANNOUNCE_IMG_DIR, name);
+  if (!fs.existsSync(file)) return res.status(404).end();
+  const ext = name.split('.').pop().toLowerCase();
+  const mime = { png: 'image/png', jpg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp' }[ext] || 'application/octet-stream';
+  res.set('Content-Type', mime);
+  res.set('Cache-Control', 'public, max-age=86400, immutable');
+  res.send(fs.readFileSync(file));
+});
+
 app.get('/admin/api/announcements', adminAuth, (req, res) => {
   const orgs = Object.keys(ORGS).map(slug => ({ slug, name: ORGS[slug].name || slug })).sort((a, b) => a.name.localeCompare(b.name));
   const visibility = {};
@@ -626,6 +661,7 @@ app.post('/admin/api/announcements', adminAuth, (req, res) => {
   if (!allOrgs && orgList.length === 0) return res.status(400).json({ error: 'Pick All orgs or at least one org' });
   const ann = {
     id: newAnnId(), title: t, body: (body || '').trim(),
+    images: cleanAnnounceImages(req.body.images),
     allOrgs: !!allOrgs, orgs: allOrgs ? [] : orgList,
     active: true, createdAt: Date.now(), createdISO: new Date().toISOString(),
   };
@@ -648,6 +684,7 @@ app.post('/admin/api/announcements/from-updates', adminAuth, (req, res) => {
   if (!clean.length) return res.status(400).json({ error: 'Tick at least one change to include' });
   const ann = {
     id: newAnnId(), smart: true, title: t, items: clean,
+    images: cleanAnnounceImages(req.body.images),
     active: true, createdAt: Date.now(), createdISO: new Date().toISOString(),
   };
   announcements.push(ann); saveAnnouncements(announcements);

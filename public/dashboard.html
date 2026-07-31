@@ -2685,6 +2685,8 @@ function WhatsNewPopup({ announcements, orgSlug }) {
       </ul>
     )
     : (<div style={{ fontSize: 14, lineHeight: 1.6, color: '#333', whiteSpace: 'pre-wrap' }}>{next.body || ''}</div>);
+  // Pasted-screenshot attachments — only render server-minted image URLs
+  const imgs = (next.images || []).filter(u => /^\/announce-image\/[A-Za-z0-9_.-]+$/.test(String(u || '')));
   return (
     <div onClick={e => { if (e.target === e.currentTarget) dismiss(); }}
       style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
@@ -2692,7 +2694,10 @@ function WhatsNewPopup({ announcements, orgSlug }) {
         <div style={{ background: 'linear-gradient(135deg,#6d28d9,#7c3aed)', color: '#fff', padding: '16px 20px', fontWeight: 700, fontSize: 16 }}>
           {'📣'} {next.title || 'What’s new'}
         </div>
-        <div style={{ padding: '16px 20px', maxHeight: '55vh', overflow: 'auto' }}>{body}</div>
+        <div style={{ padding: '16px 20px', maxHeight: '55vh', overflow: 'auto' }}>
+          {body}
+          {imgs.map((u, i) => <img key={i} src={u} alt="" style={{ maxWidth: '100%', border: '1px solid #e5e5e5', borderRadius: 8, marginTop: 12, display: 'block', boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }} />)}
+        </div>
         <div style={{ padding: '0 20px 18px', textAlign: 'right' }}>
           <button onClick={dismiss} style={{ background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 8, padding: '9px 20px', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>Got it</button>
         </div>
