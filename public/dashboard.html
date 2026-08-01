@@ -1249,7 +1249,7 @@ function fmtRangeShort(dr) {
 function DeltaPill({ cur, prev, goodWhenDown, label }) {
   if (prev == null || cur == null || (prev === 0 && cur === 0)) return null;
   const diff = cur - prev;
-  if (diff === 0) return <span className="delta-pill flat">\u2014 0% <span className="dvs">{label}</span></span>;
+  if (diff === 0) return <span className="delta-pill flat">{'\u2014'} 0% <span className="dvs">{label}</span></span>;
   const up = diff > 0;
   const pct = prev !== 0 ? Math.round(Math.abs(diff) / Math.abs(prev) * 100) : null;
   const txt = (pct != null && pct <= 999) ? pct + '%' : Math.abs(diff).toLocaleString();
