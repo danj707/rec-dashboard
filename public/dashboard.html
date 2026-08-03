@@ -489,7 +489,7 @@ const W = {
       // section-dated reports.
       var streams = [];
       var progRows = (allData && allData['programs']) || [];
-      var progRev = progRows.reduce(function(s,r){ return s + pf(r['net_total'] || r['charged']); }, 0);
+      var progRev = progRows.reduce(function(s,r){ return s + pf(r['net_total'] ?? r['charged']); }, 0);
       if (progRev > 0) streams.push({ type: 'Programs', amount: progRev, color: '#3b82f6', report: 'programs' });
       var facRows = (allData && allData['facility']) || [];
       var facRev = facRows.reduce(function(s,r){ return s + pf(r['Total']); }, 0);
@@ -517,7 +517,7 @@ const W = {
       var progRows = (allData && allData['programs']) || [];
       progRows.forEach(function(r) {
         var d = r['start_date'] || r['Start Date'] || r['created_at'];
-        if (d) { d = d.slice(0,10); g[d] = (g[d]||0) + pf(r['net_total'] || r['charged']); }
+        if (d) { d = d.slice(0,10); g[d] = (g[d]||0) + pf(r['net_total'] ?? r['charged']); }
       });
       var memRows = (allData && allData['memberships']) || [];
       memRows.forEach(function(r) {
@@ -572,7 +572,7 @@ const W = {
     transform: rows => ({ value: rows.reduce((s,r) => s + (parseInt(r['enrolled'])||0), 0), format: 'number' }) },
   'program-revenue': { label: 'Program Revenue', description: 'Net revenue from programs (all-time)', note: 'Lifetime net revenue for sections active in date range', section: 'programs',
     reportType: 'programs', size: 'sm', icon: '\uD83D\uDCB0', component: 'metric', delta: true,
-    transform: rows => ({ value: rows.reduce((s,r) => s + pf(r['net_total'] || r['charged']), 0), format: 'currency', colorClass: 'metric-green', sub: 'All-time' }) },
+    transform: rows => ({ value: rows.reduce((s,r) => s + pf(r['net_total'] ?? r['charged']), 0), format: 'currency', colorClass: 'metric-green', sub: 'All-time' }) },
   'program-cancellations': { label: 'Program Refunds', description: 'Total refund amount from programs (all-time)', note: 'Lifetime refund total for sections in date range', section: 'programs',
     reportType: 'programs', size: 'sm', icon: '\uD83D\uDD04', component: 'metric', delta: true, deltaGoodWhenDown: true,
     transform: rows => ({ value: rows.reduce((s,r) => s + pf(r['refunds']), 0), format: 'currency', colorClass: 'metric-red', sub: 'All-time' }) },
