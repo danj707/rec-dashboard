@@ -313,7 +313,10 @@ async function fetchMetabaseData(orgSlug, reportType, query) {
 //  UPDATES LOG
 // ═══════════════════════════════════════════
 const UPDATES = [
-  
+  { date: '2026-08-03', title: 'Program Revenue fix', items: [
+      'Fixed Program Revenue widget using || instead of ?? -- sections with $0 net_total (fully refunded) were falling back to charged (gross), inflating the number. Now correctly shows lifetime net revenue matching the Programs report.',
+      'Same fix applied to Revenue by Stream programs bar and Revenue Trend line chart.',
+  ] },
   { date: '2026-07-29', title: 'Project Updates / notifications', items: [
     'New admin "Add Update" composer publishes announcements to org dashboards — auto-drafted from the changelog (each line tagged by report and auto-targeted to the orgs that have that report) or written manually and sent to all or specific orgs.',
     'Org admins see published updates as a one-time dismissible popup on their dashboard, tracked per browser.',
