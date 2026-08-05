@@ -252,6 +252,21 @@ function buildMetabaseParams(reportType, query) {
   return params;
 }
 
+// Staff/guest exclusion for the users feed — mirrors the Community Intel
+// report (rental-report users.html) exactly, so the dashboard's user tiles
+// tie to that page instead of quietly counting Rec staff logins: drop staff
+// (@rec.us, non-guest) and guest checkout accounts.
+function excludeStaffAndGuests(rows) {
+  if (!Array.isArray(rows)) return rows;
+  return rows.filter(r => {
+    const em = String(r['Email'] || r['email'] || '').trim().toLowerCase();
+    const fn = String(r['First Name'] || r['first_name'] || '').trim().toLowerCase();
+    const staff = em.includes('@rec.us') && !em.startsWith('guest-user+');
+    const guest = fn === 'guest' || em.startsWith('guest-user+guest-');
+    return !staff && !guest;
+  });
+}
+
 async function fetchMetabaseData(orgSlug, reportType, query) {
   const org = ORGS[orgSlug];
   const eff = effectiveSupportOrg(orgSlug);
@@ -963,8 +978,9 @@ app.get('/share/:shareToken/data/:reportType', async (req, res) => {
   const share = shares[req.params.shareToken];
   if (!share || new Date(share.expiresAt) < new Date()) return res.status(404).json({ error: 'Expired' });
   try {
-    const rows = await fetchMetabaseData(share.orgSlug, req.params.reportType, req.query);
+    let rows = await fetchMetabaseData(share.orgSlug, req.params.reportType, req.query);
     if (rows === null) return res.status(404).json({ error: 'Report not available' });
+    if (req.params.reportType === 'users') rows = excludeStaffAndGuests(rows);
     res.json({ rows, meta: { count: rows.length } });
   } catch (e) {
     res.status(502).json({ error: 'Failed to fetch data', detail: e.message });
@@ -1010,8 +1026,9 @@ app.get('/:org', authMiddleware, (req, res) => {
 // --- Data proxy ---
 app.get('/:org/api/data/:reportType', authMiddleware, async (req, res) => {
   try {
-    const rows = await fetchMetabaseData(req.orgSlug, req.params.reportType, req.query);
+    let rows = await fetchMetabaseData(req.orgSlug, req.params.reportType, req.query);
     if (rows === null) return res.status(404).json({ error: 'Report not available' });
+    if (req.params.reportType === 'users') rows = excludeStaffAndGuests(rows);
     res.json({ rows, meta: { count: rows.length, cached: !!getCached(`${req.orgSlug}:${req.params.reportType}:${JSON.stringify(buildMetabaseParams(req.params.reportType, req.query))}`) } });
   } catch (e) {
     console.error(`[ERROR] ${req.orgSlug}/${req.params.reportType}:`, e.message);
