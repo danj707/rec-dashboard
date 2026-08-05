@@ -343,6 +343,15 @@ function fmt(val, format) {
   return Number(val).toLocaleString('en-US');
 }
 function fmtTooltip(v, format) { return format==='currency' ? '$'+Number(v).toLocaleString('en-US',{maximumFractionDigits:0}) : Number(v).toLocaleString('en-US'); }
+// Value-axis currency ticks: one decimal on thousands ($1.2k) so adjacent
+// ticks never round into duplicate labels ($2k, $2k, $1k, $1k…).
+function fmtAxisCurrency(v) { return '$' + (v >= 1000 ? (v/1000).toFixed(1).replace(/\.0$/,'') + 'k' : v); }
+// Did any GL revenue land in the selected window? Used by the program tiles
+// to caption registration-season zero states.
+function glHasRevenue(all) {
+  const gl = all && all.gl;
+  return Array.isArray(gl) && gl.reduce((s,r) => s + pf(r['Total Payments']), 0) > 0;
+}
 function shortDate(iso) { if (!iso) return ''; const d = new Date(iso + 'T12:00:00'); return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); }
 function getMonthRange(offset = 0) {
   const now = new Date(); const y = now.getFullYear(), m = now.getMonth() + offset;
@@ -426,7 +435,7 @@ const W = {
   'gl-by-code': { label: 'Revenue by GL Code', description: 'Net revenue broken out by GL code', note: 'Net revenue broken out by general ledger account', section: 'revenue',
     reportType: 'gl', size: 'md', icon: '\uD83D\uDCCA', component: 'bar',
     transform: rows => {
-      const g = {}; rows.forEach(r => { const k = r['GL Code'] || r['Account Name'] || 'Unknown'; g[k] = (g[k]||0) + pf(r['Net Amount']); });
+      const g = {}; rows.forEach(r => { let k = r['GL Code'] || r['Account Name'] || 'Unknown'; if (!String(k).trim() || /^none$/i.test(k)) k = 'Unassigned'; g[k] = (g[k]||0) + pf(r['Net Amount']); });
       const s = Object.entries(g).filter(e => e[1] > 0).sort((a,b) => b[1]-a[1]).slice(0,10);
       return { labels: s.map(e=>e[0]), values: s.map(e=>e[1]), format: 'currency' };
     }},
@@ -567,12 +576,26 @@ const W = {
     }},
 
   // ── Programs ──
+  // Registration-season context: the programs card only returns sections with
+  // SESSIONS in the window, so during a registration push (fall signups in
+  // August) these tiles read zero while GL money is landing. When that exact
+  // shape shows up \u2014 no in-window program activity but in-window GL revenue \u2014
+  // say so instead of presenting a bare $0 next to a $1,700 Revenue Overview.
   'program-enrollments': { label: 'Total Enrollments', description: 'Sum of program enrollments', note: 'Total enrolled participants across all sections', section: 'programs',
     reportType: 'programs', size: 'sm', icon: '\uD83C\uDF93', component: 'metric', delta: true,
-    transform: rows => ({ value: rows.reduce((s,r) => s + (parseInt(r['enrolled'])||0), 0), format: 'number' }) },
+    _multiSource: true, _extraReportTypes: ['gl'],
+    transform: (rows, all) => {
+      const value = rows.reduce((s,r) => s + (parseInt(r['enrolled'])||0), 0);
+      return { value, format: 'number', sub: value === 0 && glHasRevenue(all) ? 'No sessions in this range \u2014 upcoming programs are still selling' : undefined };
+    }},
   'program-revenue': { label: 'Program Revenue', description: 'Net revenue from programs (all-time)', note: 'Lifetime net revenue for sections active in date range', section: 'programs',
     reportType: 'programs', size: 'sm', icon: '\uD83D\uDCB0', component: 'metric', delta: true,
-    transform: rows => ({ value: rows.reduce((s,r) => s + pf(r['net_total'] ?? r['charged']), 0), format: 'currency', colorClass: 'metric-green', sub: 'All-time' }) },
+    _multiSource: true, _extraReportTypes: ['gl'],
+    transform: (rows, all) => {
+      const value = rows.reduce((s,r) => s + pf(r['net_total'] ?? r['charged']), 0);
+      return { value, format: 'currency', colorClass: 'metric-green',
+        sub: value === 0 && glHasRevenue(all) ? 'No sessions in this range \u2014 registration payments for upcoming programs appear under Revenue Overview' : 'All-time' };
+    }},
   'program-cancellations': { label: 'Program Refunds', description: 'Total refund amount from programs (all-time)', note: 'Lifetime refund total for sections in date range', section: 'programs',
     reportType: 'programs', size: 'sm', icon: '\uD83D\uDD04', component: 'metric', delta: true, deltaGoodWhenDown: true,
     transform: rows => ({ value: rows.reduce((s,r) => s + pf(r['refunds']), 0), format: 'currency', colorClass: 'metric-red', sub: 'All-time' }) },
@@ -1299,8 +1322,12 @@ function BarChartWidget({ data, onBarClick }) {
         onClick: onBarClick ? (evt, elements) => { if (elements.length > 0) { onBarClick(data.labels[elements[0].index]); } } : undefined,
         onHover: onBarClick ? (evt, elements) => { evt.native.target.style.cursor = elements.length > 0 ? 'pointer' : 'default'; } : undefined,
         plugins: { tooltip: { callbacks: { label: ctx => fmtTooltip(ctx.raw, data.format) + (onBarClick ? '  \u2197 View details' : '') } } },
-        scales: { x: { grid: { display: !horiz }, ticks: { callback: v => data.format==='currency' ? '$'+(v>=1000?(v/1000).toFixed(0)+'k':v) : v } },
-                  y: { grid: { display: horiz }, ticks: horiz ? {} : { callback: v => data.format==='currency' ? '$'+(v>=1000?(v/1000).toFixed(0)+'k':v) : v } } } }
+        // Currency formatting belongs to the VALUE axis only — on a category
+        // axis Chart.js passes the tick's index, so formatting it printed
+        // "$0"/"$1" instead of GL account names. Thousands keep one decimal
+        // ($1.2k) so adjacent ticks never collapse into duplicate labels.
+        scales: { x: { grid: { display: !horiz }, ticks: horiz ? { callback: v => data.format==='currency' ? fmtAxisCurrency(v) : v } : {} },
+                  y: { grid: { display: horiz }, ticks: horiz ? {} : { callback: v => data.format==='currency' ? fmtAxisCurrency(v) : v } } } }
     });
     return () => { if (chart.current) chart.current.destroy(); };
   }, [data, onBarClick]);
@@ -1336,7 +1363,7 @@ function LineChartWidget({ data }) {
       options: { responsive: true, maintainAspectRatio: false,
         plugins: { tooltip: { callbacks: { label: ctx => fmtTooltip(ctx.raw, data.format) } } },
         scales: { x: { grid: { display: false }, ticks: { maxTicksLimit: 12, font: { size: 10 } } },
-                  y: { ticks: { callback: v => data.format==='currency' ? '$'+(v>=1000?(v/1000).toFixed(0)+'k':v) : v } } } }
+                  y: { ticks: { callback: v => data.format==='currency' ? fmtAxisCurrency(v) : v } } } }
     });
     return () => { if (chart.current) chart.current.destroy(); };
   }, [data]);
