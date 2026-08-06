@@ -74,6 +74,20 @@ body { font-family: var(--font-body); background: var(--bg-page); color: var(--t
   border: 1px solid var(--border); background: var(--bg-surface); color: var(--text-primary); outline: none; }
 .date-input:focus { border-color: var(--amber); }
 
+/* Compare To dropdown */
+.cmp-dd { position: relative; display: inline-block; }
+.cmp-dd-menu { position: absolute; top: calc(100% + 5px); left: 0; z-index: 60; min-width: 230px;
+  background: var(--bg-surface); border: 1px solid var(--border); border-radius: 8px; padding: 4px;
+  box-shadow: 0 10px 28px rgba(0,0,0,0.35); }
+.cmp-dd-item { display: block; width: 100%; text-align: left; background: transparent; border: none;
+  color: var(--text-primary); padding: 8px 26px 8px 10px; border-radius: 6px; cursor: pointer; position: relative; }
+.cmp-dd-item:hover:not(.disabled) { background: var(--amber-glow); }
+.cmp-dd-item.active .cmp-dd-item-label { color: var(--amber); }
+.cmp-dd-item.disabled { opacity: 0.45; cursor: not-allowed; }
+.cmp-dd-item-label { display: block; font-size: 13px; font-weight: 600; }
+.cmp-dd-item-sub { display: block; font-size: 10px; color: var(--text-muted); margin-top: 1px; }
+.cmp-dd-check { position: absolute; right: 9px; top: 9px; color: var(--amber); font-size: 12px; }
+
 /* Section */
 .dashboard-section { padding: 0 24px; margin-bottom: 8px; }
 .section-header { display: flex; align-items: center; gap: 12px; padding: 20px 0 12px 0; }
@@ -217,12 +231,14 @@ body { font-family: var(--font-body); background: var(--bg-page); color: var(--t
   background-size: 200% 100%; animation: shimmer 1.5s infinite; border-radius: 8px; }
 @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
 [data-theme="light"] .skeleton { background: linear-gradient(90deg, #f0f0f0 25%, #e8e8e8 50%, #f0f0f0 75%); background-size: 200% 100%; }
-[data-theme="light"] .sections-loading .dashboard-section { opacity: 0.5; }
+[data-theme="light"] .widget-card.widget-stale { opacity: 0.5; }
 .skeleton-metric { height: 48px; width: 140px; margin-top: 12px; }
 .skeleton-chart { height: 200px; width: 100%; margin-top: 12px; }
 
-/* Loading overlay on date change */
-.sections-loading .dashboard-section { opacity: 0.35; pointer-events: none; transition: opacity 0.2s; }
+/* Stale-data dim on date change. Applied per widget, not to the whole board:
+   report types land one at a time, so a widget stops being dimmed as soon as
+   its own data is refreshed rather than waiting on the slowest query. */
+.widget-card.widget-stale { opacity: 0.4; pointer-events: none; transition: opacity 0.2s; }
 .loading-bar { height: 3px; background: var(--bg-surface); overflow: hidden; }
 .loading-bar.active .loading-bar-inner { animation: loadSlide 1.2s ease-in-out infinite; }
 .loading-bar-inner { height: 100%; width: 30%; background: var(--amber); border-radius: 2px; }
@@ -1267,6 +1283,54 @@ function fmtRangeShort(dr) {
   } catch (e) { return 'prior period'; }
 }
 
+// Window one calendar quarter (3 months) before the current selection.
+// A whole-month selection snaps to whole months so a quarter maps cleanly onto
+// the previous quarter (Apr 1-Jun 30 -> Jan 1-Mar 31); an arbitrary range just
+// shifts back three months preserving the day.
+function priorQuarterWindow(dr) {
+  if (!dr || !dr.start || !dr.end) return null;
+  try {
+    const s = new Date(dr.start + 'T12:00:00'), e = new Date(dr.end + 'T12:00:00');
+    if (isNaN(s) || isNaN(e) || e < s) return null;
+    const iso = d => d.toISOString().split('T')[0];
+    const isMonthStart = s.getDate() === 1;
+    const isMonthEnd = e.getDate() === new Date(e.getFullYear(), e.getMonth() + 1, 0).getDate();
+    if (isMonthStart && isMonthEnd) {
+      return { start: iso(new Date(s.getFullYear(), s.getMonth() - 3, 1, 12)),
+               end: iso(new Date(e.getFullYear(), e.getMonth() - 2, 0, 12)) };
+    }
+    return { start: iso(new Date(s.getFullYear(), s.getMonth() - 3, s.getDate(), 12)),
+             end: iso(new Date(e.getFullYear(), e.getMonth() - 3, e.getDate(), 12)) };
+  } catch (e) { return null; }
+}
+
+// Resolve a "Compare To" mode to the window its deltas are measured against.
+// 'none' -> no comparison; 'prior-period' -> the immediately preceding
+// equal-length window; 'prior-quarter' -> the quarter before.
+function comparisonWindow(dr, mode) {
+  if (!dr || mode === 'none' || !mode) return null;
+  if (mode === 'prior-quarter') return priorQuarterWindow(dr);
+  return priorWindow(dr); // 'prior-period' and default
+}
+
+// "Q1 2026" when the window is exactly a calendar quarter, else a short range.
+function quarterLabel(dr) {
+  try {
+    const s = new Date(dr.start + 'T12:00:00'), e = new Date(dr.end + 'T12:00:00');
+    const isMonthEnd = e.getDate() === new Date(e.getFullYear(), e.getMonth() + 1, 0).getDate();
+    const span = (e.getFullYear() - s.getFullYear()) * 12 + (e.getMonth() - s.getMonth()) + 1;
+    if (s.getDate() === 1 && s.getMonth() % 3 === 0 && isMonthEnd && span === 3) {
+      return 'Q' + (s.getMonth() / 3 + 1) + ' ' + s.getFullYear();
+    }
+  } catch (e) {}
+  return fmtRangeShort(dr);
+}
+
+function comparisonLabel(win, mode) {
+  if (!win) return '';
+  return mode === 'prior-quarter' ? quarterLabel(win) : fmtRangeShort(win);
+}
+
 // Delta pill vs the prior window. goodWhenDown flips the color logic for
 // metrics where a decrease is the win (refunds).
 function DeltaPill({ cur, prev, goodWhenDown, label }) {
@@ -1516,17 +1580,43 @@ function StreamsChart({ data }) {
 const COMP = {
   streams: StreamsChart, metric: MetricCard, bar: BarChartWidget, donut: DonutChartWidget, line: LineChartWidget, table: TableWidget, map: MapWidget, heatmap: HeatmapWidget };
 
-function WidgetCard({ widgetId, reportData, loading, target, onTargetChange, dateRange, reportingBaseUrl, priorReportData }) {
+// Report types arrive one at a time (see the progressive fetch in DashboardApp),
+// so a widget is only renderable once every source it reads has landed.
+// Multi-source widgets are the reason this isn't just a truthiness check on the
+// primary report type — rendering "Revenue by Stream" with three of its five
+// feeds in would flash a wrong split before correcting itself.
+function widgetReady(def, reportData) {
+  if (!reportData[def.reportType]) return false;
+  if (def._extraReportTypes) {
+    for (const rt of def._extraReportTypes) if (!reportData[rt]) return false;
+  }
+  return true;
+}
+
+// True once every source this widget reads has been refreshed by the current
+// batch. Anything still showing last batch's numbers gets dimmed.
+function widgetFresh(def, freshRts) {
+  if (!freshRts) return true;
+  if (!freshRts[def.reportType]) return false;
+  if (def._extraReportTypes) {
+    for (const rt of def._extraReportTypes) if (!freshRts[rt]) return false;
+  }
+  return true;
+}
+
+function WidgetCard({ widgetId, reportData, loading, freshRts, target, onTargetChange, dateRange, reportingBaseUrl, priorReportData }) {
   const def = W[widgetId]; if (!def) return null;
   const Comp = COMP[def.component]; if (!Comp) return null;
-  const raw = reportData[def.reportType];
+  const ready = widgetReady(def, reportData);
+  const raw = ready ? reportData[def.reportType] : null;
+  const stale = loading && ready && !widgetFresh(def, freshRts);
   // Prior-period value for delta-flagged metric tiles (lazy — appears when
   // the prior window's data arrives; hidden for all-time reports).
   let prior = null;
   if (def.delta && def.component === 'metric' && priorReportData && priorReportData._window && priorReportData[def.reportType] && !ALL_TIME_REPORTS.has(def.reportType)) {
     try {
       const pv = def.transform(priorReportData[def.reportType]);
-      if (pv && pv.value != null) prior = { value: pv.value, goodWhenDown: !!def.deltaGoodWhenDown, label: 'vs ' + fmtRangeShort(priorReportData._window) };
+      if (pv && pv.value != null) prior = { value: pv.value, goodWhenDown: !!def.deltaGoodWhenDown, label: 'vs ' + (priorReportData._label || fmtRangeShort(priorReportData._window)) };
     } catch (e) {}
   }
   const data = raw ? (def._multiSource ? def.transform(raw, reportData) : def.transform(raw)) : null;
@@ -1543,7 +1633,7 @@ function WidgetCard({ widgetId, reportData, loading, target, onTargetChange, dat
   function clearTarget() { onTargetChange(widgetId, null); setTargetInput(''); setEditingTarget(false); }
 
   return (
-    <div className={`widget-card ${sizeClass}`}>
+    <div className={`widget-card ${sizeClass}${stale ? ' widget-stale' : ''}`}>
       <div className="widget-header">
         <div>
           <span className="widget-label">{def.label}</span>
@@ -1706,7 +1796,7 @@ function BriefingSection({ reportData, loading, dateRange, briefingRef }) {
 // ═══════════════════════════════════════════════════════
 //  SECTION BLOCK
 // ═══════════════════════════════════════════════════════
-function SectionBlock({ sectionId, widgetIds, reportData, loading, targets, onTargetChange, dateRange, aiEnabled, reportLinksEnabled, reportingBaseUrl, priorReportData }) {
+function SectionBlock({ sectionId, widgetIds, reportData, loading, freshRts, targets, onTargetChange, dateRange, aiEnabled, reportLinksEnabled, reportingBaseUrl, priorReportData }) {
   const sec = SECTIONS[sectionId]; if (!sec) return null;
   const [insight, setInsight] = useState(null);
   const [insightLoading, setInsightLoading] = useState(false);
@@ -1843,7 +1933,7 @@ function SectionBlock({ sectionId, widgetIds, reportData, loading, targets, onTa
           {metricIds.length > 0 && <div className="kpi-strip">
             {metricIds.map(id => {
               const def = W[id]; if (!def) return null;
-              const raw = reportData[def.reportType];
+              const raw = widgetReady(def, reportData) ? reportData[def.reportType] : null;
               const data = raw ? def.transform(raw) : null;
               return <div key={id} className="kpi-strip-item">
                 <span className="kpi-strip-value">{data ? fmt(data.value, data.format) : '...'}</span>
@@ -1853,13 +1943,13 @@ function SectionBlock({ sectionId, widgetIds, reportData, loading, targets, onTa
             })}
           </div>}
           <div className="widget-grid">
-            {chartIds.map(id => <WidgetCard key={id} widgetId={id} reportData={reportData} loading={loading} reportingBaseUrl={reportingBaseUrl}
+            {chartIds.map(id => <WidgetCard key={id} widgetId={id} reportData={reportData} loading={loading} freshRts={freshRts} reportingBaseUrl={reportingBaseUrl}
               target={targets?.[id]} onTargetChange={onTargetChange} dateRange={dateRange} priorReportData={priorReportData} />)}
           </div>
         </React.Fragment>;
       })() : (
         <div className="widget-grid">
-          {widgetIds.map(id => <WidgetCard key={id} widgetId={id} reportData={reportData} loading={loading} reportingBaseUrl={reportingBaseUrl}
+          {widgetIds.map(id => <WidgetCard key={id} widgetId={id} reportData={reportData} loading={loading} freshRts={freshRts} reportingBaseUrl={reportingBaseUrl}
             target={targets?.[id]} onTargetChange={onTargetChange} dateRange={dateRange} priorReportData={priorReportData} />)}
         </div>
       )}
@@ -2674,12 +2764,12 @@ function SupportInbox({ actionsDisabled, onConversationSeen, notifyEmails, dateR
   );
 }
 
-function SupportTab({ reportData, loading, targets, onTargetChange, dateRange, aiEnabled, supportReadOnly, onConversationSeen, notifyEmails, refreshNonce }) {
+function SupportTab({ reportData, loading, freshRts, priorReportData, targets, onTargetChange, dateRange, aiEnabled, supportReadOnly, onConversationSeen, notifyEmails, refreshNonce }) {
   // Inbox first — the conversations are the headline; metrics follow below.
   return (
     <React.Fragment>
       <SupportInbox actionsDisabled={supportReadOnly} onConversationSeen={onConversationSeen} notifyEmails={notifyEmails} dateRange={dateRange} refreshNonce={refreshNonce} />
-      <SectionBlock sectionId="support" widgetIds={SECTIONS.support.defaultWidgets} reportData={reportData} loading={loading} priorReportData={priorReportData}
+      <SectionBlock sectionId="support" widgetIds={SECTIONS.support.defaultWidgets} reportData={reportData} loading={loading} freshRts={freshRts} priorReportData={priorReportData}
         targets={targets} onTargetChange={onTargetChange} dateRange={dateRange} aiEnabled={aiEnabled}
         reportLinksEnabled={false} reportingBaseUrl="" />
     </React.Fragment>
@@ -2733,6 +2823,57 @@ function WhatsNewPopup({ announcements, orgSlug }) {
   );
 }
 
+// "Compare To" control. Lets the user pick what the delta pills measure
+// against. The prior-quarter option is data-aware: opening the menu probes
+// whether the org actually has data for that window and disables the option
+// (with a reason) when it doesn't, so we never offer a comparison that would
+// render empty.
+function CompareDropdown({ mode, options, onChange, avail, onEnsureAvail }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    options.forEach(o => { if (o.gate && o.win) onEnsureAvail(o.win); });
+    const onDoc = e => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [open]);
+  const cur = options.find(o => o.mode === mode) || options[0];
+  return (
+    <div className="cmp-dd" ref={ref}>
+      <button className={'btn-quick' + (mode !== 'none' ? ' active' : '')} onClick={() => setOpen(o => !o)}
+        title="Compare the current period against an earlier one">
+        {'⇄'} Compare: {cur.short} {'▾'}
+      </button>
+      {open && (
+        <div className="cmp-dd-menu">
+          {options.map(o => {
+            const key = o.win ? o.win.start + ':' + o.win.end : '';
+            const av = o.gate ? avail[key] : true; // undefined=unknown, null=checking, bool=known
+            const noWin = o.gate && !o.win;
+            const disabled = noWin || av === false;
+            const checking = o.gate && av === null;
+            let sub = o.subLabel || '';
+            if (o.mode === 'none') sub = 'Hide period-over-period deltas';
+            else if (checking) sub = 'checking data…';
+            else if (noWin) sub = 'unavailable for this range';
+            else if (av === false) sub = 'no data for ' + (o.subLabel || 'that period');
+            else if (o.subLabel) sub = 'vs ' + o.subLabel;
+            return (
+              <button key={o.mode} className={'cmp-dd-item' + (o.mode === mode ? ' active' : '') + (disabled ? ' disabled' : '')}
+                disabled={disabled} onClick={() => { if (disabled) return; onChange(o.mode); setOpen(false); }}>
+                <span className="cmp-dd-item-label">{o.label}</span>
+                <span className="cmp-dd-item-sub">{sub}</span>
+                {o.mode === mode && <span className="cmp-dd-check">{'✓'}</span>}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function DashboardApp() {
   const [config, setConfig] = useState(null);
   const [orgMeta, setOrgMeta] = useState({});
@@ -2741,7 +2882,26 @@ function DashboardApp() {
   const [datePreset, setDatePreset] = useState('thisMonth');
   const [reportData, setReportData] = useState({});
   const [priorReportData, setPriorReportData] = useState(null); // { _window: {start,end}, [rt]: rows } — lazy, for delta pills
+  const [freshRts, setFreshRts] = useState({}); // report types already refreshed by the in-flight batch
+  const [compareMode, setCompareMode] = useState('prior-period'); // 'none' | 'prior-period' | 'prior-quarter'
+  const [compareAvail, setCompareAvail] = useState({}); // window key -> undefined(unknown) | null(checking) | bool
+  const fetchGen = useRef(0); // bumped per fetch batch so late results from a superseded range are discarded
+  const priorGen = useRef(0); // same, for the independent comparison fetch
   const briefingRef = React.useRef(null);
+
+  // Probe whether the org has data for a comparison window (used to gate the
+  // "Prior quarter" menu item). A single GL fetch is a good proxy — no revenue
+  // rows in the window means nothing to compare against. Cached per window.
+  async function ensureCompareAvail(win) {
+    if (!win) return;
+    const key = win.start + ':' + win.end;
+    if (compareAvail[key] !== undefined) return;
+    setCompareAvail(a => ({ ...a, [key]: null }));
+    try {
+      const rows = await fetchReportData('gl', win);
+      setCompareAvail(a => ({ ...a, [key]: Array.isArray(rows) && rows.length > 0 }));
+    } catch (e) { setCompareAvail(a => ({ ...a, [key]: false })); }
+  }
 
   function buildDigestPayload() {
     const payload = [];
@@ -2863,28 +3023,65 @@ function DashboardApp() {
     // The Customer Support tab is outside section config — load its data whenever the org has it
     if (availableReports.support && !rts.includes('support')) rts.push('support');
     if (!rts.length) { setLoading(false); return; }
-    setLoading(true); clearDataStore(); setPriorReportData(null);
-    Promise.all(rts.map(rt => fetchReportData(rt, dateRange).then(rows => [rt, rows]).catch(() => [rt, []])))
-      .then(results => {
-        const rd = {}; results.forEach(([rt, rows]) => { rd[rt] = rows; });
-        setReportData(rd); setLoading(false); setLastRefresh(new Date());
-        track('dashboard_view', { sections: config.sections.length, widgets: allWidgetIds.length, reportTypes: rts, dateRange });
-        // ── Prior-period fetch for delta pills — lazy, never blocks the render.
-        // Only report types that respect the date picker AND have a delta-flagged
-        // metric tile; the pills fade in when this resolves.
-        const pw = priorWindow(dateRange);
-        if (!pw) return;
-        const deltaRts = [...new Set(Object.values(W).filter(d => d.delta && d.component === 'metric').map(d => d.reportType))]
-          .filter(rt => rts.includes(rt) && !ALL_TIME_REPORTS.has(rt));
-        if (!deltaRts.length) return;
-        Promise.all(deltaRts.map(rt => fetchReportData(rt, pw).then(rows => [rt, rows]).catch(() => [rt, null])))
-          .then(pres => {
-            const pd = { _window: pw };
-            pres.forEach(([rt, rows]) => { if (Array.isArray(rows)) pd[rt] = rows; });
-            setPriorReportData(pd);
-          });
-      });
+    setLoading(true); clearDataStore(); setPriorReportData(null); setFreshRts({});
+
+    // ── Progressive render ──────────────────────────────────────────────
+    // Every report type is still requested in parallel, but each one is
+    // written into state the moment it resolves rather than waiting on the
+    // whole batch. Without this the dashboard is gated by its single slowest
+    // query — for a big org that's ~98s of nothing on screen while ten of the
+    // eleven reports sit finished in memory.
+    //
+    // `loading` deliberately stays true until the last request settles: it's
+    // what keeps not-yet-arrived widgets showing a skeleton instead of an
+    // empty state, and what the print handler waits on.
+    const gen = ++fetchGen.current;
+    let settled = 0;
+    rts.forEach(rt => {
+      fetchReportData(rt, dateRange).catch(() => [])
+        .then(rows => {
+          // A newer date range / config superseded this batch — drop the result
+          // rather than merging it over fresher data.
+          if (gen !== fetchGen.current) return;
+          setReportData(prev => ({ ...prev, [rt]: rows || [] }));
+          setFreshRts(prev => ({ ...prev, [rt]: true }));
+          if (++settled === rts.length) onAllSettled();
+        });
+    });
+
+    function onAllSettled() {
+      setLoading(false); setLastRefresh(new Date());
+      track('dashboard_view', { sections: config.sections.length, widgets: allWidgetIds.length, reportTypes: rts, dateRange });
+    }
   }, [dataKey, dateRange]);
+
+  // ── Comparison fetch for delta pills ────────────────────────────────
+  // Runs independently of the main data load so switching "Compare To" never
+  // refetches the whole board — only the prior-window copies of the
+  // delta-flagged, date-sensitive report types. The pills fade in when this
+  // resolves; an empty prior window clears them (and records unavailability).
+  useEffect(() => {
+    if (!config || config === 'new') return;
+    const pw = comparisonWindow(dateRange, compareMode);
+    if (!pw) { setPriorReportData(null); return; }
+    const allWidgetIds = config.sections.flatMap(s => s.widgets);
+    const rts = new Set(allWidgetIds.map(id => W[id]?.reportType).filter(Boolean));
+    const deltaRts = [...new Set(Object.values(W).filter(d => d.delta && d.component === 'metric').map(d => d.reportType))]
+      .filter(rt => rts.has(rt) && !ALL_TIME_REPORTS.has(rt));
+    if (!deltaRts.length) { setPriorReportData(null); return; }
+    const gen = ++priorGen.current;
+    Promise.all(deltaRts.map(rt => fetchReportData(rt, pw).then(rows => [rt, rows]).catch(() => [rt, null])))
+      .then(pres => {
+        if (gen !== priorGen.current) return;
+        const anyRows = pres.some(([, rows]) => Array.isArray(rows) && rows.length);
+        const key = pw.start + ':' + pw.end;
+        setCompareAvail(a => (a[key] === anyRows ? a : { ...a, [key]: anyRows }));
+        if (!anyRows) { setPriorReportData(null); return; }
+        const pd = { _window: pw, _label: comparisonLabel(pw, compareMode) };
+        pres.forEach(([rt, rows]) => { if (Array.isArray(rows)) pd[rt] = rows; });
+        setPriorReportData(pd);
+      });
+  }, [compareMode, dataKey, dateRange]);
 
   function applyPreset(p) {
     setDatePreset(p);
@@ -2946,6 +3143,14 @@ function DashboardApp() {
     track('target_set', { widget: widgetId, value });
   }
   function handleRefresh() { clearDataStore(); setDateRange({...dateRange}); setSupportRefreshNonce(n => n + 1); track('refresh_clicked'); }
+  function handleCompareChange(m) { setCompareMode(m); track('compare_changed', { mode: m, dateRange }); }
+  const comparePeriodWin = priorWindow(dateRange);
+  const compareQuarterWin = priorQuarterWindow(dateRange);
+  const compareOptions = [
+    { mode: 'none', short: 'Off', label: 'No comparison', win: null },
+    { mode: 'prior-period', short: 'Prior period', label: 'Prior period', win: comparePeriodWin, subLabel: comparisonLabel(comparePeriodWin, 'prior-period') },
+    { mode: 'prior-quarter', short: 'Prior quarter', label: 'Prior quarter', win: compareQuarterWin, subLabel: comparisonLabel(compareQuarterWin, 'prior-quarter'), gate: true },
+  ];
 
   // Auto-print in print mode (must be before early returns to maintain hook order)
   useEffect(() => {
@@ -3010,6 +3215,8 @@ function DashboardApp() {
                 <button className={`btn-quick ${datePreset==='nextMonth'?'active':''}`} onClick={()=>applyPreset('nextMonth')}>Next Mo</button>
                 <button className={`btn-quick ${datePreset==='last3'?'active':''}`} onClick={()=>applyPreset('last3')}>3 Mo</button>
                 <button className={`btn-quick ${datePreset==='ytd'?'active':''}`} onClick={()=>applyPreset('ytd')}>YTD</button>
+                <CompareDropdown mode={compareMode} options={compareOptions} onChange={handleCompareChange}
+                  avail={compareAvail} onEnsureAvail={ensureCompareAvail} />
               </React.Fragment>
             )}
           </div>
@@ -3043,17 +3250,17 @@ function DashboardApp() {
         </div>
       )}
 
-      <div className={loading && lastRefresh ? 'sections-loading' : ''}>
+      <div>
         {false && !IS_PRINT && config.sections.some(s => s.id === 'ai-briefing') && (
           <BriefingSection reportData={reportData} loading={loading} dateRange={dateRange} briefingRef={briefingRef} />
         )}
         {(IS_PRINT || activeTab === 'dashboard' || !availableReports.support) && displaySections.map((sec, i) => (
-          <SectionBlock key={sec.id+i+theme} sectionId={sec.id} widgetIds={sec.widgets} reportData={reportData} loading={loading} priorReportData={priorReportData}
+          <SectionBlock key={sec.id+i+theme} sectionId={sec.id} widgetIds={sec.widgets} reportData={reportData} loading={loading} freshRts={freshRts} priorReportData={priorReportData}
             targets={targets} onTargetChange={handleTargetChange} dateRange={dateRange} aiEnabled={!isReadOnly && orgMeta.toggles?.ai !== false}
             reportLinksEnabled={!isReadOnly && orgMeta.toggles?.reportLinks === true} reportingBaseUrl={orgMeta.reportingBaseUrl || ''} />
         ))}
         {!IS_PRINT && activeTab === 'support' && availableReports.support && (
-          <SupportTab key={'support'+theme} reportData={reportData} loading={loading} targets={targets}
+          <SupportTab key={'support'+theme} reportData={reportData} loading={loading} freshRts={freshRts} priorReportData={priorReportData} targets={targets}
             onTargetChange={handleTargetChange} dateRange={dateRange} aiEnabled={!isReadOnly && orgMeta.toggles?.ai !== false}
             supportReadOnly={orgMeta.supportReadOnly} onConversationSeen={markConversationSeen} notifyEmails={orgMeta.supportNotify} refreshNonce={supportRefreshNonce} />
         )}
