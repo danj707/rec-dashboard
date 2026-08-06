@@ -217,12 +217,14 @@ body { font-family: var(--font-body); background: var(--bg-page); color: var(--t
   background-size: 200% 100%; animation: shimmer 1.5s infinite; border-radius: 8px; }
 @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
 [data-theme="light"] .skeleton { background: linear-gradient(90deg, #f0f0f0 25%, #e8e8e8 50%, #f0f0f0 75%); background-size: 200% 100%; }
-[data-theme="light"] .sections-loading .dashboard-section { opacity: 0.5; }
+[data-theme="light"] .widget-card.widget-stale { opacity: 0.5; }
 .skeleton-metric { height: 48px; width: 140px; margin-top: 12px; }
 .skeleton-chart { height: 200px; width: 100%; margin-top: 12px; }
 
-/* Loading overlay on date change */
-.sections-loading .dashboard-section { opacity: 0.35; pointer-events: none; transition: opacity 0.2s; }
+/* Stale-data dim on date change. Applied per widget, not to the whole board:
+   report types land one at a time, so a widget stops being dimmed as soon as
+   its own data is refreshed rather than waiting on the slowest query. */
+.widget-card.widget-stale { opacity: 0.4; pointer-events: none; transition: opacity 0.2s; }
 .loading-bar { height: 3px; background: var(--bg-surface); overflow: hidden; }
 .loading-bar.active .loading-bar-inner { animation: loadSlide 1.2s ease-in-out infinite; }
 .loading-bar-inner { height: 100%; width: 30%; background: var(--amber); border-radius: 2px; }
@@ -1516,10 +1518,36 @@ function StreamsChart({ data }) {
 const COMP = {
   streams: StreamsChart, metric: MetricCard, bar: BarChartWidget, donut: DonutChartWidget, line: LineChartWidget, table: TableWidget, map: MapWidget, heatmap: HeatmapWidget };
 
-function WidgetCard({ widgetId, reportData, loading, target, onTargetChange, dateRange, reportingBaseUrl, priorReportData }) {
+// Report types arrive one at a time (see the progressive fetch in DashboardApp),
+// so a widget is only renderable once every source it reads has landed.
+// Multi-source widgets are the reason this isn't just a truthiness check on the
+// primary report type — rendering "Revenue by Stream" with three of its five
+// feeds in would flash a wrong split before correcting itself.
+function widgetReady(def, reportData) {
+  if (!reportData[def.reportType]) return false;
+  if (def._extraReportTypes) {
+    for (const rt of def._extraReportTypes) if (!reportData[rt]) return false;
+  }
+  return true;
+}
+
+// True once every source this widget reads has been refreshed by the current
+// batch. Anything still showing last batch's numbers gets dimmed.
+function widgetFresh(def, freshRts) {
+  if (!freshRts) return true;
+  if (!freshRts[def.reportType]) return false;
+  if (def._extraReportTypes) {
+    for (const rt of def._extraReportTypes) if (!freshRts[rt]) return false;
+  }
+  return true;
+}
+
+function WidgetCard({ widgetId, reportData, loading, freshRts, target, onTargetChange, dateRange, reportingBaseUrl, priorReportData }) {
   const def = W[widgetId]; if (!def) return null;
   const Comp = COMP[def.component]; if (!Comp) return null;
-  const raw = reportData[def.reportType];
+  const ready = widgetReady(def, reportData);
+  const raw = ready ? reportData[def.reportType] : null;
+  const stale = loading && ready && !widgetFresh(def, freshRts);
   // Prior-period value for delta-flagged metric tiles (lazy — appears when
   // the prior window's data arrives; hidden for all-time reports).
   let prior = null;
@@ -1543,7 +1571,7 @@ function WidgetCard({ widgetId, reportData, loading, target, onTargetChange, dat
   function clearTarget() { onTargetChange(widgetId, null); setTargetInput(''); setEditingTarget(false); }
 
   return (
-    <div className={`widget-card ${sizeClass}`}>
+    <div className={`widget-card ${sizeClass}${stale ? ' widget-stale' : ''}`}>
       <div className="widget-header">
         <div>
           <span className="widget-label">{def.label}</span>
@@ -1706,7 +1734,7 @@ function BriefingSection({ reportData, loading, dateRange, briefingRef }) {
 // ═══════════════════════════════════════════════════════
 //  SECTION BLOCK
 // ═══════════════════════════════════════════════════════
-function SectionBlock({ sectionId, widgetIds, reportData, loading, targets, onTargetChange, dateRange, aiEnabled, reportLinksEnabled, reportingBaseUrl, priorReportData }) {
+function SectionBlock({ sectionId, widgetIds, reportData, loading, freshRts, targets, onTargetChange, dateRange, aiEnabled, reportLinksEnabled, reportingBaseUrl, priorReportData }) {
   const sec = SECTIONS[sectionId]; if (!sec) return null;
   const [insight, setInsight] = useState(null);
   const [insightLoading, setInsightLoading] = useState(false);
@@ -1843,7 +1871,7 @@ function SectionBlock({ sectionId, widgetIds, reportData, loading, targets, onTa
           {metricIds.length > 0 && <div className="kpi-strip">
             {metricIds.map(id => {
               const def = W[id]; if (!def) return null;
-              const raw = reportData[def.reportType];
+              const raw = widgetReady(def, reportData) ? reportData[def.reportType] : null;
               const data = raw ? def.transform(raw) : null;
               return <div key={id} className="kpi-strip-item">
                 <span className="kpi-strip-value">{data ? fmt(data.value, data.format) : '...'}</span>
@@ -1853,13 +1881,13 @@ function SectionBlock({ sectionId, widgetIds, reportData, loading, targets, onTa
             })}
           </div>}
           <div className="widget-grid">
-            {chartIds.map(id => <WidgetCard key={id} widgetId={id} reportData={reportData} loading={loading} reportingBaseUrl={reportingBaseUrl}
+            {chartIds.map(id => <WidgetCard key={id} widgetId={id} reportData={reportData} loading={loading} freshRts={freshRts} reportingBaseUrl={reportingBaseUrl}
               target={targets?.[id]} onTargetChange={onTargetChange} dateRange={dateRange} priorReportData={priorReportData} />)}
           </div>
         </React.Fragment>;
       })() : (
         <div className="widget-grid">
-          {widgetIds.map(id => <WidgetCard key={id} widgetId={id} reportData={reportData} loading={loading} reportingBaseUrl={reportingBaseUrl}
+          {widgetIds.map(id => <WidgetCard key={id} widgetId={id} reportData={reportData} loading={loading} freshRts={freshRts} reportingBaseUrl={reportingBaseUrl}
             target={targets?.[id]} onTargetChange={onTargetChange} dateRange={dateRange} priorReportData={priorReportData} />)}
         </div>
       )}
@@ -2674,12 +2702,12 @@ function SupportInbox({ actionsDisabled, onConversationSeen, notifyEmails, dateR
   );
 }
 
-function SupportTab({ reportData, loading, targets, onTargetChange, dateRange, aiEnabled, supportReadOnly, onConversationSeen, notifyEmails, refreshNonce }) {
+function SupportTab({ reportData, loading, freshRts, priorReportData, targets, onTargetChange, dateRange, aiEnabled, supportReadOnly, onConversationSeen, notifyEmails, refreshNonce }) {
   // Inbox first — the conversations are the headline; metrics follow below.
   return (
     <React.Fragment>
       <SupportInbox actionsDisabled={supportReadOnly} onConversationSeen={onConversationSeen} notifyEmails={notifyEmails} dateRange={dateRange} refreshNonce={refreshNonce} />
-      <SectionBlock sectionId="support" widgetIds={SECTIONS.support.defaultWidgets} reportData={reportData} loading={loading} priorReportData={priorReportData}
+      <SectionBlock sectionId="support" widgetIds={SECTIONS.support.defaultWidgets} reportData={reportData} loading={loading} freshRts={freshRts} priorReportData={priorReportData}
         targets={targets} onTargetChange={onTargetChange} dateRange={dateRange} aiEnabled={aiEnabled}
         reportLinksEnabled={false} reportingBaseUrl="" />
     </React.Fragment>
@@ -2741,6 +2769,8 @@ function DashboardApp() {
   const [datePreset, setDatePreset] = useState('thisMonth');
   const [reportData, setReportData] = useState({});
   const [priorReportData, setPriorReportData] = useState(null); // { _window: {start,end}, [rt]: rows } — lazy, for delta pills
+  const [freshRts, setFreshRts] = useState({}); // report types already refreshed by the in-flight batch
+  const fetchGen = useRef(0); // bumped per fetch batch so late results from a superseded range are discarded
   const briefingRef = React.useRef(null);
 
   function buildDigestPayload() {
@@ -2863,27 +2893,51 @@ function DashboardApp() {
     // The Customer Support tab is outside section config — load its data whenever the org has it
     if (availableReports.support && !rts.includes('support')) rts.push('support');
     if (!rts.length) { setLoading(false); return; }
-    setLoading(true); clearDataStore(); setPriorReportData(null);
-    Promise.all(rts.map(rt => fetchReportData(rt, dateRange).then(rows => [rt, rows]).catch(() => [rt, []])))
-      .then(results => {
-        const rd = {}; results.forEach(([rt, rows]) => { rd[rt] = rows; });
-        setReportData(rd); setLoading(false); setLastRefresh(new Date());
-        track('dashboard_view', { sections: config.sections.length, widgets: allWidgetIds.length, reportTypes: rts, dateRange });
-        // ── Prior-period fetch for delta pills — lazy, never blocks the render.
-        // Only report types that respect the date picker AND have a delta-flagged
-        // metric tile; the pills fade in when this resolves.
-        const pw = priorWindow(dateRange);
-        if (!pw) return;
-        const deltaRts = [...new Set(Object.values(W).filter(d => d.delta && d.component === 'metric').map(d => d.reportType))]
-          .filter(rt => rts.includes(rt) && !ALL_TIME_REPORTS.has(rt));
-        if (!deltaRts.length) return;
-        Promise.all(deltaRts.map(rt => fetchReportData(rt, pw).then(rows => [rt, rows]).catch(() => [rt, null])))
-          .then(pres => {
-            const pd = { _window: pw };
-            pres.forEach(([rt, rows]) => { if (Array.isArray(rows)) pd[rt] = rows; });
-            setPriorReportData(pd);
-          });
-      });
+    setLoading(true); clearDataStore(); setPriorReportData(null); setFreshRts({});
+
+    // ── Progressive render ──────────────────────────────────────────────
+    // Every report type is still requested in parallel, but each one is
+    // written into state the moment it resolves rather than waiting on the
+    // whole batch. Without this the dashboard is gated by its single slowest
+    // query — for a big org that's ~98s of nothing on screen while ten of the
+    // eleven reports sit finished in memory.
+    //
+    // `loading` deliberately stays true until the last request settles: it's
+    // what keeps not-yet-arrived widgets showing a skeleton instead of an
+    // empty state, and what the print handler waits on.
+    const gen = ++fetchGen.current;
+    let settled = 0;
+    rts.forEach(rt => {
+      fetchReportData(rt, dateRange).catch(() => [])
+        .then(rows => {
+          // A newer date range / config superseded this batch — drop the result
+          // rather than merging it over fresher data.
+          if (gen !== fetchGen.current) return;
+          setReportData(prev => ({ ...prev, [rt]: rows || [] }));
+          setFreshRts(prev => ({ ...prev, [rt]: true }));
+          if (++settled === rts.length) onAllSettled();
+        });
+    });
+
+    function onAllSettled() {
+      setLoading(false); setLastRefresh(new Date());
+      track('dashboard_view', { sections: config.sections.length, widgets: allWidgetIds.length, reportTypes: rts, dateRange });
+      // ── Prior-period fetch for delta pills — lazy, never blocks the render.
+      // Only report types that respect the date picker AND have a delta-flagged
+      // metric tile; the pills fade in when this resolves.
+      const pw = priorWindow(dateRange);
+      if (!pw) return;
+      const deltaRts = [...new Set(Object.values(W).filter(d => d.delta && d.component === 'metric').map(d => d.reportType))]
+        .filter(rt => rts.includes(rt) && !ALL_TIME_REPORTS.has(rt));
+      if (!deltaRts.length) return;
+      Promise.all(deltaRts.map(rt => fetchReportData(rt, pw).then(rows => [rt, rows]).catch(() => [rt, null])))
+        .then(pres => {
+          if (gen !== fetchGen.current) return;
+          const pd = { _window: pw };
+          pres.forEach(([rt, rows]) => { if (Array.isArray(rows)) pd[rt] = rows; });
+          setPriorReportData(pd);
+        });
+    }
   }, [dataKey, dateRange]);
 
   function applyPreset(p) {
@@ -3043,17 +3097,17 @@ function DashboardApp() {
         </div>
       )}
 
-      <div className={loading && lastRefresh ? 'sections-loading' : ''}>
+      <div>
         {false && !IS_PRINT && config.sections.some(s => s.id === 'ai-briefing') && (
           <BriefingSection reportData={reportData} loading={loading} dateRange={dateRange} briefingRef={briefingRef} />
         )}
         {(IS_PRINT || activeTab === 'dashboard' || !availableReports.support) && displaySections.map((sec, i) => (
-          <SectionBlock key={sec.id+i+theme} sectionId={sec.id} widgetIds={sec.widgets} reportData={reportData} loading={loading} priorReportData={priorReportData}
+          <SectionBlock key={sec.id+i+theme} sectionId={sec.id} widgetIds={sec.widgets} reportData={reportData} loading={loading} freshRts={freshRts} priorReportData={priorReportData}
             targets={targets} onTargetChange={handleTargetChange} dateRange={dateRange} aiEnabled={!isReadOnly && orgMeta.toggles?.ai !== false}
             reportLinksEnabled={!isReadOnly && orgMeta.toggles?.reportLinks === true} reportingBaseUrl={orgMeta.reportingBaseUrl || ''} />
         ))}
         {!IS_PRINT && activeTab === 'support' && availableReports.support && (
-          <SupportTab key={'support'+theme} reportData={reportData} loading={loading} targets={targets}
+          <SupportTab key={'support'+theme} reportData={reportData} loading={loading} freshRts={freshRts} priorReportData={priorReportData} targets={targets}
             onTargetChange={handleTargetChange} dateRange={dateRange} aiEnabled={!isReadOnly && orgMeta.toggles?.ai !== false}
             supportReadOnly={orgMeta.supportReadOnly} onConversationSeen={markConversationSeen} notifyEmails={orgMeta.supportNotify} refreshNonce={supportRefreshNonce} />
         )}
