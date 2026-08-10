@@ -1170,6 +1170,10 @@ const TEMPLATES = {
 //  DATA LAYER
 // ═══════════════════════════════════════════════════════
 const dataStore = {};
+// Failed feeds, keyed by report type. A fetch failure must be visibly
+// different from an empty dataset — the 2026-08-10 all-orgs outage rendered
+// as $0 everywhere because errors were silently coerced to [].
+const fetchFailures = {};
 async function fetchReportData(rt, dr) {
   const key = `${rt}:${dr.start}:${dr.end}`;
   if (dataStore[key]) return dataStore[key];
@@ -1178,12 +1182,21 @@ async function fetchReportData(rt, dr) {
     ? `/share/${SHARE_TOKEN}/data/${rt}?${qs}`
     : `/${ORG_SLUG}/api/data/${rt}?token=${TOKEN}&${qs}`;
   const resp = await fetch(url);
-  if (!resp.ok) return [];
+  if (!resp.ok) {
+    let detail = `HTTP ${resp.status}`;
+    try { const j = await resp.json(); if (j && (j.detail || j.error)) detail = j.detail || j.error; } catch (e) {}
+    fetchFailures[rt] = detail;
+    return null;  // caller renders empty, but the failure banner names the feed
+  }
   const json = await resp.json();
+  delete fetchFailures[rt];
   dataStore[key] = json.rows || [];
   return dataStore[key];
 }
-function clearDataStore() { Object.keys(dataStore).forEach(k => delete dataStore[k]); }
+function clearDataStore() {
+  Object.keys(dataStore).forEach(k => delete dataStore[k]);
+  Object.keys(fetchFailures).forEach(k => delete fetchFailures[k]);
+}
 
 // ═══════════════════════════════════════════════════════
 //  EVENT TRACKING
@@ -2976,6 +2989,7 @@ function DashboardApp() {
     return supportConvs.filter(c => c.orgEscalated && !c.orgResolved && !seen.has(c.id)).length;
   })();
   const [lastRefresh, setLastRefresh] = useState(null);
+  const [fetchErrors, setFetchErrors] = useState({});
   const [theme, setTheme] = useState('light');
   const [targets, setTargets] = useState({});
 
@@ -3023,7 +3037,7 @@ function DashboardApp() {
     // The Customer Support tab is outside section config — load its data whenever the org has it
     if (availableReports.support && !rts.includes('support')) rts.push('support');
     if (!rts.length) { setLoading(false); return; }
-    setLoading(true); clearDataStore(); setPriorReportData(null); setFreshRts({});
+    setLoading(true); clearDataStore(); setPriorReportData(null); setFreshRts({}); setFetchErrors({});
 
     // ── Progressive render ──────────────────────────────────────────────
     // Every report type is still requested in parallel, but each one is
@@ -3038,13 +3052,14 @@ function DashboardApp() {
     const gen = ++fetchGen.current;
     let settled = 0;
     rts.forEach(rt => {
-      fetchReportData(rt, dateRange).catch(() => [])
+      fetchReportData(rt, dateRange).catch(e => { fetchFailures[rt] = e.message || 'fetch failed'; return null; })
         .then(rows => {
           // A newer date range / config superseded this batch — drop the result
           // rather than merging it over fresher data.
           if (gen !== fetchGen.current) return;
           setReportData(prev => ({ ...prev, [rt]: rows || [] }));
           setFreshRts(prev => ({ ...prev, [rt]: true }));
+          setFetchErrors({ ...fetchFailures });
           if (++settled === rts.length) onAllSettled();
         });
     });
@@ -3240,6 +3255,17 @@ function DashboardApp() {
         </div>
       )}
       <div className={`loading-bar ${loading ? 'active' : ''}`}><div className="loading-bar-inner" /></div>
+
+      {/* Failed feeds are an outage, not zeros — never let them look like data */}
+      {!IS_PRINT && Object.keys(fetchErrors).length > 0 && (
+        <div style={{background:'#fef2f2',border:'1px solid #fca5a5',borderRadius:8,padding:'10px 14px',margin:'10px 0',display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}}>
+          <span style={{fontSize:13,color:'#991b1b'}}>
+            <strong>{'⚠'} {Object.keys(fetchErrors).length} data feed{Object.keys(fetchErrors).length>1?'s':''} failed to load</strong>
+            {' '}({Object.keys(fetchErrors).join(', ')}) — the numbers below are incomplete, not zero.
+          </span>
+          <button className="btn btn-sm" onClick={handleRefresh} style={{marginLeft:'auto'}}>{'↻'} Retry</button>
+        </div>
+      )}
 
       {!IS_PRINT && availableReports.support && (
         <div className="g-tabs" style={{marginBottom:14}}>
