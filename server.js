@@ -40,6 +40,81 @@ const DATA_DIR = process.env.DATA_DIR || './data';
 const METABASE_URL = process.env.METABASE_URL || 'https://rec.metabaseapp.com';
 const REPORTING_BASE_URL = process.env.REPORTING_BASE_URL || 'https://rental-report-production-a046.up.railway.app';
 
+// ── Metabase public-card parameter-id stamping ──────────────────────────────
+// 2026-08-10: Metabase's public /query/json endpoint rejects parameters that
+// lack the per-parameter `id` with 400 "An error occurred." — every dashboard
+// widget went to zeros for every org (first noticed on Littleton). Same
+// behavior change that hit rental-report on 2026-08-09; this is the same fix
+// ported over: resolve each card's parameter ids from its public definition
+// (cached 1h) and stamp them onto outbound query URLs via a guarded fetch
+// wrapper. Card-definition reads pass through untouched, so no recursion.
+const _origFetch = globalThis.fetch.bind(globalThis);
+const _cardParamMeta = new Map();            // uuid -> { ts, byTag: Map(tag|slug -> id) }
+const CARD_PARAM_META_TTL = 60 * 60 * 1000;  // 1h — picks up new ids if a card is re-saved
+
+async function getCardParamMeta(uuid) {
+  const hit = _cardParamMeta.get(uuid);
+  if (hit && Date.now() - hit.ts < CARD_PARAM_META_TTL) return hit.byTag;
+  try {
+    const resp = await _origFetch(`${METABASE_URL}/api/public/card/${uuid}`, { signal: AbortSignal.timeout(15000) });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const def = await resp.json();
+    const byTag = new Map();
+    for (const p of (def.parameters || [])) {
+      if (!p || !p.id) continue;
+      const tag = Array.isArray(p.target) && Array.isArray(p.target[1]) ? p.target[1][1] : null;
+      if (tag) byTag.set(tag, p.id);
+      if (p.slug) byTag.set(p.slug, p.id);
+    }
+    _cardParamMeta.set(uuid, { ts: Date.now(), byTag });
+    return byTag;
+  } catch (e) {
+    console.warn(`[mb-params] param-id lookup failed for card ${String(uuid).slice(0, 8)}: ${e.message}`);
+    return hit ? hit.byTag : null;           // fall back to any prior meta
+  }
+}
+
+// Rewrite a Metabase public-card query URL to stamp the required `id` onto each
+// parameter. Never throws — returns the URL unchanged on any problem so a lookup
+// failure degrades to prior behavior rather than breaking the request.
+async function enrichMetabaseCardUrl(url) {
+  try {
+    const m = /\/api\/public\/card\/([^/?]+)\/query\/json\?parameters=(.+)$/.exec(url);
+    if (!m) return url;
+    const uuid = m[1];
+    const params = JSON.parse(decodeURIComponent(m[2]));
+    if (!Array.isArray(params) || params.length === 0) return url;
+    if (params.every(p => p && p.id)) return url;   // already stamped
+    const byTag = await getCardParamMeta(uuid);
+    if (!byTag) return url;
+    let changed = false;
+    const stamped = params.map(p => {
+      if (!p || p.id) return p;
+      const tag = Array.isArray(p.target) && Array.isArray(p.target[1]) ? p.target[1][1] : p.slug;
+      const id = tag ? byTag.get(tag) : null;
+      if (!id) return p;
+      changed = true;
+      return { id, ...p };
+    });
+    if (!changed) return url;
+    return `${url.slice(0, m.index)}/api/public/card/${uuid}/query/json?parameters=${encodeURIComponent(JSON.stringify(stamped))}`;
+  } catch (e) {
+    console.warn(`[mb-params] URL enrich failed: ${e.message}`);
+    return url;
+  }
+}
+
+// Guarded global fetch wrapper: stamps parameter ids onto Metabase public-card
+// QUERY requests only; everything else passes through untouched.
+globalThis.fetch = async function (resource, init) {
+  if (typeof resource === 'string'
+      && resource.includes('/api/public/card/')
+      && resource.includes('/query/json?parameters=')) {
+    resource = await enrichMetabaseCardUrl(resource);
+  }
+  return _origFetch(resource, init);
+};
+
 // ═══════════════════════════════════════════
 //  ORG CONFIG
 // ═══════════════════════════════════════════
