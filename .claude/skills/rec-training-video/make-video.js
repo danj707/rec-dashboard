@@ -26,12 +26,15 @@ const SPEC = JSON.parse(fs.readFileSync(SPEC_PATH, 'utf8'));
 const OUT = process.argv[3] || SPEC.outFile || 'rec-training-video.mp4';
 const WORK = fs.mkdtempSync(path.join(os.tmpdir(), 'rtv-'));
 
-// Credentials: env vars win; otherwise fall back to the bundled credentials.json
-// (Rec-internal sandbox login + ElevenLabs key, so the skill runs with zero setup).
+// Credentials. The login is provided at run time (REC_EMAIL / REC_PASSWORD) — the
+// skill prompts for it, nothing is bundled or written to disk. The ElevenLabs key
+// falls back to the bundled credentials.json (shared Rec key) for zero-setup narration.
 const CREDS = (() => { try { return JSON.parse(fs.readFileSync(path.join(HERE, 'credentials.json'), 'utf8')); } catch { return {}; } })();
 const EMAIL = process.env.REC_EMAIL || CREDS.recEmail;
 const PW = process.env.REC_PASSWORD || CREDS.recPassword;
 const EL_KEY = process.env.ELEVENLABS_API_KEY || CREDS.elevenLabsApiKey;
+// Which site to log into (prod by default). Spec or env can point at another rec.us env.
+const BASE = SPEC.baseUrl || process.env.REC_BASE_URL || CFG.baseUrl;
 const sh = (c) => execSync(c, { stdio: ['ignore', 'pipe', 'pipe'] }).toString();
 const dur = (f) => parseFloat(sh(`ffprobe -v error -show_entries format=duration -of csv=p=0 "${f}"`).trim());
 
@@ -63,7 +66,9 @@ function findChromium() {
 // ---- 1. Narrate -----------------------------------------------------------
 async function tts(text, file) {
   const c = CFG.tts;
-  const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${c.voiceId}?output_format=mp3_44100_128`, {
+  // Voice is chosen at intake; spec/env overrides the config default without editing it.
+  const voiceId = SPEC.voiceId || process.env.REC_TTS_VOICE_ID || c.voiceId;
+  const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_44100_128`, {
     method: 'POST',
     headers: { 'xi-api-key': EL_KEY, 'Content-Type': 'application/json' },
     body: JSON.stringify({ text, model_id: c.model, voice_settings: c.voiceSettings }),
@@ -108,7 +113,7 @@ async function record(narr) {
   const dwellFor = (i, base) => Math.max(base || 0, Math.round(narr.clips[i].dur * 1000) + T.leadMs + T.tailMs);
 
   // login (email + password)
-  await page.goto(`${CFG.baseUrl}/locations`, { waitUntil: 'domcontentloaded', timeout: 60000 });
+  await page.goto(`${BASE}/locations`, { waitUntil: 'domcontentloaded', timeout: 60000 });
   await sleep(2500);
   await page.locator('button:visible, a:visible').filter({ hasText: /^Log in$/ }).first().click();
   await sleep(1200);
@@ -160,9 +165,14 @@ function muxBody(rec, narr) {
   const finalDur = vdur - trim;
   const inputs = [`-ss ${trim.toFixed(3)} -i "${webm}"`];
   const parts = [], labels = [];
+  // Stagger guard: a narration never starts before the previous one ends (+gap),
+  // so two clips can never talk over each other if a section runs short.
+  let prevEnd = 0;
   narr.clips.forEach((c, k) => {
     const tm = timings.find(x => x.i === c.i);
-    const delay = Math.max(0, Math.round((tm.t - trim) * 1000));
+    const startS = Math.max(tm.t - trim, prevEnd + 0.35);
+    prevEnd = startS + c.dur;
+    const delay = Math.max(0, Math.round(startS * 1000));
     inputs.push(`-i "${c.file}"`);
     parts.push(`[${k + 1}:a]adelay=${delay}|${delay}[a${k}]`);
     labels.push(`[a${k}]`);
@@ -192,8 +202,8 @@ function brand(body, narrOutro) {
 }
 
 (async () => {
-  for (const [k, v] of Object.entries({ REC_EMAIL: EMAIL, REC_PASSWORD: PW, ELEVENLABS_API_KEY: EL_KEY }))
-    if (!v) throw new Error(`missing env ${k}`);
+  if (!EMAIL || !PW) throw new Error('Login required: set REC_EMAIL and REC_PASSWORD (the skill prompts for these — no login is bundled).');
+  if (!EL_KEY) throw new Error('missing ELEVENLABS_API_KEY (bundled in credentials.json, or set the env var).');
   console.log('1/4 narrating…'); const narr = await narrateAll();
   console.log('2/4 recording…'); const rec = await record(narr);
   console.log('3/4 muxing narration…'); const body = muxBody(rec, narr);
