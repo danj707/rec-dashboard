@@ -727,7 +727,7 @@ const W = {
   // ── Fast Track (filter Row Type !== 'user') ──
   'ft-signups': { label: 'FT Signups', description: 'Total Fast Track signups', note: 'Users who signed up via Fast Track pre-registration', section: 'fasttrack',
     reportType: 'fasttrack', size: 'sm', icon: '\uD83D\uDE80', component: 'metric',
-    transform: rows => { const sec=rows.filter(r=>r['Row Type']!=='user'); return { value: sec.reduce((s,r)=>s+(parseInt(r['FT Signups'])||0),0), format:'number' }; } },
+    transform: rows => { const sec=rows.filter(r=>r['Row Type']!=='user'); return { value: sec.reduce((s,r)=>s+(parseInt(r['FT Total'])||0),0), format:'number' }; } },
   'ft-converted': { label: 'Converted', description: 'FT signups that enrolled', note: 'FT signups that completed enrollment', section: 'fasttrack',
     reportType: 'fasttrack', size: 'sm', icon: '\u2705', component: 'metric',
     transform: rows => { const sec=rows.filter(r=>r['Row Type']!=='user'); return { value: sec.reduce((s,r)=>s+(parseInt(r['FT Converted'])||0),0), format:'number', colorClass:'metric-green' }; } },
@@ -738,7 +738,7 @@ const W = {
     reportType: 'fasttrack', size: 'sm', icon: '\uD83D\uDCC8', component: 'metric',
     transform: rows => {
       const sec=rows.filter(r=>r['Row Type']!=='user');
-      const sig=sec.reduce((s,r)=>s+(parseInt(r['FT Signups'])||0),0);
+      const sig=sec.reduce((s,r)=>s+(parseInt(r['FT Total'])||0),0);
       const conv=sec.reduce((s,r)=>s+(parseInt(r['FT Converted'])||0),0);
       return { value: sig>0?Math.round(conv/sig*1000)/10:0, format:'percent', colorClass:'metric-green' };
     }},
@@ -749,7 +749,7 @@ const W = {
     reportType: 'fasttrack', size: 'md', icon: '\uD83C\uDFC6', component: 'bar',
     transform: rows => {
       const sec=rows.filter(r=>r['Row Type']!=='user');
-      const g={};sec.forEach(r=>{const k=r['Program']||'Unknown'; g[k]=(g[k]||0)+(parseInt(r['FT Signups'])||0);});
+      const g={};sec.forEach(r=>{const k=r['Program']||'Unknown'; g[k]=(g[k]||0)+(parseInt(r['FT Total'])||0);});
       const s=Object.entries(g).filter(e=>e[1]>0).sort((a,b)=>b[1]-a[1]).slice(0,10);
       return { labels:s.map(e=>e[0]), values:s.map(e=>e[1]) };
     }},
