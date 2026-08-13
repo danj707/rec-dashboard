@@ -215,19 +215,7 @@ const NO_DATE_REPORTS = new Set([
 // ═══════════════════════════════════════════
 //  IN-MEMORY CACHE
 // ═══════════════════════════════════════════
-const cache = new Map();
-const DEFAULT_CACHE_TTL = 15 * 60 * 1000; // 15 min
-
-function getCached(key) {
-  const entry = cache.get(key);
-  if (!entry) return null;
-  if (Date.now() - entry.ts > entry.ttl) { cache.delete(key); return null; }
-  return entry.data;
-}
-
-function setCache(key, data, ttl = DEFAULT_CACHE_TTL) {
-  cache.set(key, { data, ts: Date.now(), ttl });
-}
+const { cache, DEFAULT_CACHE_TTL, getCached, getCacheEntry, setCache, revalidate } = require('./cache');
 
 // ═══════════════════════════════════════════
 //  DASHBOARD CONFIG PERSISTENCE
@@ -383,18 +371,28 @@ async function fetchMetabaseData(orgSlug, reportType, query) {
   const orgConfig = dashboardConfigs[orgSlug];
   const ttl = (orgConfig?.cacheTTL || 15) * 60 * 1000;
   
-  const cached = getCached(cacheKey);
-  if (cached) return cached;
+  const doFetch = async () => {
+    const paramStr = params.length ? `?parameters=${encodeURIComponent(JSON.stringify(params))}` : '';
+    const url = `${METABASE_URL}/api/public/card/${uuid}/query/json${paramStr}`;
+    console.log(`[FETCH] ${orgSlug}/${reportType} → ${uuid} (shared=${isShared})`);
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error(`Metabase ${resp.status}: ${resp.statusText}`);
+    const rows = await resp.json();
+    console.log(`[DATA] ${orgSlug}/${reportType}: ${rows.length} rows${rows.length > 0 ? ', cols: ' + Object.keys(rows[0]).join(', ') : ''}`);
+    return rows;
+  };
 
-  const paramStr = params.length ? `?parameters=${encodeURIComponent(JSON.stringify(params))}` : '';
-  const url = `${METABASE_URL}/api/public/card/${uuid}/query/json${paramStr}`;
+  // Stale-while-revalidate: serve any cached rows immediately. If they're past
+  // the TTL, refresh in the background so the next request is fresh — this one
+  // never eats the live query latency.
+  const entry = getCacheEntry(cacheKey);
+  if (entry) {
+    if (entry.stale) revalidate(cacheKey, ttl, doFetch);
+    return entry.data;
+  }
 
-  console.log(`[FETCH] ${orgSlug}/${reportType} → ${uuid} (shared=${isShared})`);
-  const resp = await fetch(url);
-  if (!resp.ok) throw new Error(`Metabase ${resp.status}: ${resp.statusText}`);
-  
-  const rows = await resp.json();
-  console.log(`[DATA] ${orgSlug}/${reportType}: ${rows.length} rows${rows.length > 0 ? ', cols: ' + Object.keys(rows[0]).join(', ') : ''}`);
+  // Cold: never fetched (or cleared since). Fetch live this once, then cache.
+  const rows = await doFetch();
   setCache(cacheKey, rows, ttl);
   return rows;
 }
