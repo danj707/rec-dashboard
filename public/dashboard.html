@@ -149,6 +149,15 @@ body { font-family: var(--font-body); background: var(--bg-page); color: var(--t
 .widget-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
 .widget-label { font-size: 13px; color: var(--text-secondary); font-weight: 500; letter-spacing: 0.02em; }
 .widget-icon { font-size: 16px; opacity: 0.7; }
+/* Smart-card visualization switcher — lets a chart widget flip between bar/pie/line.
+   Low-opacity until card hover (same discoverability pattern as .gear-btn). */
+.viz-switch { display: inline-flex; gap: 2px; opacity: 0.4; transition: opacity 0.15s; }
+.widget-card:hover .viz-switch, .viz-switch:focus-within { opacity: 1; }
+.viz-btn { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 20px;
+  padding: 0; border: none; background: none; border-radius: 4px; cursor: pointer; color: var(--text-muted, #94a3b8); }
+.viz-btn:hover { color: var(--text-secondary, #334155); background: rgba(127,127,127,0.14); }
+.viz-btn.active { color: var(--amber, #f59e0b); background: rgba(245,158,11,0.14); }
+.viz-btn svg { width: 14px; height: 14px; display: block; }
 
 /* Metric */
 .metric-value { font-family: var(--font-display); font-size: 36px; font-weight: 700; line-height: 1.1; margin-top: 8px; letter-spacing: -0.02em; }
@@ -1604,9 +1613,46 @@ function widgetFresh(def, freshRts) {
   return true;
 }
 
-function WidgetCard({ widgetId, reportData, loading, freshRts, target, onTargetChange, dateRange, reportingBaseUrl, priorReportData }) {
+// ── Smart cards ──────────────────────────────────────────────────────
+// Chart widgets whose transform emits { labels, values, format } can be
+// rendered as any of these interchangeably, so the user can flip between them.
+// (metric / table / map / heatmap / streams are NOT interchangeable.)
+const SWITCHABLE_CHARTS = ['bar', 'donut', 'line'];
+const CHART_TYPE_LABEL = { bar: 'Bar', donut: 'Pie', line: 'Line' };
+function VizIcon({ type }) {
+  if (type === 'bar') return (
+    <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+      <rect x="2" y="7" width="3" height="7" rx="0.5" /><rect x="6.5" y="3.5" width="3" height="10.5" rx="0.5" /><rect x="11" y="9.5" width="3" height="4.5" rx="0.5" />
+    </svg>);
+  if (type === 'donut') return (
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+      <circle cx="8" cy="8" r="5.5" /><path d="M8 8 L8 2.5 A5.5 5.5 0 0 1 12.9 5.4 Z" fill="currentColor" stroke="none" />
+    </svg>);
+  return (
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <polyline points="2,12 6,7 9,9.5 14,3.5" />
+    </svg>);
+}
+function VizSwitcher({ current, onSelect }) {
+  return (
+    <div className="viz-switch" onClick={e => e.stopPropagation()}>
+      {SWITCHABLE_CHARTS.map(t => (
+        <button key={t} type="button" className={'viz-btn' + (current === t ? ' active' : '')}
+          title={CHART_TYPE_LABEL[t] + ' chart'} aria-label={CHART_TYPE_LABEL[t] + ' chart'} aria-pressed={current === t}
+          onClick={() => onSelect(t)}>
+          <VizIcon type={t} />
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function WidgetCard({ widgetId, reportData, loading, freshRts, target, onTargetChange, chartType, onChartTypeChange, dateRange, reportingBaseUrl, priorReportData }) {
   const def = W[widgetId]; if (!def) return null;
-  const Comp = COMP[def.component]; if (!Comp) return null;
+  // Smart card: a switchable chart widget may be overridden to another chart type.
+  const switchable = !!onChartTypeChange && SWITCHABLE_CHARTS.includes(def.component);
+  const effComponent = (switchable && chartType && COMP[chartType]) ? chartType : def.component;
+  const Comp = COMP[effComponent]; if (!Comp) return null;
   const ready = widgetReady(def, reportData);
   const raw = ready ? reportData[def.reportType] : null;
   const stale = loading && ready && !widgetFresh(def, freshRts);
@@ -1643,6 +1689,7 @@ function WidgetCard({ widgetId, reportData, loading, freshRts, target, onTargetC
           </div>
         </div>
         <div style={{display:'flex',alignItems:'center',gap:4}}>
+          {switchable && <VizSwitcher current={effComponent} onSelect={t => onChartTypeChange(widgetId, t)} />}
           {isMetric && <button className="gear-btn" onClick={()=>{setEditingTarget(!editingTarget);setTargetInput(target||'');}} title="Set target">{'\u2699'}</button>}
           <span className="widget-icon">{def.icon}</span>
         </div>
@@ -1658,7 +1705,7 @@ function WidgetCard({ widgetId, reportData, loading, freshRts, target, onTargetC
       )}
       {loading && !data ? <div className={isMetric?'skeleton skeleton-metric':'skeleton skeleton-chart'} />
         : isMetric ? <MetricCard data={data} target={target} prior={prior} /> : <Comp data={data} onBarClick={
-          (def.component === 'bar' || def.component === 'table') && def.reportType === 'programs' && reportingBaseUrl
+          (effComponent === 'bar' || def.component === 'table') && def.reportType === 'programs' && reportingBaseUrl
             ? (label) => { var u = reportingBaseUrl + '/' + ORG_SLUG + '/programs?token=' + TOKEN + '&tab=revenue&program=' + encodeURIComponent(label); if (dateRange) { u += '&start_date=' + dateRange.start + '&end_date=' + dateRange.end; } window.open(u, '_blank'); }
             : undefined
         } />}
@@ -1796,7 +1843,7 @@ function BriefingSection({ reportData, loading, dateRange, briefingRef }) {
 // ═══════════════════════════════════════════════════════
 //  SECTION BLOCK
 // ═══════════════════════════════════════════════════════
-function SectionBlock({ sectionId, widgetIds, reportData, loading, freshRts, targets, onTargetChange, dateRange, aiEnabled, reportLinksEnabled, reportingBaseUrl, priorReportData }) {
+function SectionBlock({ sectionId, widgetIds, reportData, loading, freshRts, targets, onTargetChange, chartTypes, onChartTypeChange, dateRange, aiEnabled, reportLinksEnabled, reportingBaseUrl, priorReportData }) {
   const sec = SECTIONS[sectionId]; if (!sec) return null;
   const [insight, setInsight] = useState(null);
   const [insightLoading, setInsightLoading] = useState(false);
@@ -1944,13 +1991,13 @@ function SectionBlock({ sectionId, widgetIds, reportData, loading, freshRts, tar
           </div>}
           <div className="widget-grid">
             {chartIds.map(id => <WidgetCard key={id} widgetId={id} reportData={reportData} loading={loading} freshRts={freshRts} reportingBaseUrl={reportingBaseUrl}
-              target={targets?.[id]} onTargetChange={onTargetChange} dateRange={dateRange} priorReportData={priorReportData} />)}
+              target={targets?.[id]} onTargetChange={onTargetChange} chartType={chartTypes?.[id]} onChartTypeChange={onChartTypeChange} dateRange={dateRange} priorReportData={priorReportData} />)}
           </div>
         </React.Fragment>;
       })() : (
         <div className="widget-grid">
           {widgetIds.map(id => <WidgetCard key={id} widgetId={id} reportData={reportData} loading={loading} freshRts={freshRts} reportingBaseUrl={reportingBaseUrl}
-            target={targets?.[id]} onTargetChange={onTargetChange} dateRange={dateRange} priorReportData={priorReportData} />)}
+            target={targets?.[id]} onTargetChange={onTargetChange} chartType={chartTypes?.[id]} onChartTypeChange={onChartTypeChange} dateRange={dateRange} priorReportData={priorReportData} />)}
         </div>
       )}
     </div>
@@ -2764,13 +2811,13 @@ function SupportInbox({ actionsDisabled, onConversationSeen, notifyEmails, dateR
   );
 }
 
-function SupportTab({ reportData, loading, freshRts, priorReportData, targets, onTargetChange, dateRange, aiEnabled, supportReadOnly, onConversationSeen, notifyEmails, refreshNonce }) {
+function SupportTab({ reportData, loading, freshRts, priorReportData, targets, onTargetChange, chartTypes, onChartTypeChange, dateRange, aiEnabled, supportReadOnly, onConversationSeen, notifyEmails, refreshNonce }) {
   // Inbox first — the conversations are the headline; metrics follow below.
   return (
     <React.Fragment>
       <SupportInbox actionsDisabled={supportReadOnly} onConversationSeen={onConversationSeen} notifyEmails={notifyEmails} dateRange={dateRange} refreshNonce={refreshNonce} />
       <SectionBlock sectionId="support" widgetIds={SECTIONS.support.defaultWidgets} reportData={reportData} loading={loading} freshRts={freshRts} priorReportData={priorReportData}
-        targets={targets} onTargetChange={onTargetChange} dateRange={dateRange} aiEnabled={aiEnabled}
+        targets={targets} onTargetChange={onTargetChange} chartTypes={chartTypes} onChartTypeChange={onChartTypeChange} dateRange={dateRange} aiEnabled={aiEnabled}
         reportLinksEnabled={false} reportingBaseUrl="" />
     </React.Fragment>
   );
@@ -2978,6 +3025,7 @@ function DashboardApp() {
   const [lastRefresh, setLastRefresh] = useState(null);
   const [theme, setTheme] = useState('light');
   const [targets, setTargets] = useState({});
+  const [chartTypes, setChartTypes] = useState({}); // smart-card viz overrides: { [widgetId]: 'bar'|'donut'|'line' }
 
   function applyTheme(t) {
     setTheme(t);
@@ -3006,6 +3054,7 @@ function DashboardApp() {
           if (!json.dateRange && json.config.datePreset) applyPreset(json.config.datePreset);
           if (json.config.theme) { setTheme(json.config.theme); document.documentElement.setAttribute('data-theme', json.config.theme); applyChartTheme(json.config.theme); }
           if (json.config.targets) setTargets(json.config.targets);
+          if (json.config.chartTypes) setChartTypes(json.config.chartTypes);
         } else { setConfig('new'); }
       } catch (e) { setConfig('new'); }
     })();
@@ -3142,6 +3191,15 @@ function DashboardApp() {
     const cfg = { ...config, targets: newTargets }; setConfig(cfg); await saveConfig(cfg);
     track('target_set', { widget: widgetId, value });
   }
+  async function handleChartTypeChange(widgetId, type) {
+    const next = { ...chartTypes };
+    const def = W[widgetId];
+    // Drop the override when it matches the widget's default, so config stays lean.
+    if (!type || (def && def.component === type)) { delete next[widgetId]; } else { next[widgetId] = type; }
+    setChartTypes(next);
+    const cfg = { ...config, chartTypes: next }; setConfig(cfg); await saveConfig(cfg);
+    track('chart_type_changed', { widget: widgetId, type });
+  }
   function handleRefresh() { clearDataStore(); setDateRange({...dateRange}); setSupportRefreshNonce(n => n + 1); track('refresh_clicked'); }
   function handleCompareChange(m) { setCompareMode(m); track('compare_changed', { mode: m, dateRange }); }
   const comparePeriodWin = priorWindow(dateRange);
@@ -3256,12 +3314,12 @@ function DashboardApp() {
         )}
         {(IS_PRINT || activeTab === 'dashboard' || !availableReports.support) && displaySections.map((sec, i) => (
           <SectionBlock key={sec.id+i+theme} sectionId={sec.id} widgetIds={sec.widgets} reportData={reportData} loading={loading} freshRts={freshRts} priorReportData={priorReportData}
-            targets={targets} onTargetChange={handleTargetChange} dateRange={dateRange} aiEnabled={!isReadOnly && orgMeta.toggles?.ai !== false}
+            targets={targets} onTargetChange={handleTargetChange} chartTypes={chartTypes} onChartTypeChange={handleChartTypeChange} dateRange={dateRange} aiEnabled={!isReadOnly && orgMeta.toggles?.ai !== false}
             reportLinksEnabled={!isReadOnly && orgMeta.toggles?.reportLinks === true} reportingBaseUrl={orgMeta.reportingBaseUrl || ''} />
         ))}
         {!IS_PRINT && activeTab === 'support' && availableReports.support && (
           <SupportTab key={'support'+theme} reportData={reportData} loading={loading} freshRts={freshRts} priorReportData={priorReportData} targets={targets}
-            onTargetChange={handleTargetChange} dateRange={dateRange} aiEnabled={!isReadOnly && orgMeta.toggles?.ai !== false}
+            onTargetChange={handleTargetChange} chartTypes={chartTypes} onChartTypeChange={handleChartTypeChange} dateRange={dateRange} aiEnabled={!isReadOnly && orgMeta.toggles?.ai !== false}
             supportReadOnly={orgMeta.supportReadOnly} onConversationSeen={markConversationSeen} notifyEmails={orgMeta.supportNotify} refreshNonce={supportRefreshNonce} />
         )}
       </div>
