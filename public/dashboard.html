@@ -2566,7 +2566,7 @@ function SupportInbox({ actionsDisabled, onConversationSeen, notifyEmails, dateR
   const [selectedId, setSelectedId] = useState(null);
   const [thread, setThread] = useState(null);
   const [isLive, setIsLive] = useState(false);
-  const [filter, setFilter] = useState('all'); // all | open | closed
+  const [filter, setFilter] = useState('open'); // all | open | closed — default to Open; no one wants to land on closed tickets
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState('newest'); // newest | oldest | activity
   const [forwardOpen, setForwardOpen] = useState(false);
