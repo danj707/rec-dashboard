@@ -2001,10 +2001,17 @@ function SectionBlock({ sectionId, widgetIds, reportData, loading, freshRts, tar
               const def = W[id]; if (!def) return null;
               const raw = widgetReady(def, reportData) ? reportData[def.reportType] : null;
               const data = raw ? def.transform(raw) : null;
+              // Period-comparison pill (from created_at) — the kpi-strip renders
+              // these tiles directly, not through MetricCard, so compute it here.
+              let prior = null;
+              if (data && def.delta && def.priorValue && raw) {
+                try { const pv = def.priorValue(raw); if (pv != null && !isNaN(pv)) prior = { value: pv, goodWhenDown: !!def.deltaGoodWhenDown, label: def.deltaLabel || 'vs prior 30d' }; } catch (e) {}
+              }
               return <div key={id} className="kpi-strip-item">
                 <span className="kpi-strip-value">{data ? fmt(data.value, data.format) : '...'}</span>
                 <span className="kpi-strip-label">{def.label}</span>
                 {def.note && <span className="kpi-strip-note">{def.note}</span>}
+                {prior && data && <DeltaPill cur={data.value} prev={prior.value} goodWhenDown={prior.goodWhenDown} label={prior.label} />}
               </div>;
             })}
           </div>}
