@@ -359,6 +359,11 @@ const IS_PRINT = params.get('_print') === '1';
 const PRINT_SECTIONS = params.get('sections') ? params.get('sections').split(',') : null;
 const CHART_COLORS = ['#f59e0b','#3b82f6','#22c55e','#ef4444','#8b5cf6','#ec4899','#06b6d4','#84cc16','#14b8a6','#f97316'];
 const pf = v => parseFloat(v) || 0;
+// Signup timestamp (ms) for a user row, or null. Powers the period-comparison
+// pills on the all-time Users & Demographics tiles (computed from created_at
+// rather than a prior-window fetch, which all-time reports don't have).
+const userCreatedMs = r => { const d = r['created_at'] || r['Created At'] || r['signup_date'] || r['Signup Date'] || r['Created'] || ''; const t = d ? new Date(d).getTime() : NaN; return isNaN(t) ? null : t; };
+const DAY_MS = 86400000;
 
 function fmt(val, format) {
   if (val == null || isNaN(val)) return '\u2014';
@@ -756,26 +761,31 @@ const W = {
 
   // ── Users ──
   'user-total': { label: 'Total Users', description: 'All registered users', note: 'All registered household members', section: 'users-demographics',
-    reportType: 'users', size: 'sm', icon: '\uD83D\uDC65', component: 'metric',
+    reportType: 'users', size: 'sm', icon: '\uD83D\uDC65', component: 'metric', delta: true,
+    priorValue: rows => rows.filter(r => { const t = userCreatedMs(r); return t != null && t <= Date.now() - 30 * DAY_MS; }).length,
     transform: rows => ({ value: rows.length, format:'number' }) },
   'user-new': { label: 'New Users', description: 'Recently registered', note: 'Signed up in the last 30 days', section: 'users-demographics',
-    reportType: 'users', size: 'sm', icon: '\uD83C\uDD95', component: 'metric',
+    reportType: 'users', size: 'sm', icon: '\uD83C\uDD95', component: 'metric', delta: true,
+    priorValue: rows => rows.filter(r => { const t = userCreatedMs(r); return t != null && t > Date.now() - 60 * DAY_MS && t <= Date.now() - 30 * DAY_MS; }).length,
     transform: rows => {
       const thirtyAgo=Date.now()-30*86400000;
       return { value: rows.filter(r=>{const d=r['created_at']||r['Created At']||r['signup_date']||''; return d&&new Date(d).getTime()>thirtyAgo;}).length, format:'number', colorClass:'metric-green' };
     }},
   'user-households': { label: 'Households', description: 'Distinct household accounts', note: 'Unique household IDs (heads of household)', section: 'users-demographics',
-    reportType: 'users', size: 'sm', icon: '\uD83C\uDFE0', component: 'metric',
+    reportType: 'users', size: 'sm', icon: '\uD83C\uDFE0', component: 'metric', delta: true,
+    priorValue: rows => new Set(rows.filter(r => { const t = userCreatedMs(r); return t != null && t <= Date.now() - 30 * DAY_MS; }).map(r => r['Household ID']).filter(Boolean)).size,
     transform: rows => ({ value: new Set(rows.map(r=>r['Household ID']).filter(Boolean)).size, format:'number' }) },
   'user-residents': { label: 'Residents', description: 'Resident percentage', note: 'Percentage of users with resident status', section: 'users-demographics',
-    reportType: 'users', size: 'sm', icon: '\uD83C\uDFE1', component: 'metric',
+    reportType: 'users', size: 'sm', icon: '\uD83C\uDFE1', component: 'metric', delta: true,
+    priorValue: rows => { const p = rows.filter(r => { const t = userCreatedMs(r); return t != null && t <= Date.now() - 30 * DAY_MS; }); if (!p.length) return null; const res = p.filter(r => { const v = (r['Residency?']||'').toLowerCase(); return v==='resident'||v==='yes'||v==='true'||v==='r'; }).length; return Math.round(res / p.length * 1000) / 10; },
     transform: rows => {
       if(!rows.length) return { value: 0, format:'number', sub:'0 of 0' };
       const res=rows.filter(r=>{const v=(r['Residency?']||'').toLowerCase(); return v==='resident'||v==='yes'||v==='true'||v==='r';}).length;
       return { value: Math.round(res/rows.length*1000)/10, format:'percent', sub: res.toLocaleString()+' of '+rows.length.toLocaleString(), colorClass: res/rows.length>0.5?'metric-green':'' };
     }},
   'user-median-age': { label: 'Median Age', description: 'Median age of all users', note: 'Middle value of all user ages', section: 'users-demographics',
-    reportType: 'users', size: 'sm', icon: '\uD83C\uDF82', component: 'metric',
+    reportType: 'users', size: 'sm', icon: '\uD83C\uDF82', component: 'metric', delta: true,
+    priorValue: rows => { const p = rows.filter(r => { const t = userCreatedMs(r); return t != null && t <= Date.now() - 30 * DAY_MS; }); const ages = p.map(r => parseInt(r['Age']||r['age'])).filter(a=>!isNaN(a)&&a>0&&a<120).sort((a,b)=>a-b); if (!ages.length) return null; const mid = Math.floor(ages.length/2); return ages.length%2 ? ages[mid] : Math.round((ages[mid-1]+ages[mid])/2); },
     transform: rows => {
       const ages=rows.map(r=>parseInt(r['Age']||r['age'])).filter(a=>!isNaN(a)&&a>0&&a<120).sort((a,b)=>a-b);
       if(!ages.length) return { value: 0, format:'number' };
@@ -1663,6 +1673,15 @@ function WidgetCard({ widgetId, reportData, loading, freshRts, target, onTargetC
     try {
       const pv = def.transform(priorReportData[def.reportType]);
       if (pv && pv.value != null) prior = { value: pv.value, goodWhenDown: !!def.deltaGoodWhenDown, label: 'vs ' + (priorReportData._label || fmtRangeShort(priorReportData._window)) };
+    } catch (e) {}
+  }
+  // Bespoke period comparison for all-time metrics (e.g. Users & Demographics):
+  // the generic path above needs a prior-window fetch that all-time reports
+  // don't have, so these tiles compute the prior value from created_at instead.
+  if (!prior && def.delta && def.priorValue && def.component === 'metric' && raw) {
+    try {
+      const pv = def.priorValue(raw);
+      if (pv != null && !isNaN(pv)) prior = { value: pv, goodWhenDown: !!def.deltaGoodWhenDown, label: def.deltaLabel || 'vs prior 30d' };
     } catch (e) {}
   }
   const data = raw ? (def._multiSource ? def.transform(raw, reportData) : def.transform(raw)) : null;
