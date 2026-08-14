@@ -3017,11 +3017,9 @@ function DashboardApp() {
     fetch(`/${ORG_SLUG}/api/support/inbox?token=${TOKEN}&start=${dateRange.start}&end=${dateRange.end}`).then(r => r.json())
       .then(json => setSupportConvs(json.conversations || [])).catch(() => {});
   }, [availableReports.support, dateRange.start, dateRange.end]);
-  const escalationBadge = (() => {
-    if (!supportConvs) return 0;
-    const seen = getSeen();
-    return supportConvs.filter(c => c.orgEscalated && !c.orgResolved && !seen.has(c.id)).length;
-  })();
+  // Open questions awaiting a reply — surfaced as a red count on the Customer
+  // Support tab so the admin sees pending questions without opening the tab.
+  const openBadge = supportConvs ? supportConvs.filter(c => c.state === 'open').length : 0;
   const [lastRefresh, setLastRefresh] = useState(null);
   const [theme, setTheme] = useState('light');
   const [targets, setTargets] = useState({});
@@ -3303,7 +3301,7 @@ function DashboardApp() {
         <div className="g-tabs" style={{marginBottom:14}}>
           <button className={`g-tab ${activeTab==='dashboard'?'active':''}`} onClick={()=>{setActiveTab('dashboard');track('tab_changed',{tab:'dashboard'});}}>{'📊'} Dashboard</button>
           <button className={`g-tab ${activeTab==='support'?'active':''}`} onClick={()=>{setActiveTab('support');track('tab_changed',{tab:'support'});}}>{'💬'} Customer Support
-            {escalationBadge > 0 && <span className="tab-alert" title={`${escalationBadge} escalated conversation${escalationBadge > 1 ? 's' : ''} awaiting review`}>{escalationBadge}</span>}
+            {openBadge > 0 && <span className="tab-alert" title={`${openBadge} open question${openBadge > 1 ? 's' : ''} awaiting a reply`}>{openBadge}</span>}
           </button>
         </div>
       )}
