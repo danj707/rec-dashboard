@@ -1890,3 +1890,80 @@ app.listen(PORT, () => {
     }, 25000);
   }
 });
+
+// ═══════════════════════════════════════════
+//  METABASE CANARY — catch the next silent outage
+// ═══════════════════════════════════════════
+// 2026-08-10: a Metabase behavior change 400'd every widget fetch for every
+// org and the dashboards rendered plausible-looking zeros for hours. This
+// canary re-fetches one real org's GL feed through the SAME code path the
+// widgets use, hourly, and alerts when it errors or comes back empty after
+// previously having rows. Alerts go to Slack when SLACK_WEBHOOK_URL is set,
+// else email via Resend (ALERT_EMAIL, default dan@rec.us), else console.
+const CANARY_INTERVAL_MS = 60 * 60 * 1000;   // hourly
+const CANARY_ALERT_COOLDOWN_MS = 6 * 60 * 60 * 1000;  // re-alert at most every 6h while broken
+let _canaryLastGood = null;   // row count from the last successful probe
+let _canaryLastAlert = 0;
+let _canaryBroken = false;
+
+async function sendOpsAlert(subject, body) {
+  const slack = process.env.SLACK_WEBHOOK_URL;
+  if (slack) {
+    try {
+      await fetch(slack, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: `*${subject}*\n${body}` }) });
+      return;
+    } catch (e) { console.error('[canary] Slack alert failed:', e.message); }
+  }
+  const key = process.env.RESEND_API_KEY;
+  const to = process.env.ALERT_EMAIL || 'dan@rec.us';
+  if (key) {
+    try {
+      await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          from: `${process.env.FROM_NAME || 'Rec Dashboard'} <${process.env.FROM_EMAIL || 'reports@rec.us'}>`,
+          to, subject,
+          html: `<pre style="font-family:sans-serif;white-space:pre-wrap">${body}</pre>`,
+        }),
+      });
+      return;
+    } catch (e) { console.error('[canary] Resend alert failed:', e.message); }
+  }
+  console.error(`[canary] ALERT (no Slack/Resend configured): ${subject} — ${body}`);
+}
+
+async function runMetabaseCanary() {
+  // First org with an orgId — GL is a shared card, so any real org works.
+  const slug = Object.keys(ORGS).find(s => ORGS[s]?.orgId);
+  if (!slug) return;
+  const end = new Date().toISOString().slice(0, 10);
+  const start = new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10);
+  try {
+    const rows = await fetchMetabaseData(slug, 'gl', { start, end, _canary: Date.now() });
+    const n = Array.isArray(rows) ? rows.length : 0;
+    if (n === 0 && _canaryLastGood > 0) {
+      throw new Error(`GL probe returned 0 rows for ${slug} (last good probe had ${_canaryLastGood})`);
+    }
+    if (n > 0) _canaryLastGood = n;
+    if (_canaryBroken) {
+      _canaryBroken = false;
+      await sendOpsAlert('✅ rec-dashboard Metabase canary recovered',
+        `${slug}/gl (${start}..${end}) returned ${n} rows. Dashboards should be healthy again.`);
+    }
+    console.log(`[canary] OK — ${slug}/gl ${n} rows`);
+  } catch (e) {
+    _canaryBroken = true;
+    console.error(`[canary] FAIL — ${slug}/gl: ${e.message}`);
+    if (Date.now() - _canaryLastAlert > CANARY_ALERT_COOLDOWN_MS) {
+      _canaryLastAlert = Date.now();
+      await sendOpsAlert('🚨 rec-dashboard Metabase canary FAILED — dashboards may be showing zeros',
+        `Probe: ${slug}/gl ${start}..${end}\nError: ${e.message}\n\nThis probe uses the exact fetch path the dashboard widgets use. ` +
+        `If it fails, every org's dashboard is likely rendering empty/zero widgets. ` +
+        `Check Railway logs for [ERROR] lines and the Metabase public-card endpoints.`);
+    }
+  }
+}
+setTimeout(runMetabaseCanary, 2 * 60 * 1000);      // first probe 2 min after boot
+setInterval(runMetabaseCanary, CANARY_INTERVAL_MS);
