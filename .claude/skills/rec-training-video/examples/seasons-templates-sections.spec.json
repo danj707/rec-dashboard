@@ -1,0 +1,49 @@
+{
+  "title": "Seasons, Templates & Sections",
+  "subtitle": "Programming in Rec · Admin walkthrough",
+  "outFile": "Rec-Training_Seasons-Templates-Sections.mp4",
+  "start": "https://www.rec.us/admin/o/a976a11a-5303-4785-838a-1b281ca77678/programming/templates",
+  "intro": {
+    "title": "Programming in Rec",
+    "lines": ["Program Template → Section → Session.", "Seasons organize it all."],
+    "narration": "Before you build anything in Rec, it helps to know the hierarchy. A program template is the top-level container — like Youth Soccer or Beginner Ballet. Inside it, a section is a specific offering, such as a spring Tuesday-Thursday series. And each section is made up of sessions — the individual class meetings. Seasons sit alongside all of this, organizing your sections into time periods. Set your templates up thoughtfully, and building next season becomes a fraction of the work."
+  },
+  "steps": [
+    {
+      "path": "https://www.rec.us/admin/o/a976a11a-5303-4785-838a-1b281ca77678/seasons",
+      "title": "Start with Seasons",
+      "lines": ["Set dates, publish times, and registration windows.", "Create seasons first, then build."],
+      "narration": "It's best to start with seasons. Under Programming, open Seasons to see each one with its dates and how many sections it holds. When you create a season, you set its name, start and end dates, and a publish date and time — so every program you assign to it can go live automatically. You can also add group registration windows, like letting residents register a week before everyone else. Set your seasons up first, and those dates flow into every section you create."
+    },
+    {
+      "path": "https://www.rec.us/admin/o/a976a11a-5303-4785-838a-1b281ca77678/programming/templates",
+      "title": "Program templates",
+      "lines": ["The reusable, top-level container.", "One or more activities per program."],
+      "narration": "Next, your program templates. Each one is the reusable container for a program, tagged to one or more activities, with a count of the sections inside it. Creating a template is where you set a default description — which is what participants see on your public programming page — along with your general ledger codes. Everything you build then lives inside the template as sections."
+    },
+    {
+      "path": "https://www.rec.us/admin/o/a976a11a-5303-4785-838a-1b281ca77678/programming/programs/ae4dc5e6-ff00-492f-85c9-6de9af70b6d5",
+      "title": "Inside a template",
+      "lines": ["The template holds all its sections.", "New Section starts a fresh one."],
+      "narration": "Open a template and you'll see every section it contains, with enrollments, capacity, pricing, and status side by side. This is the reuse in action — one template, many sections across many seasons. When you're ready to add another offering, the New Section button starts a fresh one, and you can archive a template you no longer need."
+    },
+    {
+      "path": "https://www.rec.us/admin/o/a976a11a-5303-4785-838a-1b281ca77678/programming/sections/760cc24f-09e9-4af0-80e1-cd82cdab192d",
+      "title": "A section, up close",
+      "lines": ["A section is a series of sessions.", "Dates, a location, and a site."],
+      "narration": "A section is a specific offering — a series of sessions. When you build one, you choose your dates, either one at a time or on a recurring schedule. You pick a location, like a community center or a park, and optionally a site within it, like a specific room or field. Rec lays out each session for you and prevents double-booking, so two things can never land on the same site at the same time. From here you can manage the schedule, rosters, waitlist, and attendance."
+    },
+    {
+      "path": "https://www.rec.us/admin/o/a976a11a-5303-4785-838a-1b281ca77678/programming/sections/760cc24f-09e9-4af0-80e1-cd82cdab192d",
+      "title": "Configuring a section",
+      "lines": ["Eligibility, capacity, pricing, forms.", "Set it once — it carries forward."],
+      "narration": "Every section carries its own settings, right here in the section-level defaults. Set your registration dates and pricing, including special rates for residents or members and payment plans. Choose a facilitator, a skill level, and your capacity, with an optional minimum and a waitlist. And control who can register with eligibility rules for age, grade, or gender — plus the required information and forms, like a waiver, that participants complete at signup."
+    },
+    {
+      "path": "https://www.rec.us/admin/o/a976a11a-5303-4785-838a-1b281ca77678/programming/sections",
+      "title": "Manage and reuse",
+      "lines": ["The Sections screen is your home base.", "Duplicate, drop-in, and search."],
+      "narration": "The Sections screen is your home base for the whole catalog. The cards up top track fast track, enrollments, cancellations, and revenue for the window you choose, and the table shows capacity, waitlists, and price at a glance — sortable, filterable, and searchable, with column settings you can tailor to your team. And this is where the payoff lands: duplicate last season's sections instead of rebuilding them, turn on flexible drop-in registration when people should sign up one session at a time, and search to jump straight to any program or section."
+    }
+  ]
+}
