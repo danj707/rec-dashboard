@@ -1,0 +1,31 @@
+{
+  "title": "Finance & Reporting",
+  "subtitle": "The Report Library in Rec · Admin walkthrough",
+  "outFile": "Rec-Training_Finance-and-Reporting.mp4",
+  "start": "https://www.rec.us/admin/rec/a976a11a-5303-4785-838a-1b281ca77678/report-library",
+  "intro": {
+    "title": "Finance & Reporting",
+    "lines": ["GL codes categorize every dollar.", "The Report Library is where you pull it back out."],
+    "narration": "Here's how money moves through Rec, and how you get it back out as numbers your finance office trusts. It starts with your G-L codes — every dollar, from a registration, a membership, a rental, or a point-of-sale purchase, is categorized by general ledger code at the source. Reporting sits on top of that foundation, and the Report Library is where it all comes together — every report for your organization in one place, grouped by category, each with a plain description, ready to run or export."
+  },
+  "steps": [
+    {
+      "path": "https://www.rec.us/admin/rec/a976a11a-5303-4785-838a-1b281ca77678/report-library?tab=finance",
+      "title": "Finance reports",
+      "lines": ["Sales, revenue, cash-out, and A/R aging.", "Right GL codes at the source = right reports."],
+      "narration": "The Finance category is where your money reports live — the G-L Code Rollup summarizing debits and credits by code, Daily Cashout for end-of-day reconciliation, gross sales by item, and accounts-receivable aging by customer or by plan, for whatever date range you need. This is the payoff of getting your G-L structure right: because every dollar was categorized at the source, revenue sorts itself into the correct buckets automatically. The reports come out right for free, which is what makes reconciliation and month-end close fast instead of a manual re-tagging exercise."
+    },
+    {
+      "path": "https://www.rec.us/admin/rec/a976a11a-5303-4785-838a-1b281ca77678/report-library?tab=custom",
+      "title": "Custom reports",
+      "lines": ["Tailored reports, right in the Library.", "Built with your success manager — or saved from Seb."],
+      "narration": "When a standard report isn't quite the cut you need, there's the Custom tab. Custom reports are tailored to your organization — built and shared by your Rec success manager, or saved straight from a Seb conversation — and they appear right here in your library, filterable by area like finance, programs, or facilities. It's currently in beta, and it's how you get exactly the view your finance office asks for, without exporting and re-building it by hand."
+    },
+    {
+      "path": "https://www.rec.us/admin/rec/a976a11a-5303-4785-838a-1b281ca77678/report-library",
+      "title": "Bring to Discovery",
+      "lines": ["Which GL codes we should mirror.", "How and how often you reconcile.", "Any exports downstream systems need."],
+      "narration": "As you get ready for Discovery, a few things are worth gathering. Which G-L codes you already use and need us to mirror. How often you reconcile, and to what system. Whether anyone downstream needs an export in a specific format. And any revenue that has to split across more than one code. Get the categorization right at the source, and the reports are right for free."
+    }
+  ]
+}
