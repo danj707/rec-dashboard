@@ -1,0 +1,43 @@
+{
+  "title": "Locations & Sites",
+  "subtitle": "Facility structure in Rec · Admin walkthrough",
+  "outFile": "Rec-Training_Locations-and-Sites.mp4",
+  "start": "https://www.rec.us/admin/o/a976a11a-5303-4785-838a-1b281ca77678/locations",
+  "intro": {
+    "title": "Locations & Sites",
+    "lines": ["A Location is a building or park.", "A Site is a bookable space inside it."],
+    "narration": "In Rec, physical space has two levels. A location is a building or a park — like Riverside Community Center. A site is a bookable space inside it, like a gymnasium, a picnic shelter, or field three. This is the foundation that programs, rentals, and reporting all hang off of, so it's worth getting right first. You'll find it all under Settings, then Locations — and each location shows how many sites live inside it."
+  },
+  "steps": [
+    {
+      "path": "https://www.rec.us/admin/o/a976a11a-5303-4785-838a-1b281ca77678/locations/new",
+      "title": "Create a location",
+      "lines": ["Name, address, hours, and timezone.", "Add photos and arrival details."],
+      "narration": "To add a location, click New Location and fill in the basics — a clear public name, a description, and the address, which you can drop right on the map. Set the hours of operation, the timezone, and a default reservation window. Add a featured photo, plus any check-in or getting-there details to help residents find the place. Save, and your new location joins the list."
+    },
+    {
+      "path": "https://www.rec.us/admin/o/a976a11a-5303-4785-838a-1b281ca77678/locations/f7f40b16-d995-4e09-9c3b-5730095a8948/details",
+      "title": "A location up close",
+      "lines": ["Two tabs: Details and Sites.", "Edit the location, or manage its spaces."],
+      "narration": "Open a location and you'll see two tabs. Details is where you edit everything about the location itself — its name, address, hours, and photos. And Sites is where the bookable spaces live. Remember, a location has to exist before you can add any sites inside it."
+    },
+    {
+      "path": "https://www.rec.us/admin/o/a976a11a-5303-4785-838a-1b281ca77678/locations/f7f40b16-d995-4e09-9c3b-5730095a8948/sites",
+      "title": "Sites live inside a location",
+      "lines": ["Each site has a name and a type.", "New Site adds another space."],
+      "narration": "On the Sites tab, you'll see every bookable space in this location, each with a name and a type. Avery Park here has dozens of sites — courts, campsites, and more. The New Site button adds another one, and because a site belongs to its location, it starts from that location's address and hours."
+    },
+    {
+      "path": "https://www.rec.us/admin/o/a976a11a-5303-4785-838a-1b281ca77678/locations/f7f40b16-d995-4e09-9c3b-5730095a8948/sites/079274bd-f660-43b8-85d8-3765ac649ec7",
+      "title": "Configure a site",
+      "lines": ["Set the type: court, rink, pool, and more.", "Booking unit, capacity, and publishing."],
+      "narration": "Open a site to configure it. Choose the site type — court, rink, pool, field, gym, and more — and how it's booked, by the hour, the night, or the day. Set the capacity, write a description, and pick the activities it supports. From here you can also publish it to the public, set buffer times between reservations, link overlapping spaces so booking one blocks the other, and turn on instant booking or request-to-book."
+    },
+    {
+      "path": "https://www.rec.us/admin/o/a976a11a-5303-4785-838a-1b281ca77678/locations",
+      "title": "How granular should you go?",
+      "lines": ["Match it to how you actually operate.", "We'll figure it out in Discovery."],
+      "narration": "So how granular should you get? It depends on how you actually operate. If you schedule and rent individual rooms in a community center, each room should be its own site. But if you treat a fieldhouse as a single bookable unit, it doesn't need a breakout. You don't have to default to maximum detail — we'll work out the right level together in Discovery."
+    }
+  ]
+}
