@@ -88,7 +88,7 @@ async function narrateAll() {
   }
   // shared outro line
   const outroFile = path.join(WORK, 'narr-outro.mp3');
-  await tts(SPEC.outroNarration || `Thanks for watching. If you have any questions, reach out to the Rec Customer Experience team at partner support at rec dot us.`, outroFile);
+  await tts(SPEC.outroNarration || `Thanks for watching. If you have any questions, reach out to the Rec Customer Experience team at partner support at rec dot you ess.`, outroFile);
   return { clips, outro: { file: outroFile, dur: dur(outroFile) } };
 }
 
