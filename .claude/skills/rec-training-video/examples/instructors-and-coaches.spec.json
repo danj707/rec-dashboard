@@ -1,0 +1,31 @@
+{
+  "title": "Instructors & Coaches",
+  "subtitle": "Instructors & facilitators in Rec · Admin walkthrough",
+  "outFile": "Rec-Training_Instructors-and-Coaches.mp4",
+  "start": "https://www.rec.us/admin/o/a976a11a-5303-4785-838a-1b281ca77678/instructors",
+  "intro": {
+    "title": "Instructors & Coaches",
+    "lines": ["Facilitators who lead your sections.", "A role added on top of a Rec account."],
+    "narration": "Here's how instructors — also called facilitators — work in Rec. Under Programming, the Instructors list shows everyone who leads your sections, along with their status and how many sections and students they have. The key thing to understand up front: an instructor is a role applied on top of an existing Rec account, not a brand-new one. So each person needs a Rec account first, and then you add the instructor role."
+  },
+  "steps": [
+    {
+      "path": "https://www.rec.us/admin/o/a976a11a-5303-4785-838a-1b281ca77678/instructors",
+      "title": "Add an instructor",
+      "lines": ["New Instructor → pick an existing account.", "Add a bio, photo, and 1099 status."],
+      "narration": "To add one, click New Instructor and search for the person by name or email. If they don't appear, create their Rec account first under Users, then come back. Once you select them, you'll complete their profile — a short bio and a photo, which can show on your public program pages — and you can flag them as an independent contractor, a nine-ninety-nine attribute used for payout reporting."
+    },
+    {
+      "path": "https://www.rec.us/admin/o/a976a11a-5303-4785-838a-1b281ca77678/instructors/a376da96-2024-456f-a9db-1764c43f1f8d/sections",
+      "title": "Internal vs external",
+      "lines": ["Internal staff carry a role & permissions.", "External contractors see only their rosters."],
+      "narration": "There are two kinds of instructor. An internal instructor is a staff member who also carries a role and permissions in your admin Members list — they can see rosters across your organization and edit participants. An external instructor is a contracted third party with no admin access; they can only see the rosters for the classes they're assigned to, and check those participants in and out. Either way, an instructor's page shows every section they lead, their student counts, and a link straight to their household."
+    },
+    {
+      "path": "https://www.rec.us/admin/o/a976a11a-5303-4785-838a-1b281ca77678/programming/sections/760cc24f-09e9-4af0-80e1-cd82cdab192d",
+      "title": "Assign to a section",
+      "lines": ["Add them in the section's Facilitators field.", "Active instructors show in the dropdown."],
+      "narration": "Assigning is simple: open a section and add the instructor in its Facilitators field — only Active instructors appear in the dropdown, and once assigned, their name and photo show on the section's public page. Giving instructors this direct access to their own rosters and attendance is usually a quick win, removing a recurring hand-off from someone's plate. We'll map out your instructor list, and who's internal versus external, together in Discovery."
+    }
+  ]
+}
