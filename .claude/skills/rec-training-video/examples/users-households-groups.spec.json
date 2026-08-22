@@ -2,24 +2,24 @@
   "title": "Users, Households & Groups",
   "subtitle": "The people model in Rec · Admin walkthrough",
   "outFile": "Rec-Training_Users-Households-Groups.mp4",
-  "start": "https://www.rec.us/admin/o/a976a11a-5303-4785-838a-1b281ca77678/users",
+  "start": "https://www.rec.us/admin/o/a976a11a-5303-4785-838a-1b281ca77678/users/ced1aee0-e89d-404c-abe1-c0ce27bd14f4",
   "intro": {
     "title": "Users, Households & Groups",
     "lines": ["Users sit inside households.", "Groups organize them for pricing & eligibility."],
-    "narration": "This is how Rec models the people you serve. Every individual user sits inside a household, and this Users directory is where your whole community lives. Groups then organize users for pricing tiers, eligibility rules, and reporting — most commonly, residents versus non-residents. This structure sits behind almost everything a front desk does each day, so getting comfortable here prevents a lot of downstream confusion."
+    "narration": "This is how Rec models the people you serve. Every individual user sits inside a household — here's the Swanson household, with its owner, members, address, and account balance all in one place. Groups then organize users for pricing tiers, eligibility rules, and reporting — most commonly, residents versus non-residents. This structure sits behind almost everything a front desk does each day, so getting comfortable here prevents a lot of downstream confusion."
   },
   "steps": [
     {
-      "path": "https://www.rec.us/admin/o/a976a11a-5303-4785-838a-1b281ca77678/users/53cfa816-8fdc-402b-ab0b-8e6faf5ea053",
+      "card": "Profiles",
       "title": "Households & profiles",
       "lines": ["One owner logs in; profiles are members.", "Add a family member under Profiles."],
-      "narration": "Open a household and you'll see everyone in it. One person is the household owner — the account that logs in — and the other profiles are members, like children or family, who don't need their own login. Under Profiles you can add a family member, and from the Actions menu you can edit contact details. One thing to watch: each account needs a unique phone number, so duplicate accounts are the most common cause of a phone-number error."
+      "narration": "A household has one owner — the account that actually logs in — and everyone else is a profile, like a spouse or a child, who doesn't need their own login. Under Profiles you can see every member and add a new family member, and from the Actions menu you can edit contact details. One thing to watch: each account needs a unique phone number, so duplicate accounts are the most common cause of a phone-number error."
     },
     {
-      "path": "https://www.rec.us/admin/o/a976a11a-5303-4785-838a-1b281ca77678/users",
+      "path": "https://www.rec.us/admin/o/a976a11a-5303-4785-838a-1b281ca77678/users?search=Swanson",
       "title": "Create & find users",
       "lines": ["New Account captures the essentials.", "Search by full email or mobile number."],
-      "narration": "You can create a user yourself with New Account — capturing their name, date of birth for age-restricted programs, phone, and home address for residency. To find someone, your most reliable search is a full email address or mobile number. You can search by name too, but only once that person has registered or transacted with you — and to find a child, search the parent's email."
+      "narration": "To add someone who isn't in Rec yet, use New Account — capturing their name, date of birth for age-restricted programs, phone, and home address for residency. To find an existing user, your most reliable search is a full email address or mobile number. You can search by name once they've registered with you — and to find a child, search the parent's email."
     },
     {
       "path": "https://www.rec.us/admin/o/a976a11a-5303-4785-838a-1b281ca77678/users/groups",
