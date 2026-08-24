@@ -20,14 +20,15 @@ narration factual and flag anything you were unsure about when you deliver.
 Before doing anything else, collect these. Ask for them together in one message; fill
 sensible defaults where the request already answered one.
 
-1. **Login** — the rec.us **email and password** to record with. These are used only for
-   this build, passed to the builder via `REC_EMAIL` / `REC_PASSWORD` env vars, and **never
-   written to disk or committed**. Nothing is bundled. Prefer a sandbox/admin login with no
-   real PII. (The shared ElevenLabs narration key *is* bundled, so don't ask for that.)
-2. **Which site** — default `https://www.rec.us` (production). If they name a different
-   rec.us environment (sandbox/staging), use that host. Also get the **org** — either the
-   admin URL they want (`/admin/o/<uuid>/…`) or the org name (resolve the UUID with the
-   `search_organizations` MCP tool).
+1. **Login** — defaults to the **bundled Rec University admin** (`niagara+admin6@rec.us`) in
+   `credentials.json`, so for standard training videos you don't need to ask. Only ask for a
+   login when recording a **different** org; then pass it via `REC_EMAIL` / `REC_PASSWORD` for
+   that one build and **never write it to disk or commit it**. (The ElevenLabs key is bundled too.)
+2. **Which org** — default is the **Rec University** demo org on `https://www.rec.us`:
+   org `9f032cf2-0fc4-440e-b2f3-2f8382c9ca7f` (public page `/organizations/rec-university`).
+   Record all standard training videos here. Only use a different org if the requester names
+   one — then get its admin URL (`/admin/o/<uuid>/…`) or resolve the UUID with
+   `search_organizations`, and get a login for it.
 3. **Example link (if applicable)** — ask for a URL to the exact part of Rec the video is
    about (e.g. the settings page or a specific record). If they give one, it's your `start`
    URL and removes all guesswork about which org/section they mean. If there's no single
@@ -57,22 +58,19 @@ sensible defaults where the request already answered one.
 If a required input is missing and you can't safely default it, ask a short follow-up
 rather than guessing. Don't proceed to recording without a working login and a clear target.
 
-### Credential handling (hard rules — the login must never persist)
+### Credential handling
 
-The login the requester gives you is used **only** to record this one video, then discarded:
+The **Rec University demo login is bundled** in `credentials.json` for zero-setup recording of the training org — that's intentional. Any **other** login a requester gives you (to record a different org) is used **only** for that one build, then discarded:
 
-- Pass it to the builder **through the environment only** (`REC_EMAIL='…' REC_PASSWORD='…' node make-video.js …`). Never put it in a spec file, `config.json`, `credentials.json`, a script, a note, or any file.
-- The builder uses the login solely to fill the rec.us login form; it writes it nowhere. All intermediate files (narration, recording) go to a temp dir outside the repo that is deleted when the build finishes. The finished MP4 contains no credentials.
-- **Never commit the login.** It doesn't belong in git at all. Only ever commit the code/config; the output MP4 and the `work/` dir are git-ignored.
-- Don't echo the password back to the requester or print it in logs.
-
-Net effect: the credentials live only in the running build's memory and the ephemeral container, never in the repository. When the build is done, they're gone.
+- Pass a provided login **through the environment only** (`REC_EMAIL='…' REC_PASSWORD='…' node make-video.js …`). Never put a requester-provided login in a spec file, a script, a note, or any file.
+- The builder uses the login solely to fill the rec.us login form; it writes it nowhere. Intermediate files go to a temp dir outside the repo, deleted when the build finishes. The finished MP4 contains no credentials.
+- **Never commit a requester-provided login**, and don't echo passwords back or print them in logs.
 
 ### Demo data — never show real resident PII
 
 When a video needs to show people — a user, a household, a profile, a search result, a roster — use a **fake test household**, not the live directory, so no real resident's name, email, phone, or birthdate ever lands on screen:
 
-- **Niagara Falls sandbox (org `a976a11a-5303-4785-838a-1b281ca77678`):** use **Ron Swanson's Household** — login/owner `niagara@rec.us`, household id `ced1aee0-e89d-404c-abe1-c0ce27bd14f4`. It's fully fake (Parks & Rec) data with lots of members, bookings, transactions, etc. Point every people-related step at this household.
+- **Rec University demo org (`9f032cf2-0fc4-440e-b2f3-2f8382c9ca7f`):** use **Ron Swanson's Household** — owner `niagara@rec.us`, household id `ced1aee0-e89d-404c-abe1-c0ce27bd14f4` (full URL `/admin/o/9f032cf2-0fc4-440e-b2f3-2f8382c9ca7f/users/ced1aee0-e89d-404c-abe1-c0ce27bd14f4`). It's fully fake (Parks & Rec) data with lots of members, bookings, and transactions. Point every people-related step at this household.
 - **Avoid these as general shots — they expose real PII:** the **Users directory** (`/users`, even filtered) and a household's **Profiles tab** both list real residents' emails, phones, and birthdates. Safe to show: a household's **overview / Bookings** (names only) and the **Groups** list (group names, coverage, counts — no individuals).
 - **Other orgs:** ask the requester for their designated fake/test household before showing any personal data; don't default to the live directory.
 - After building any video that touched people data, sample frames and confirm no real emails/phones/birthdates are visible before delivering.
@@ -89,7 +87,7 @@ When a video needs to show people — a user, a household, a profile, a search r
 
 ## Prerequisites (check first, tell the user if missing)
 
-- Login: provided at intake → export as `REC_EMAIL` / `REC_PASSWORD` for the build only.
+- Login: bundled Rec University admin in `credentials.json`; override with `REC_EMAIL` / `REC_PASSWORD` for a different org (build only, never committed).
 - ElevenLabs key: **bundled** in `credentials.json` (shared Rec key); `ELEVENLABS_API_KEY` overrides it.
 - Tools: `node` with Playwright, `ffmpeg` (full build, for the MP4 muxer), Chromium (pre-installed at `/opt/pw-browsers`). If `ffmpeg` is the minimal Playwright build, `apt-get install -y ffmpeg`.
 - Behind the CCR agent proxy, the builder handles TLS itself (pins the proxy CA, caps TLS at 1.2, reads `HTTPS_PROXY`). No action needed.

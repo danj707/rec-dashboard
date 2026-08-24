@@ -26,9 +26,9 @@ const SPEC = JSON.parse(fs.readFileSync(SPEC_PATH, 'utf8'));
 const OUT = process.argv[3] || SPEC.outFile || 'rec-training-video.mp4';
 const WORK = fs.mkdtempSync(path.join(os.tmpdir(), 'rtv-'));
 
-// Credentials. The login is provided at run time (REC_EMAIL / REC_PASSWORD) — the
-// skill prompts for it, nothing is bundled or written to disk. The ElevenLabs key
-// falls back to the bundled credentials.json (shared Rec key) for zero-setup narration.
+// Credentials. Defaults to the bundled Rec University demo login + ElevenLabs key in
+// credentials.json (zero-setup recording of the training org). REC_EMAIL / REC_PASSWORD
+// override the login at run time when recording a different org (never commit that login).
 const CREDS = (() => { try { return JSON.parse(fs.readFileSync(path.join(HERE, 'credentials.json'), 'utf8')); } catch { return {}; } })();
 const EMAIL = process.env.REC_EMAIL || CREDS.recEmail;
 const PW = process.env.REC_PASSWORD || CREDS.recPassword;
@@ -202,7 +202,7 @@ function brand(body, narrOutro) {
 }
 
 (async () => {
-  if (!EMAIL || !PW) throw new Error('Login required: set REC_EMAIL and REC_PASSWORD (the skill prompts for these — no login is bundled).');
+  if (!EMAIL || !PW) throw new Error('Login required: the bundled Rec University login is missing from credentials.json — set REC_EMAIL and REC_PASSWORD, or restore credentials.json.');
   if (!EL_KEY) throw new Error('missing ELEVENLABS_API_KEY (bundled in credentials.json, or set the env var).');
   console.log('1/4 narrating…'); const narr = await narrateAll();
   console.log('2/4 recording…'); const rec = await record(narr);
