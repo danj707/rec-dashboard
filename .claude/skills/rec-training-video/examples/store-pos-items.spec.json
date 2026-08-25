@@ -1,0 +1,37 @@
+{
+  "title": "Store, POS & Items",
+  "subtitle": "Selling in Rec · Admin walkthrough",
+  "outFile": "Rec-Training_Store-POS-Items.mp4",
+  "start": "https://www.rec.us/admin/o/9f032cf2-0fc4-440e-b2f3-2f8382c9ca7f/store",
+  "intro": {
+    "title": "Store, POS & Items",
+    "lines": ["The Store is your point of sale.", "Items are the catalog behind it."],
+    "narration": "Let's walk through selling in Rec — the Store, your point of sale, and the Items catalog that powers it. Anything you sell over the counter, a snack, a t-shirt, an event permit fee, starts life as an item, and then shows up here on the register, ready to ring up. We'll look at the register first, then go behind it to see how items are created and managed."
+  },
+  "steps": [
+    {
+      "path": "https://www.rec.us/admin/o/9f032cf2-0fc4-440e-b2f3-2f8382c9ca7f/store",
+      "title": "Ring up a sale",
+      "lines": ["Products and Memberships, right at the desk.", "Filter by category, then tap to add."],
+      "narration": "This is the register — the Store, under All Desk Locations. Across the top you can switch between Products and Memberships, and open the cash drawer when you start a shift. Your items are laid out as cards, each with its price, and you can filter by category — Merch, Fees, or Concessions — or search by name. To ring someone up, you'd tap a product to add it to the cart, attach the sale to a customer or continue as a guest, and take payment. Everything a front-desk staffer needs is on this one screen."
+    },
+    {
+      "path": "https://www.rec.us/admin/o/9f032cf2-0fc4-440e-b2f3-2f8382c9ca7f/settings/items",
+      "title": "Manage your items",
+      "lines": ["Settings → Items is the catalog.", "Default price, pricing type, and store visibility."],
+      "narration": "Now let's go behind the register. Under Org Settings, Items is the master catalog — create and manage every product and fee your organization sells. Each row shows the item, its default price, how it's priced, and whether it shows in the admin store. This is the source of truth: what you set here is exactly what your staff see on the register. Keep it tidy, and the point of sale stays simple."
+    },
+    {
+      "path": "https://www.rec.us/admin/o/9f032cf2-0fc4-440e-b2f3-2f8382c9ca7f/settings/items/new",
+      "title": "Create an item",
+      "lines": ["Pick a type, name it, set a price.", "Internal name for staff, display name for customers."],
+      "narration": "Creating a new item is quick. Choose the item type — a product, a fee, or a gift card. Give it an internal name, which only your staff see, and a display name, which is what customers see on their receipt. You can add a color and an icon to make it easy to spot on the register, and set the price. Save it, mark it to show in the admin store, and it appears on the desk right away, ready to sell."
+    },
+    {
+      "path": "https://www.rec.us/admin/o/9f032cf2-0fc4-440e-b2f3-2f8382c9ca7f/store",
+      "title": "From catalog to register",
+      "lines": ["Create once in Items.", "It sells everywhere in the Store."],
+      "narration": "And that's the loop: define an item once in settings, and it flows straight through to the register here in the Store, where your team can ring it up in a couple of taps. Get your catalog set up the way you sell, and the point of sale takes care of itself. Nice work."
+    }
+  ]
+}
