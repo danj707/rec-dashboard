@@ -39,7 +39,10 @@ const ROOT = path.join(__dirname, "..");
 const src = fs.readFileSync(path.join(ROOT, "server.js"), "utf8");
 
 let passed = 0;
-function test(name, fn) { fn(); console.log(`  ✓ ${name}`); passed++; }
+// MUST await: an async case that is not awaited prints ✓ before it runs, and a
+// failure surfaces as an unhandled rejection after the summary. Three cases here
+// are async.
+async function test(name, fn) { await fn(); console.log(`  ✓ ${name}`); passed++; }
 
 // ── A stand-in rental-report, holding the real Shrewsbury shape: the org exists
 //    under a DIFFERENT slug, with a DIFFERENT token, same orgId.
@@ -67,6 +70,30 @@ const stub = http.createServer((req, res) => {
   res.writeHead(404); res.end("{}");
 });
 
+// ── A second stand-in: the SAME data, but /api/admin/org-by-id 404s. This is
+//    production rental-report as it stands today — that endpoint ships in a PR
+//    that has not merged. The drift must still be resolved against it, or the
+//    fix is inert until an unrelated deploy lands in the other project.
+//    `sister-city` is the trap: a real org with a similar name and a DIFFERENT
+//    orgId, which must never be adopted.
+const OLD = {
+  shrewsbury:    { token: "17hO58KgKgNVauE5", orgId: "0a9c47af-b4c3-4601-ab0f-d2f401bb787a" },
+  "sister-city": { token: "notOurs", orgId: "deadbeef-0000-0000-0000-000000000000" },
+};
+let oldReqs = [];
+const stubOld = http.createServer((req, res) => {
+  oldReqs.push(req.url);
+  const send = o => { res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify(o)); };
+  const m = /^\/api\/admin\/org\/([^/?]+)/.exec(req.url);
+  if (m) {
+    const slug = decodeURIComponent(m[1]);
+    const o = OLD[slug];
+    return send(o ? { exists: true, slug, ...o } : { exists: false });
+  }
+  // org-by-id does not exist here.
+  res.writeHead(404); res.end("Cannot GET");
+});
+
 // ── Lift the real reconciliation out of server.js rather than restating it: a
 //    copy would keep passing after the shipping one regressed.
 function slice(from, to) {
@@ -86,10 +113,12 @@ function build(base, orgs) {
 (async () => {
   await new Promise(r => stub.listen(0, "127.0.0.1", r));
   const BASE = `http://127.0.0.1:${stub.address().port}`;
+  await new Promise(r => stubOld.listen(0, "127.0.0.1", r));
+  const OLD_BASE = `http://127.0.0.1:${stubOld.address().port}`;
 
   // ── source-level: the client must not build links from its own slug ────────
   const page = fs.readFileSync(path.join(ROOT, "public", "dashboard.html"), "utf8");
-  test("no rental-report URL is built from the dashboard's own slug/token", () => {
+  await test("no rental-report URL is built from the dashboard's own slug/token", () => {
     const bad = page.split("\n").filter(l =>
       /reportingBaseUrl/.test(l) && /ORG_SLUG|[^_]\bTOKEN\b/.test(l) && !/RPT_SLUG|RPT_TOKEN/.test(l));
     assert.deepStrictEqual(bad, [], "these lines still use the dashboard's own names:\n" + bad.join("\n"));
@@ -98,14 +127,14 @@ function build(base, orgs) {
   // Source-level only: this pins that the call exists, not that it behaves. The
   // behaviour above is what is exercised; this is here because Add Org is where
   // the duplicate identity was MADE, and a by-slug-only check there recreates it.
-  test("Add Org looks the org up by orgId too, not only by slug", () => {
+  await test("Add Org looks the org up by orgId too, not only by slug", () => {
     const i = src.indexOf("app.post('/admin/api/orgs'");
     const block = src.slice(i, src.indexOf("ORGS[slug] = org;", i));
     assert.ok(/api\/admin\/org-by-id/.test(block),
       "a by-slug-only check mints a second identity for an org the reporting project already has");
   });
 
-  test("the report-visibility fetch uses the reconciled slug", () => {
+  await test("the report-visibility fetch uses the reconciled slug", () => {
     const i = src.indexOf("/api/org-visibility/");
     const line = src.slice(src.lastIndexOf("\n", i) + 1, src.indexOf("\n", i));
     assert.ok(/reportingIdentity/.test(line), "still fetching visibility with our own slug: " + line.trim());
@@ -121,28 +150,28 @@ function build(base, orgs) {
   const M = build(BASE, ours);
   const summary = await M.reconcileWithReporting();
 
-  test("a renamed org is resolved by orgId, and its links repaired", () => {
+  await test("a renamed org is resolved by orgId, and its links repaired", () => {
     const id = M.reportingIdentity("town-of-shrewsbury");
     assert.strictEqual(id.slug, "shrewsbury", "must adopt the slug rental-report actually serves");
     assert.strictEqual(id.token, "17hO58KgKgNVauE5", "and its token");
     assert.strictEqual(id.state, "slug-drift");
   });
 
-  test("a re-issued token is adopted — the quieter half of the same failure", () => {
+  await test("a re-issued token is adopted — the quieter half of the same failure", () => {
     const id = M.reportingIdentity("torrance");
     assert.strictEqual(id.slug, "torrance");
     assert.strictEqual(id.token, "theirsIsNewer");
     assert.strictEqual(id.state, "token-drift");
   });
 
-  test("an org that already agrees is left alone", () => {
+  await test("an org that already agrees is left alone", () => {
     const id = M.reportingIdentity("watertown");
     assert.strictEqual(id.slug, "watertown");
     assert.strictEqual(id.token, "sameTokenBothSides");
     assert.strictEqual(id.state, "ok");
   });
 
-  test("an org the reporting project does not have gets NO invented identity", () => {
+  await test("an org the reporting project does not have gets NO invented identity", () => {
     const id = M.reportingIdentity("gone-entirely");
     // Falls back to our own names — unchanged behaviour — and says so.
     assert.strictEqual(id.slug, "gone-entirely");
@@ -151,15 +180,40 @@ function build(base, orgs) {
       "a guessed slug would point real links at the wrong org");
   });
 
-  test("the summary counts each kind of drift", () => {
+  await test("the summary counts each kind of drift", () => {
     assert.strictEqual(summary["slug-drift"], 1);
     assert.strictEqual(summary["token-drift"], 1);
     assert.strictEqual(summary.ok, 1);
     assert.strictEqual(summary.missing, 1);
   });
 
+  // ── the fix must not depend on an unmerged deploy in the other project ────
+  const oursOld = {
+    "town-of-shrewsbury": { token: "WcAyo1FVtpVmXXA2", orgId: OLD.shrewsbury.orgId },
+    // Our name for an org whose look-alike over there is a different town.
+    "sister-city-ny":     { token: "ours", orgId: "11112222-3333-4444-5555-666677778888" },
+  };
+  const O = build(OLD_BASE, oursOld);
+  await O.reconcileWithReporting();
+
+  await test("drift still resolves when org-by-id is unavailable (production today)", async () => {
+    const id = O.reportingIdentity("town-of-shrewsbury");
+    assert.strictEqual(id.slug, "shrewsbury",
+      "without a candidate probe the fix is inert until rental-report deploys");
+    assert.strictEqual(id.token, "17hO58KgKgNVauE5");
+    assert.strictEqual(id.state, "slug-drift");
+    assert.ok(oldReqs.some(u => /org\/shrewsbury/.test(u)), "it never probed the surviving slug");
+  });
+
+  await test("a look-alike org with a different orgId is NEVER adopted", () => {
+    // `sister-city` answers 200 over there. Adopting it would point this org's
+    // report links at another town's data — worse than a 404.
+    assert.strictEqual(O.REPORTING_IDENTITY["sister-city-ny"].state, "missing");
+    assert.strictEqual(O.REPORTING_IDENTITY["sister-city-ny"].slug, null);
+  });
+
   // ── degradation ───────────────────────────────────────────────────────────
-  test("an unreachable reporting project leaves links exactly as they were", async () => {
+  await test("an unreachable reporting project leaves links exactly as they were", async () => {
     const N = build("http://127.0.0.1:1", { foo: { token: "t", orgId: "x" } });
     await N.reconcileWithReporting();
     const id = N.reportingIdentity("foo");
@@ -167,18 +221,23 @@ function build(base, orgs) {
     assert.strictEqual(id.token, "t");
   });
 
-  test("no REPORTING_BASE_URL is a skip, not a crash", async () => {
+  await test("no REPORTING_BASE_URL is a skip, not a crash", async () => {
     const N = build("", { foo: { token: "t", orgId: "x" } });
     const r = await N.reconcileWithReporting();
     assert.ok(r && r.skipped, "should report a skip");
     assert.strictEqual(N.reportingIdentity("foo").slug, "foo");
   });
 
-  test("it asks by slug first and only falls back to orgId", () => {
-    // 4 orgs: 4 by-slug calls, plus by-id only for the two that missed.
-    assert.ok(reqCount >= 6 && reqCount <= 8, `unexpected call count: ${reqCount}`);
+  await test("an org that agrees costs exactly one request — no needless probing", async () => {
+    // The happy path is every org, every 6h. Candidate probing must be reachable
+    // only after a by-slug miss, or a fleet reconcile turns into a slug crawl.
+    reqCount = 0;
+    const N = build(BASE, { watertown: { token: "sameTokenBothSides", orgId: THEIRS.watertown.orgId } });
+    await N.reconcileWithReporting();
+    assert.strictEqual(N.reportingIdentity("watertown").state, "ok");
+    assert.strictEqual(reqCount, 1, `an agreeing org made ${reqCount} requests`);
   });
 
-  stub.close();
+  stub.close(); stubOld.close();
   console.log(`\n${passed}/${passed} passing`);
-})().catch(e => { stub.close(); console.error("\n✗ " + e.message); process.exit(1); });
+})().catch(e => { stub.close(); stubOld.close(); console.error("\n✗ " + e.message); process.exit(1); });

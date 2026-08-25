@@ -213,6 +213,21 @@ function reportingIdentity(slug) {
   return { slug, token: org && org.token, state: 'unchecked' };
 }
 
+// Slugs a rename plausibly produced, in both directions — we may be holding the
+// long name (`town-of-shrewsbury`) or the short one. These affix rules mirror
+// rental-report's own near-miss suggestion in `noteDeadLink()`; keep the two in
+// step, per the lockstep rule at the top of CLAUDE.md. Nothing here is trusted on
+// its own: every candidate must prove itself on the organisation UUID.
+const SLUG_AFFIX = /^(town|city|village|township|county)-of-/;
+const SLUG_STATE = /-(ca|ma|nv|mo|tn|nc|ga|ny|nj|pa|oh|il|tx|wa|or|az|co|fl|va|md|ct|ri|nh|vt|me|wi|mn|ia|ks|ne|ut|id|mt|wy|nd|sd|ok|ar|la|ms|al|sc|ky|wv|de|in|mi)$/;
+function candidateSlugs(slug) {
+  const bare = String(slug).replace(SLUG_AFFIX, '').replace(SLUG_STATE, '');
+  const out = new Set([bare, bare.replace(/-county$/, ''), bare + '-county']);
+  for (const p of ['town-of-', 'city-of-', 'village-of-', 'township-of-']) out.add(p + bare);
+  out.delete(slug);
+  return [...out].filter(Boolean).slice(0, 8);
+}
+
 async function reconcileOrgWithReporting(slug) {
   const org = ORGS[slug];
   if (!org || !REPORTING_BASE_URL) return null;
@@ -236,6 +251,24 @@ async function reconcileOrgWithReporting(slug) {
     const byId = await get(`/api/admin/org-by-id/${encodeURIComponent(org.orgId)}`);
     if (byId && byId.exists && byId.slug) {
       return { slug: byId.slug, token: byId.token || org.token,
+               state: 'slug-drift', checkedAt: Date.now() };
+    }
+    // 2b. That endpoint is newer than this code and 404s on an older
+    //     rental-report, which would leave the links broken while waiting on a
+    //     deploy over there. `/api/admin/org/:slug` has always existed, so ask it
+    //     about the slugs a rename would plausibly have produced — and adopt one
+    //     ONLY if its orgId equals ours. That check is what makes this a search
+    //     with a proof rather than a guess: a same-named org in a different state
+    //     answers 200 and must not be adopted.
+    for (const cand of candidateSlugs(slug)) {
+      const hit = await get(`/api/admin/org/${encodeURIComponent(cand)}`);
+      if (!hit || !hit.exists) continue;
+      if (hit.orgId !== org.orgId) {
+        console.warn(`[reporting] \`${cand}\` exists over there but is a DIFFERENT `
+          + `organisation (${hit.orgId} ≠ ${org.orgId}) — not adopting it.`);
+        continue;
+      }
+      return { slug: cand, token: hit.token || org.token,
                state: 'slug-drift', checkedAt: Date.now() };
     }
   }

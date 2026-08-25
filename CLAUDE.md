@@ -41,9 +41,21 @@ the 404.
   project's own name for the org and is precisely the thing that drifts; the
   rec.us `orgId` is stable in both. orgId equality is what makes "same
   organisation, other name" a safe conclusion rather than a guess.
-  `reconcileWithReporting()` runs 4s after boot and every 6h: by slug first, then
-  by `GET /api/admin/org-by-id/:orgId` (added to rental-report in PR #157) when
-  the slug misses.
+  `reconcileWithReporting()` runs 4s after boot and every 6h, in three steps:
+  by our slug; then `GET /api/admin/org-by-id/:orgId` (exact, added to
+  rental-report in PR #157); then, because that endpoint 404s on a rental-report
+  that has not deployed it yet, `GET /api/admin/org/:slug` over the slugs a
+  rename plausibly produced.
+- **The candidate probe is a search with a proof, not a guess.** A candidate is
+  adopted only if its `orgId` equals ours. That matters: a same-named town in
+  another state answers 200, and adopting it would point an org's report links at
+  another town's data — worse than a 404. The affix rules mirror rental-report's
+  own near-miss suggestion in `noteDeadLink()`; keep them in step. Candidates are
+  reachable **only after a by-slug miss**, so an agreeing org still costs exactly
+  one request per reconcile — the spec pins that, or a fleet reconcile becomes a
+  slug crawl. Verified against production rental-report on 2026-08-25, where
+  `org-by-id` is still a 404: `town-of-shrewsbury` → `shrewsbury`, live token
+  adopted, and the resulting report URL returns 200.
 - **`reportingIdentity(slug)` is the ONLY thing allowed to build a rental-report
   URL.** Server-side that means the org-visibility fetch; client-side it means
   `RPT_SLUG()` / `RPT_TOKEN()` in `public/dashboard.html`, fed from `_orgMeta`.
