@@ -48,13 +48,14 @@ sensible default — see "Auto-defaulted" below — so don't make them answer mo
    | Outro | Card label | Email |
    |---|---|---|
    | Customer Experience (default) | Reach out to the Rec Customer Experience team. | `partnersupport@rec.us` |
-   | Sales | Reach out to the Rec Sales team. | *confirm the address with the requester* |
+   | Sales | Reach out to the Rec Sales team. | `sales@rec.us` |
    | Onboarding / Implementation | Reach out to your Rec onboarding team. | *confirm the address* |
    | Custom (a specific dept/person) | *their wording* | *their address* |
 
-   Only Customer Experience has a known default address — for any other team, get the exact
-   email from the requester before building (don't guess an address). Set it via the spec's
-   `outro` object (see below); leave it out for the Customer Experience default.
+   Customer Experience (`partnersupport@rec.us`) and Sales (`sales@rec.us`) have known
+   default addresses. For onboarding or any custom team, get the exact email from the
+   requester before building (don't guess an address). Set it via the spec's `outro` object
+   (see below); leave it out for the Customer Experience default.
 
 **Auto-defaulted (don't ask unless the request is unusual):**
 - **Login** — the **bundled Rec University admin** (`niagara+admin6@rec.us`) in
