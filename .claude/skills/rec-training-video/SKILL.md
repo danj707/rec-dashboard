@@ -114,6 +114,12 @@ Copy an example and edit. Top-level: `title`/`subtitle` (title card), `start` (l
 - `narration`: 1–3 spoken sentences. Write for the ear — expand abbreviations the way they should be *said* ("GL" reads fine; write "partner support at rec dot us", "twelve months", etc.).
 Size the number of sections and narration length to the requester's target length. Keep narration tight and factual.
 
+**Show what you're talking about (important).** Each section's on-screen page must match its narration — don't park on a random or landing page while describing something else. Choose the `path`/`card` for a section so the thing the narration references is actually visible:
+- When narration says "here," "this page," "this list," or names a specific field/button/tab (e.g. "the Facilitators field," "the Finance tab"), make sure that screen or element is on screen for that section — navigate there (or click into it) rather than describing it from afar.
+- If a point genuinely spans a place you can't or shouldn't show (a modal you can't deep-link to, a page with real PII, a feature in a different area), keep that section's narration **general** and don't reference on-screen specifics that aren't visible — or move to a page where it *is* visible.
+- It's fine (and good) to reuse the same page across two sections when both are about that page; it's the mismatch — talking about X while showing Y — to avoid.
+- This doesn't have to be perfect, but default to matching the words to the screen; when in doubt, pick the page the viewer would expect to be looking at for that sentence.
+
 ### 5. Build
 Pass the login through the environment for this one invocation (do not hard-code it in the spec or write it to a file):
 ```bash
