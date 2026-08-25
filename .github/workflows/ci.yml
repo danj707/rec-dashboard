@@ -26,3 +26,9 @@ jobs:
 
       - name: Validate public/*.html JSX blocks
         run: node scripts/ci-check-html.js
+
+      # Pins that report links are built from the identity the reporting project
+      # actually serves, not from this dashboard's own copy of the slug/token.
+      # Shrewsbury's links 404'd for five weeks because those two diverged.
+      - name: Reporting-identity reconciliation
+        run: node scripts/reporting-identity.spec.js

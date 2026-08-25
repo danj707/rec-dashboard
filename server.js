@@ -185,6 +185,134 @@ function saveDynamicOrgs() {
 }
 loadDynamicOrgs();
 
+// ── Reporting identity: keep the two projects from drifting apart ────────────
+// Every rental-report link this dashboard renders is built from OUR slug and OUR
+// token. Both are copies — rental-report holds its own — and copies drift. They
+// drifted: this dashboard called Shrewsbury `town-of-shrewsbury` for five weeks
+// after the duplicate slug was removed over there, so every report link, and the
+// report-visibility fetch, silently 404'd. Nobody noticed until a human clicked.
+//
+// The sync used to be one-way and one-time: Add Org adopted the reporting
+// project's token if the slug already existed, and never looked again. Anything
+// that changed afterwards — a rename, a re-issued token — went unnoticed.
+//
+// So: reconcile on boot and periodically, and resolve on the ORGANISATION UUID,
+// which is stable in both projects, rather than on the slug, which is exactly
+// what drifts. `reportingIdentity(slug)` is then the ONLY thing allowed to build a
+// rental-report URL — the dashboard keeps its own slug for its own routes.
+const REPORTING_IDENTITY = {};        // our slug -> { slug, token, state, checkedAt }
+const REPORTING_RECONCILE_MS = 6 * 60 * 60 * 1000;
+
+function reportingIdentity(slug) {
+  const known = REPORTING_IDENTITY[slug];
+  if (known && known.slug) return known;
+  // Un-reconciled (first boot, or the reporting project was unreachable): assume
+  // the names match, which is true for all but the drifted ones and is what the
+  // dashboard did before this existed.
+  const org = ORGS[slug];
+  return { slug, token: org && org.token, state: 'unchecked' };
+}
+
+// Slugs a rename plausibly produced, in both directions — we may be holding the
+// long name (`town-of-shrewsbury`) or the short one. These affix rules mirror
+// rental-report's own near-miss suggestion in `noteDeadLink()`; keep the two in
+// step, per the lockstep rule at the top of CLAUDE.md. Nothing here is trusted on
+// its own: every candidate must prove itself on the organisation UUID.
+const SLUG_AFFIX = /^(town|city|village|township|county)-of-/;
+const SLUG_STATE = /-(ca|ma|nv|mo|tn|nc|ga|ny|nj|pa|oh|il|tx|wa|or|az|co|fl|va|md|ct|ri|nh|vt|me|wi|mn|ia|ks|ne|ut|id|mt|wy|nd|sd|ok|ar|la|ms|al|sc|ky|wv|de|in|mi)$/;
+function candidateSlugs(slug) {
+  const bare = String(slug).replace(SLUG_AFFIX, '').replace(SLUG_STATE, '');
+  const out = new Set([bare, bare.replace(/-county$/, ''), bare + '-county']);
+  for (const p of ['town-of-', 'city-of-', 'village-of-', 'township-of-']) out.add(p + bare);
+  out.delete(slug);
+  return [...out].filter(Boolean).slice(0, 8);
+}
+
+async function reconcileOrgWithReporting(slug) {
+  const org = ORGS[slug];
+  if (!org || !REPORTING_BASE_URL) return null;
+  const get = async (u) => {
+    const r = await fetch(`${REPORTING_BASE_URL}${u}`);
+    return r.ok ? r.json() : null;
+  };
+  // 1. Does the reporting project know this slug?
+  const bySlug = await get(`/api/admin/org/${encodeURIComponent(slug)}`);
+  if (bySlug && bySlug.exists) {
+    // A re-issued token is the quiet failure: the link resolves to a real org and
+    // is refused. Adopt theirs — for their own URLs they are the authority.
+    const drift = bySlug.token && org.token && bySlug.token !== org.token;
+    return { slug, token: bySlug.token || org.token,
+             state: drift ? 'token-drift' : 'ok', checkedAt: Date.now() };
+  }
+  // 2. The slug does not resolve. Ask by organisation UUID before concluding
+  //    anything: this is the Shrewsbury case, and orgId equality is proof it is
+  //    the same organisation under another name.
+  if (org.orgId) {
+    const byId = await get(`/api/admin/org-by-id/${encodeURIComponent(org.orgId)}`);
+    if (byId && byId.exists && byId.slug) {
+      return { slug: byId.slug, token: byId.token || org.token,
+               state: 'slug-drift', checkedAt: Date.now() };
+    }
+    // 2b. That endpoint is newer than this code and 404s on an older
+    //     rental-report, which would leave the links broken while waiting on a
+    //     deploy over there. `/api/admin/org/:slug` has always existed, so ask it
+    //     about the slugs a rename would plausibly have produced — and adopt one
+    //     ONLY if its orgId equals ours. That check is what makes this a search
+    //     with a proof rather than a guess: a same-named org in a different state
+    //     answers 200 and must not be adopted.
+    for (const cand of candidateSlugs(slug)) {
+      const hit = await get(`/api/admin/org/${encodeURIComponent(cand)}`);
+      if (!hit || !hit.exists) continue;
+      if (hit.orgId !== org.orgId) {
+        console.warn(`[reporting] \`${cand}\` exists over there but is a DIFFERENT `
+          + `organisation (${hit.orgId} ≠ ${org.orgId}) — not adopting it.`);
+        continue;
+      }
+      return { slug: cand, token: hit.token || org.token,
+               state: 'slug-drift', checkedAt: Date.now() };
+    }
+  }
+  // 3. Genuinely absent. Do NOT invent an identity — leaving it unresolved keeps
+  //    the links pointing where they always did and makes the state visible.
+  return { slug: null, token: null, state: 'missing', checkedAt: Date.now() };
+}
+
+async function reconcileWithReporting(opts) {
+  if (!REPORTING_BASE_URL) return { skipped: 'no REPORTING_BASE_URL' };
+  const summary = { ok: 0, 'token-drift': 0, 'slug-drift': 0, missing: 0, failed: 0 };
+  for (const slug of Object.keys(ORGS)) {
+    try {
+      const id = await reconcileOrgWithReporting(slug);
+      if (!id) { summary.failed++; continue; }
+      REPORTING_IDENTITY[slug] = id;
+      summary[id.state] = (summary[id.state] || 0) + 1;
+      if (id.state === 'slug-drift') {
+        console.warn(`[reporting] SLUG DRIFT — this dashboard calls it \`${slug}\`, `
+          + `rental-report serves it as \`${id.slug}\`. Report links repaired.`);
+      } else if (id.state === 'token-drift') {
+        console.warn(`[reporting] TOKEN DRIFT for \`${slug}\` — adopted the reporting project's token.`);
+      } else if (id.state === 'missing') {
+        console.error(`[reporting] NO MATCH for \`${slug}\` (orgId ${org_id_of(slug)}) — `
+          + `its report links will 404 until it is added over there.`);
+      }
+    } catch (e) {
+      summary.failed++;
+      console.warn(`[reporting] reconcile failed for ${slug}:`, e.message);
+    }
+  }
+  const drift = summary['slug-drift'] + summary['token-drift'] + summary.missing;
+  console.log(`[reporting] reconciled ${Object.keys(ORGS).length} org(s): `
+    + JSON.stringify(summary) + (drift ? '  ← DRIFT' : ''));
+  return summary;
+}
+function org_id_of(slug) { return (ORGS[slug] && ORGS[slug].orgId) || '?'; }
+
+// Boot check runs slightly late so it cannot slow the first request, then every
+// 6h. Failure to reach the reporting project leaves identities 'unchecked', which
+// behaves exactly as this dashboard did before — never worse.
+setTimeout(() => { reconcileWithReporting().catch(e => console.warn('[reporting]', e.message)); }, 4000);
+setInterval(() => { reconcileWithReporting().catch(() => {}); }, REPORTING_RECONCILE_MS);
+
 // Reports available to ALL orgs via shared Metabase cards (need org_id param)
 const SHARED_UUIDS = {
   facility: 'f6787f45-3a36-4501-8a5f-b0f647451a85',
@@ -915,6 +1043,22 @@ app.post('/:org/api/support/notify-emails', authMiddleware, (req, res) => {
 });
 
 // ── POST /admin/api/orgs — add new org via admin panel ───────────────
+// First place to look when a report link 404s: what does the reporting project
+// actually call each org, and when did we last ask? A re-check is available here
+// too, because the alternative is waiting up to 6h to see whether a fix took.
+app.get('/admin/api/reporting-identity', adminAuth, async (req, res) => {
+  if (req.query.recheck) await reconcileWithReporting().catch(() => {});
+  const orgs = Object.keys(ORGS).sort().map(slug => {
+    const id = REPORTING_IDENTITY[slug] || {};
+    return { slug, orgId: ORGS[slug].orgId, reportingSlug: id.slug || null,
+             state: id.state || 'unchecked', tokenDiffers: !!(id.token && id.token !== ORGS[slug].token),
+             checkedAt: id.checkedAt || null };
+  });
+  const counts = orgs.reduce((a, o) => (a[o.state] = (a[o.state] || 0) + 1, a), {});
+  res.json({ reportingBaseUrl: REPORTING_BASE_URL || null,
+             reconcileEveryMs: REPORTING_RECONCILE_MS, counts, orgs });
+});
+
 app.post('/admin/api/orgs', adminAuth, async (req, res) => {
   const { slug, name, orgId, city, state, logoUrl } = req.body;
   if (!slug || !orgId) return res.status(400).json({ error: 'slug and orgId are required' });
@@ -926,16 +1070,28 @@ app.post('/admin/api/orgs', adminAuth, async (req, res) => {
   let adoptedFromReporting = false;
 
   // Check if org already exists in the reporting project — if so, adopt its token
+  let reportingSlug = slug;
   if (REPORTING_BASE_URL) {
     try {
-      const check = await fetch(`${REPORTING_BASE_URL}/api/admin/org/${encodeURIComponent(slug)}`);
-      if (check.ok) {
-        const existing = await check.json();
-        if (existing.exists && existing.token) {
-          token = existing.token;
-          adoptedFromReporting = true;
-          console.log(`[orgs] Adopted existing token from reporting project for: ${slug}`);
-        }
+      const get = async (u) => {
+        const r = await fetch(`${REPORTING_BASE_URL}${u}`);
+        return r.ok ? r.json() : null;
+      };
+      let existing = await get(`/api/admin/org/${encodeURIComponent(slug)}`);
+      // Then by organisation UUID — and THIS is how the duplicate that broke
+      // Shrewsbury got made. The reporting project already served that org under
+      // another slug; a by-slug check missed it, so Add Org minted a second
+      // identity for the same organisation and pushed it over there as a new one.
+      // orgId is stable in both projects; the slug is the part that drifts.
+      if (!(existing && existing.exists) && orgId) {
+        existing = await get(`/api/admin/org-by-id/${encodeURIComponent(orgId)}`);
+      }
+      if (existing && existing.exists && existing.token) {
+        token = existing.token;
+        adoptedFromReporting = true;
+        reportingSlug = existing.slug || slug;
+        console.log(`[orgs] Adopted existing token from reporting project for: ${slug}`
+          + (reportingSlug === slug ? '' : ` (it serves this org as \`${reportingSlug}\`)`));
       }
     } catch (e) {
       console.warn(`[orgs] Could not check reporting project for ${slug}:`, e.message);
@@ -963,6 +1119,10 @@ app.post('/admin/api/orgs', adminAuth, async (req, res) => {
 
   ORGS[slug] = org;
   saveDynamicOrgs();
+  // Record what the reporting project actually calls it, so its report links are
+  // right from the first page load rather than after the next 6h reconcile.
+  REPORTING_IDENTITY[slug] = { slug: reportingSlug, token,
+    state: reportingSlug === slug ? 'ok' : 'slug-drift', checkedAt: Date.now() };
   console.log(`[orgs] Added new org: ${slug} (${orgId})${adoptedFromReporting ? ' (token from reporting)' : ''}`);
 
   // Sync to rental-report so report links work with the same token
@@ -1292,7 +1452,10 @@ app.get('/:org/api/config', authMiddleware, async (req, res) => {
   // Fetch report visibility from rental-report
   let reportVisibility = null;
   try {
-    const visResp = await fetch(`${REPORTING_BASE_URL}/api/org-visibility/${req.orgSlug}`);
+    // Their slug, not ours — see reportingIdentity(). This fetch was the second
+    // silent casualty of the Shrewsbury drift: it 404'd for five weeks and the
+    // catch below just logged it.
+    const visResp = await fetch(`${REPORTING_BASE_URL}/api/org-visibility/${encodeURIComponent(reportingIdentity(req.orgSlug).slug || req.orgSlug)}`);
     if (visResp.ok) reportVisibility = await visResp.json();
   } catch (e) {
     console.error(`[config] Failed to fetch report visibility for ${req.orgSlug}:`, e.message);
@@ -1301,6 +1464,11 @@ app.get('/:org/api/config', authMiddleware, async (req, res) => {
   res.json({ config, availableReports, orgName: org.name, logoUrl: org.logoUrl, city: org.city, state: org.state,
     toggles: config?.toggles || { ai: true, reportLinks: false, aiBriefing: false, emailDigest: false },
     reportingBaseUrl: REPORTING_BASE_URL,
+    // The slug and token rental-report actually serves this org under. The page
+    // must build report links from these rather than from its own ORG_SLUG/TOKEN,
+    // which are the dashboard's names for the same organisation and can drift.
+    reportingSlug: reportingIdentity(req.orgSlug).slug || req.orgSlug,
+    reportingToken: reportingIdentity(req.orgSlug).token || org.token,
     supportReadOnly: !!org.supportReadOnly,
     supportNotify: ss.notify,
     announcements: activeAnnouncementsForOrg(req.orgSlug),
