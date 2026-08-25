@@ -1,6 +1,6 @@
 ---
 name: rec-training-video
-description: "Produce a narrated, captioned, Rec-branded training/walkthrough video of the rec.us admin (or any logged-in rec.us page) from a plain-language prompt. Use whenever someone asks for a training video, walkthrough video, screen recording, demo video, 'how-to' video, or Loom-style tutorial of a Rec feature or admin section — e.g. 'make a training video of the Finance settings', 'record a walkthrough of the memberships page', 'demo video for the check-in flow'. The skill asks for a login, which site to record, and a plain-language narrative of what to capture, then logs in, clicks through the real pages, adds an ElevenLabs voiceover synced to on-screen captions, and wraps it in a Rec title card and a 'Thanks for watching / partnersupport@rec.us' outro. Outputs an MP4 for the requester to review."
+description: "Produce a narrated, captioned, Rec-branded training/walkthrough video of the rec.us admin (or any logged-in rec.us page) from a plain-language prompt. Use whenever someone asks for a training video, walkthrough video, screen recording, demo video, 'how-to' video, or Loom-style tutorial of a Rec feature or admin section — e.g. 'make a training video of the Finance settings', 'record a walkthrough of the memberships page', 'demo video for the check-in flow'. The skill asks for a short script or blurb, a target length, a narrator voice, and which team to send viewers to in the outro (Customer Experience, Sales, etc.), then logs in, clicks through the real pages, adds an ElevenLabs voiceover synced to on-screen captions, and wraps it in a Rec title card and a closing contact splash. Outputs an MP4 for the requester to review."
 ---
 
 # Rec Training Video
@@ -17,36 +17,22 @@ narration factual and flag anything you were unsure about when you deliver.
 
 ## Step 0 — Intake (ask the requester first)
 
-Before doing anything else, collect these. Ask for them together in one message; fill
-sensible defaults where the request already answered one.
+**Ask the requester for these four things** (in one short message). Everything else has a
+sensible default — see "Auto-defaulted" below — so don't make them answer more than this.
 
-1. **Login** — defaults to the **bundled Rec University admin** (`niagara+admin6@rec.us`) in
-   `credentials.json`, so for standard training videos you don't need to ask. Only ask for a
-   login when recording a **different** org; then pass it via `REC_EMAIL` / `REC_PASSWORD` for
-   that one build and **never write it to disk or commit it**. (The ElevenLabs key is bundled too.)
-2. **Which org** — default is the **Rec University** demo org on `https://www.rec.us`:
-   org `9f032cf2-0fc4-440e-b2f3-2f8382c9ca7f` (public page `/organizations/rec-university`).
-   Record all standard training videos here. Only use a different org if the requester names
-   one — then get its admin URL (`/admin/o/<uuid>/…`) or resolve the UUID with
-   `search_organizations`, and get a login for it.
-3. **Example link (if applicable)** — ask for a URL to the exact part of Rec the video is
-   about (e.g. the settings page or a specific record). If they give one, it's your `start`
-   URL and removes all guesswork about which org/section they mean. If there's no single
-   page (a multi-step flow), just take the narrative.
-4. **Script or narrative** — two ways to give me the words:
-   - **Paste your own script** — the exact narration you want spoken, and I'll use your
-     wording verbatim. Tell me which lines go with which screen/section (or split it by
-     section) so each block lands on the right page.
-   - **Give a narrative** — a plain-language description of what to record, what to click
-     into, and what to explain, and I'll write the script for you.
-   Say which you're doing; either way you review the finished video for correctness.
-5. **How long** — a rough target (e.g. "~90 seconds", "2–3 minutes"). Use it to decide how
-   many sections to include and how much to say per section; pacing auto-fits each section
-   to its narration, so length ≈ sum of what you write.
-6. **Voice** — which narrator to use. Default **Adam** (deep, neutral male — matches the
-   existing Finance / General Ledger / Meet Seb videos, so keep it for anything in that
-   series). Offer these presets and pass the chosen ID via the spec's `voiceId` (or
-   `REC_TTS_VOICE_ID`); the requester may also paste any ElevenLabs voice ID:
+1. **Script blurb** — what the video should say. Two ways to give it:
+   - **Paste an exact script** — the wording you want spoken; I'll use it verbatim. If it's
+     more than one screen, tell me which lines go with which section so each block lands on
+     the right page.
+   - **Give a short blurb** — a few sentences on what to cover, and I'll write the script.
+   Either way you review the finished video for correctness.
+2. **Length** — a rough target (e.g. "~30 seconds", "~1 minute", "2–3 minutes"). Pacing
+   auto-fits each section to its narration, so length ≈ sum of what's said; I'll size the
+   number of sections and words to hit it.
+3. **Voice** — which narrator. Default **Adam** (deep, neutral male — matches the existing
+   Finance / General Ledger / Meet Seb series, so keep it for anything in that set). Offer
+   these presets and pass the chosen ID via the spec's `voiceId`; the requester may also
+   paste any ElevenLabs voice ID:
    | Voice | Style | voiceId |
    |---|---|---|
    | Adam (default) | deep, neutral male | `pNInz6obpgDQGcFmaJgB` |
@@ -57,14 +43,31 @@ sensible defaults where the request already answered one.
    | Domi | confident female | `AZnzlk1XvdvUeBnXmlld` |
    These are standard ElevenLabs preset IDs (no `voices_read` scope needed). If a pasted ID
    fails, fall back to Adam and tell the requester.
-7. **Outro contact — who/which department to reference at the end.** The closing splash
-   names a team and a contact, and the sign-off speaks it. Default is the **Rec Customer
-   Experience team** at **partnersupport@rec.us**. If this video should point somewhere else
-   — a specific department, person, or address (e.g. *"the Aquatics Department,
-   aquatics@townpool.gov"*) — give me the label and the email. Set it via the spec's `outro`
-   object (see below); leave it out to use the default.
-8. **Any specific context** — audience (partner admins? internal staff?), things to
-   emphasize or avoid, terminology, a specific example record to open, etc.
+4. **Outro — which team to send viewers to at the end.** The closing splash names a team and
+   a contact, and the sign-off speaks it. Pick one:
+   | Outro | Card label | Email |
+   |---|---|---|
+   | Customer Experience (default) | Reach out to the Rec Customer Experience team. | `partnersupport@rec.us` |
+   | Sales | Reach out to the Rec Sales team. | *confirm the address with the requester* |
+   | Onboarding / Implementation | Reach out to your Rec onboarding team. | *confirm the address* |
+   | Custom (a specific dept/person) | *their wording* | *their address* |
+
+   Only Customer Experience has a known default address — for any other team, get the exact
+   email from the requester before building (don't guess an address). Set it via the spec's
+   `outro` object (see below); leave it out for the Customer Experience default.
+
+**Auto-defaulted (don't ask unless the request is unusual):**
+- **Login** — the **bundled Rec University admin** (`niagara+admin6@rec.us`) in
+  `credentials.json`. Only ask for a login to record a **different** org; then pass it via
+  `REC_EMAIL` / `REC_PASSWORD` for that one build and **never write it to disk or commit it**.
+  (The ElevenLabs key is bundled too.)
+- **Org** — the **Rec University** demo org (`9f032cf2-0fc4-440e-b2f3-2f8382c9ca7f`, public
+  page `/organizations/rec-university`). Only use another org if the requester names one —
+  then get its admin URL (`/admin/o/<uuid>/…`) or resolve the UUID with `search_organizations`.
+- **Example link** — if they happen to give a URL to the exact page the video is about, use
+  it as the `start` URL; it removes guesswork. Not required.
+- **Specific context** — audience, things to emphasize/avoid, terminology, a specific example
+  record to open. Take it if offered.
 
 If a required input is missing and you can't safely default it, ask a short follow-up
 rather than guessing. Don't proceed to recording without a working login and a clear target.
