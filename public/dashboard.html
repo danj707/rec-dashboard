@@ -355,6 +355,15 @@ const _pathParts = window.location.pathname.replace(/^\//, '').split('/');
 const IS_SHARE = _pathParts[0] === 'share';
 const SHARE_TOKEN = IS_SHARE ? _pathParts[1] : null;
 const ORG_SLUG = IS_SHARE ? '' : _pathParts[0];
+/* ORG_SLUG and TOKEN are this dashboard's names for the organisation. rental-report
+ * has its own, and they can drift — Shrewsbury was `town-of-shrewsbury` here and
+ * `shrewsbury` there for five weeks, so every report link 404'd. The server
+ * reconciles the two on the organisation UUID and hands the answer down in
+ * _orgMeta; these are the ONLY values a rental-report URL may be built from.
+ * They fall back to ours, which is what the page did before and is correct for
+ * every org that has not drifted. */
+function RPT_SLUG(){ return (window._orgMeta && window._orgMeta.reportingSlug) || ORG_SLUG; }
+function RPT_TOKEN(){ return (window._orgMeta && window._orgMeta.reportingToken) || TOKEN; }
 const IS_PRINT = params.get('_print') === '1';
 const PRINT_SECTIONS = params.get('sections') ? params.get('sections').split(',') : null;
 const CHART_COLORS = ['#f59e0b','#3b82f6','#22c55e','#ef4444','#8b5cf6','#ec4899','#06b6d4','#84cc16','#14b8a6','#f97316'];
@@ -1738,7 +1747,7 @@ function WidgetCard({ widgetId, reportData, loading, freshRts, target, onTargetC
       {loading && !data ? <div className={isMetric?'skeleton skeleton-metric':'skeleton skeleton-chart'} />
         : isMetric ? <MetricCard data={data} target={target} prior={prior} /> : <Comp data={data} onBarClick={
           (effComponent === 'bar' || def.component === 'table') && def.reportType === 'programs' && reportingBaseUrl
-            ? (label) => { var u = reportingBaseUrl + '/' + ORG_SLUG + '/programs?token=' + TOKEN + '&tab=revenue&program=' + encodeURIComponent(label); if (dateRange) { u += '&start_date=' + dateRange.start + '&end_date=' + dateRange.end; } window.open(u, '_blank'); }
+            ? (label) => { var u = reportingBaseUrl + '/' + RPT_SLUG() + '/programs?token=' + RPT_TOKEN() + '&tab=revenue&program=' + encodeURIComponent(label); if (dateRange) { u += '&start_date=' + dateRange.start + '&end_date=' + dateRange.end; } window.open(u, '_blank'); }
             : undefined
         } />}
     </div>
@@ -1944,7 +1953,7 @@ function SectionBlock({ sectionId, widgetIds, reportData, loading, freshRts, tar
         </button>}
         <span className="section-badge">{widgetIds.length} widgets</span>
         {reportLinksEnabled && SECTION_REPORT_MAP[sectionId] && reportingBaseUrl && (
-          <a href={`${reportingBaseUrl}/${ORG_SLUG}/${SECTION_REPORT_MAP[sectionId]}?token=${TOKEN}`} target="_blank" rel="noopener noreferrer"
+          <a href={`${reportingBaseUrl}/${RPT_SLUG()}/${SECTION_REPORT_MAP[sectionId]}?token=${RPT_TOKEN()}`} target="_blank" rel="noopener noreferrer"
             style={{fontSize:11,fontWeight:600,color:sec.color||'var(--amber)',textDecoration:'none',
               padding:'4px 12px',borderRadius:6,border:`1px solid ${sec.color||'var(--amber)'}33`,
               background:`${sec.color||'var(--amber)'}0d`,transition:'all 0.2s',display:'flex',alignItems:'center',gap:4,
@@ -3081,7 +3090,8 @@ function DashboardApp() {
         const resp = await fetch(configUrl);
         const json = await resp.json();
         setAvailableReports(json.availableReports || {});
-        var _m = { name: json.orgName, logoUrl: json.logoUrl, city: json.city, state: json.state, toggles: json.toggles || {}, reportingBaseUrl: json.reportingBaseUrl || '', reportVisibility: json.reportVisibility || null, readOnly: json.readOnly || false, expiresAt: json.expiresAt || null, supportReadOnly: json.supportReadOnly || false, supportNotify: json.supportNotify || [], announcements: json.announcements || [] };
+        var _m = { name: json.orgName, logoUrl: json.logoUrl, city: json.city, state: json.state, toggles: json.toggles || {}, reportingBaseUrl: json.reportingBaseUrl || '',
+          reportingSlug: json.reportingSlug || '', reportingToken: json.reportingToken || '', reportVisibility: json.reportVisibility || null, readOnly: json.readOnly || false, expiresAt: json.expiresAt || null, supportReadOnly: json.supportReadOnly || false, supportNotify: json.supportNotify || [], announcements: json.announcements || [] };
         window._orgMeta = _m;
         setOrgMeta(_m);
         window._orgGeo = json.city && json.state ? `${json.city}, ${json.state}` : '';
