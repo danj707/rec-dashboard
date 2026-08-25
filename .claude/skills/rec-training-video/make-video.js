@@ -96,9 +96,12 @@ async function narrateAll() {
     clips.push({ i, file: f, dur: dur(f) });
     console.log(`  narration[${i}] ${clips[i].dur.toFixed(1)}s`);
   }
-  // shared outro line
+  // Outro narration: spec `outro.narration` (or legacy `outroNarration`) overrides the
+  // house default. Write emails/URLs phonetically ("at", "dot", "you ess") so TTS reads them.
   const outroFile = path.join(WORK, 'narr-outro.mp3');
-  await tts(SPEC.outroNarration || `Thanks for watching. If you have any questions, reach out to the Rec Customer Experience team at partner support at rec dot you ess.`, outroFile);
+  const outroText = (SPEC.outro && SPEC.outro.narration) || SPEC.outroNarration
+    || `Thanks for watching. If you have any questions, reach out to the Rec Customer Experience team at partner support at rec dot you ess.`;
+  await tts(outroText, outroFile);
   return { clips, outro: { file: outroFile, dur: dur(outroFile) } };
 }
 
@@ -217,7 +220,9 @@ function brand(body, narrOutro) {
   const B = CFG.brand;
   const titlePng = path.join(WORK, 'title.png'), outroPng = path.join(WORK, 'outro.png');
   renderCard(q({ eyebrow: B.eyebrow, title: SPEC.title, sub: SPEC.subtitle, foot: B.foot }), titlePng);
-  renderCard(q({ eyebrow: B.outro.eyebrow, title: B.outro.title, sub: B.outro.sub, email: B.outro.email, foot: B.foot }), outroPng);
+  // Outro card: spec `outro` (who/department to contact) overrides the house default.
+  const O = Object.assign({}, B.outro, SPEC.outro || {});
+  renderCard(q({ eyebrow: O.eyebrow, title: O.title, sub: O.sub, email: O.email, foot: B.foot }), outroPng);
   const titleMp4 = path.join(WORK, 'title.mp4'), outroMp4 = path.join(WORK, 'outro.mp4');
   const td = B.titleCardSeconds;
   sh(`ffmpeg -y -v error -loop 1 -i "${titlePng}" -f lavfi -t ${td} -i anullsrc=r=44100:cl=mono -vf "scale=1280:720,fade=t=in:st=0:d=0.4,fade=t=out:st=${(td-0.4).toFixed(2)}:d=0.4,format=yuv420p" -r ${CFG.fps} -t ${td} -c:v libx264 -crf 20 -pix_fmt yuv420p -c:a aac -b:a 160k -ar 44100 -ac 1 "${titleMp4}"`);

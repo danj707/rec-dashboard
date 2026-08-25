@@ -33,8 +33,13 @@ sensible defaults where the request already answered one.
    about (e.g. the settings page or a specific record). If they give one, it's your `start`
    URL and removes all guesswork about which org/section they mean. If there's no single
    page (a multi-step flow), just take the narrative.
-4. **Narrative** — a plain-language description of what to record: which section/flow, what
-   to click into, and what to explain. This is the script outline.
+4. **Script or narrative** — two ways to give me the words:
+   - **Paste your own script** — the exact narration you want spoken, and I'll use your
+     wording verbatim. Tell me which lines go with which screen/section (or split it by
+     section) so each block lands on the right page.
+   - **Give a narrative** — a plain-language description of what to record, what to click
+     into, and what to explain, and I'll write the script for you.
+   Say which you're doing; either way you review the finished video for correctness.
 5. **How long** — a rough target (e.g. "~90 seconds", "2–3 minutes"). Use it to decide how
    many sections to include and how much to say per section; pacing auto-fits each section
    to its narration, so length ≈ sum of what you write.
@@ -52,7 +57,13 @@ sensible defaults where the request already answered one.
    | Domi | confident female | `AZnzlk1XvdvUeBnXmlld` |
    These are standard ElevenLabs preset IDs (no `voices_read` scope needed). If a pasted ID
    fails, fall back to Adam and tell the requester.
-7. **Any specific context** — audience (partner admins? internal staff?), things to
+7. **Outro contact — who/which department to reference at the end.** The closing splash
+   names a team and a contact, and the sign-off speaks it. Default is the **Rec Customer
+   Experience team** at **partnersupport@rec.us**. If this video should point somewhere else
+   — a specific department, person, or address (e.g. *"the Aquatics Department,
+   aquatics@townpool.gov"*) — give me the label and the email. Set it via the spec's `outro`
+   object (see below); leave it out to use the default.
+8. **Any specific context** — audience (partner admins? internal staff?), things to
    emphasize or avoid, terminology, a specific example record to open, etc.
 
 If a required input is missing and you can't safely default it, ask a short follow-up
@@ -108,7 +119,13 @@ Do NOT guess the page structure. Get the real one:
 For every page, read its real content (screenshot or dump `main` innerText while logged in) and, when it's data/behavior you can't see in the UI, verify with the Staff MCP (`query_subagent`, `discover_schema`). Narration must describe what's actually there — never invent fields or behavior. This is what the requester will check.
 
 ### 4. Write the spec
-Copy an example and edit. Top-level: `title`/`subtitle` (title card), `start` (landing URL — the example link if they gave one), optional `baseUrl` (non-prod host), optional `voiceId` (chosen narrator), `intro`, optional `back` (breadcrumb link text to return between sections). Per section provide:
+Copy an example and edit. Top-level: `title`/`subtitle` (title card), `start` (landing URL — the example link if they gave one), optional `baseUrl` (non-prod host), optional `voiceId` (chosen narrator), `intro`, optional `back` (breadcrumb link text to return between sections). Optional per-video overrides (none needed for a standard video):
+- `outro`: **who/department to reference at the end** (intake #7). Any of `{ title, sub, email, narration }` — each falls back to the house default. `title` is the big word (default "Questions?"), `sub` the line under it, `email` the contact chip, `narration` the spoken sign-off. Write the narration phonetically so TTS reads it right (`@` → "at", `.` → "dot", `.us` → "dot you ess"). Example: `"outro": { "sub": "Reach out to the Aquatics Department.", "email": "aquatics@townpool.gov", "narration": "Thanks for watching. Questions? Reach out to the Aquatics Department at aquatics at townpool dot gov." }`.
+- `voiceSettings`: `{ stability, style, ... }` to shape delivery for this video (higher `style` = livelier).
+- `tempo`: `{ leadMs, tailMs, settleMs, scrollChunks }` to pace this video (bigger `tailMs` = slower/airier) without editing `config.json`.
+- `noLogin: true`: record the **logged-out resident/public site** (e.g. `/organizations/<slug>`) instead of logging into the admin.
+
+Per section provide:
 - `card`: exact on-screen text of the card/row to click (SPA nav keeps the caption overlay alive). Use `path` instead for a direct URL if there's no card to click.
 - `title` + `lines`: the on-screen caption (short; `lines` is an array, one per line).
 - `narration`: 1–3 spoken sentences. Write for the ear — expand abbreviations the way they should be *said* ("GL" reads fine; write "partner support at rec dot us", "twelve months", etc.).
