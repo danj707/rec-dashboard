@@ -77,6 +77,14 @@ async function tts(text, file) {
   });
   if (!res.ok) throw new Error(`ElevenLabs ${res.status}: ${await res.text()}`);
   fs.writeFileSync(file, Buffer.from(await res.arrayBuffer()));
+  // Loudness-normalize the clip as a standalone step (NOT inside the mux graph,
+  // where loudnorm corrupts amix timing) so every voice lands at a consistent
+  // level. Duration is preserved; falls back to the raw clip if this fails.
+  try {
+    const norm = file + '.norm.mp3';
+    sh(`ffmpeg -y -v error -i "${file}" -af loudnorm=I=-16:TP=-1.5:LRA=11 -ar 44100 -ac 1 -c:a libmp3lame -q:a 2 "${norm}"`);
+    if (fs.existsSync(norm) && fs.statSync(norm).size > 0) fs.renameSync(norm, file);
+  } catch { /* keep the un-normalized clip */ }
 }
 async function narrateAll() {
   process.env.NODE_USE_ENV_PROXY = '1';
@@ -138,6 +146,10 @@ async function record(narr) {
   await page.goto(SPEC.start, { waitUntil: 'domcontentloaded', timeout: 60000 });
   await sleep(3000);
   await dismiss();
+  // Some toasts (ET-timezone) pop in a beat after load; dismiss again once they appear.
+  // Clicking "don't show again" persists for the context, so later pages stay clean.
+  await sleep(1200);
+  await dismiss();
   await setCap(SPEC.intro.title, SPEC.intro.lines);
   mark(0);
   await dwell(dwellFor(0, SPEC.intro.dwellMs));
@@ -187,9 +199,7 @@ function muxBody(rec, narr) {
     prevEnd = startS + c.dur;
     const delay = Math.max(0, Math.round(startS * 1000));
     inputs.push(`-i "${c.file}"`);
-    // loudnorm each clip to a consistent target so different ElevenLabs voices
-    // land at the same perceived loudness (some presets are inherently quieter).
-    parts.push(`[${k + 1}:a]loudnorm=I=-16:TP=-1.5:LRA=11,adelay=${delay}|${delay}[a${k}]`);
+    parts.push(`[${k + 1}:a]adelay=${delay}|${delay}[a${k}]`);
     labels.push(`[a${k}]`);
   });
   const filter = `${parts.join(';')};${labels.join('')}amix=inputs=${labels.length}:normalize=0:dropout_transition=0[aout]`;
@@ -212,7 +222,7 @@ function brand(body, narrOutro) {
   const td = B.titleCardSeconds;
   sh(`ffmpeg -y -v error -loop 1 -i "${titlePng}" -f lavfi -t ${td} -i anullsrc=r=44100:cl=mono -vf "scale=1280:720,fade=t=in:st=0:d=0.4,fade=t=out:st=${(td-0.4).toFixed(2)}:d=0.4,format=yuv420p" -r ${CFG.fps} -t ${td} -c:v libx264 -crf 20 -pix_fmt yuv420p -c:a aac -b:a 160k -ar 44100 -ac 1 "${titleMp4}"`);
   const od = +(narrOutro.dur + 2.2).toFixed(2);
-  sh(`ffmpeg -y -v error -loop 1 -i "${outroPng}" -i "${narrOutro.file}" -filter_complex "[0:v]scale=1280:720,fade=t=in:st=0:d=0.4,fade=t=out:st=${(od-0.4).toFixed(2)}:d=0.4,format=yuv420p[v];[1:a]loudnorm=I=-16:TP=-1.5:LRA=11,adelay=600|600,apad[a]" -map "[v]" -map "[a]" -r ${CFG.fps} -t ${od} -c:v libx264 -crf 20 -pix_fmt yuv420p -c:a aac -b:a 160k -ar 44100 -ac 1 "${outroMp4}"`);
+  sh(`ffmpeg -y -v error -loop 1 -i "${outroPng}" -i "${narrOutro.file}" -filter_complex "[0:v]scale=1280:720,fade=t=in:st=0:d=0.4,fade=t=out:st=${(od-0.4).toFixed(2)}:d=0.4,format=yuv420p[v];[1:a]adelay=600|600,apad[a]" -map "[v]" -map "[a]" -r ${CFG.fps} -t ${od} -c:v libx264 -crf 20 -pix_fmt yuv420p -c:a aac -b:a 160k -ar 44100 -ac 1 "${outroMp4}"`);
   sh(`ffmpeg -y -v error -i "${titleMp4}" -i "${body}" -i "${outroMp4}" -filter_complex "[0:v][0:a][1:v][1:a][2:v][2:a]concat=n=3:v=1:a=1[v][a]" -map "[v]" -map "[a]" -r ${CFG.fps} -c:v libx264 -crf 22 -pix_fmt yuv420p -movflags +faststart -c:a aac -b:a 160k -ar 44100 -ac 1 "${OUT}"`);
 }
 
