@@ -32,3 +32,20 @@ jobs:
       # Shrewsbury's links 404'd for five weeks because those two diverged.
       - name: Reporting-identity reconciliation
         run: node scripts/reporting-identity.spec.js
+
+      # Was passing locally but never wired in — a spec outside CI is a spec
+      # nobody is running. Same class as email-slack-notify.spec.js over in
+      # rental-report, which sat dead and out of CI for weeks.
+      - name: SWR cache behaviour
+        run: node scripts/swr-cache.spec.js
+
+      # The per-section widget entry point: one picker, not two, and an
+      # affordance visible at REST rather than on hover.
+      - name: Section widget entry point
+        run: node scripts/section-widget-entry.spec.js
+
+      # The two Fast Track widgets. Pins that the capacity headline is fed from
+      # Over Demand and never from Left on Table — those have opposite fixes,
+      # and 100 of Watertown's 138 "money waiting" sections still have seats.
+      - name: Fast Track widgets
+        run: node scripts/ft-widgets.spec.js
