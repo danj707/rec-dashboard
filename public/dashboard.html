@@ -424,7 +424,7 @@ const SECTIONS = {
     defaultWidgets: ['court-total','court-instant','court-managed','court-util-pct','court-by-court','court-by-location','court-map'] },
   fasttrack: { id: 'fasttrack', label: 'Fast Track', icon: '\uD83D\uDE80', color: '#f97316',
     description: 'Pre-registration demand and conversion metrics',
-    defaultWidgets: ['ft-signups','ft-converted','ft-pending','ft-conv-rate','ft-top-programs'] },
+    defaultWidgets: ['ft-signups','ft-converted','ft-pending','ft-conv-rate','ft-top-sections','ft-top-programs','ft-money'] },
   'users-demographics': { id: 'users-demographics', label: 'Users & Demographics', icon: '\uD83D\uDC65', color: '#06b6d4',
     description: 'User growth, age, gender, and location data',
     defaultWidgets: ['user-total','user-new','user-households','user-residents','user-median-age'] },
@@ -774,6 +774,80 @@ const W = {
       const g={};sec.forEach(r=>{const k=r['Program']||'Unknown'; g[k]=(g[k]||0)+(parseInt(r['FT Total'])||0);});
       const s=Object.entries(g).filter(e=>e[1]>0).sort((a,b)=>b[1]-a[1]).slice(0,10);
       return { labels:s.map(e=>e[0]), values:s.map(e=>e[1]) };
+    }},
+
+  'ft-top-sections': { label: 'Top Fast Tracked Sections', description: 'Sections by FT signup volume', note: 'Sections with the most pre-registered demand, against their capacity', section: 'fasttrack',
+    reportType: 'fasttrack', size: 'md', icon: '\uD83C\uDFAF', component: 'bar',
+    // SECTION grain, deliberately not program grain. 'Top FT Programs' already
+    // exists and a program HIDES its sections: at Watertown "Adult Pickleball
+    // Open Play" is the tallest program bar because it aggregates several
+    // sessions, while one intermediate session holds 67 of those signups on its
+    // own. The section is also the thing that actually opens and fills, so it is
+    // the level a capacity decision is made at.
+    transform: rows => {
+      const sec = rows.filter(r => (r['Row Type'] || 'section') === 'section');
+      const s = sec.map(r => ({
+          name: r['Section'] || r['Program'] || 'Unknown',
+          ft: parseInt(r['FT Total']) || 0,
+          cap: parseInt(r['Capacity']) || 0,
+        }))
+        .filter(x => x.ft > 0)
+        .sort((a, b) => b.ft - a.ft)
+        .slice(0, 10);
+      // Capacity rides in the label, because 36 signups against 200 seats and 14
+      // against 8 are the same bar height and opposite situations.
+      return { labels: s.map(x => x.cap > 0 ? x.name + ' \u00B7 ' + x.ft + '/' + x.cap : x.name),
+               values: s.map(x => x.ft) };
+    }},
+
+  'ft-money': { label: 'Fast Track Money', description: 'Earned, awaiting checkout, and blocked by capacity', note: 'What Fast Track earned, and the demand that has not turned into money yet', section: 'fasttrack',
+    reportType: 'fasttrack', size: 'md', icon: '\uD83D\uDCB0', component: 'table',
+    // THREE POTS, AND THEY HAVE DIFFERENT LEVERS. This is the whole reason the
+    // widget is a table rather than three metrics: an amount with no action
+    // attached invites the wrong one.
+    //
+    // Measured on card 17300 (watertown, 2026-08-27), exact on all 338 sections:
+    //   Left on Table === FT Pending * Section Price
+    // So it is the value of holds that have NOT converted — NOT demand that
+    // exceeded capacity. Of the 138 sections carrying it, only 2 are
+    // oversubscribed and 100 STILL HAVE EMPTY SEATS. Adding capacity there
+    // captures nothing; those families already had a seat and did not finish.
+    //
+    // The genuine "add a few more spots" money is Over Demand $ — $1,170 across
+    // one section at Watertown. Small here, and the figure that grows at the
+    // oversubscribed orgs. Conflating the two would send someone to add seats to
+    // sections that are already half empty.
+    transform: rows => {
+      const sec = rows.filter(r => (r['Row Type'] || 'section') === 'section');
+      const n = v => { const x = parseFloat(String(v == null ? 0 : v).replace(/[$,]/g, '')); return isFinite(x) ? x : 0; };
+      let earned = 0, holds = 0, blocked = 0, holdSecs = 0, blockedSecs = 0, holdSeats = 0, holdPeople = 0;
+      sec.forEach(r => {
+        earned  += n(r['FT Revenue']);
+        const lot = n(r['Left on Table']);
+        const ov  = n(r['Over Demand $']);
+        holds   += lot;
+        blocked += ov;
+        if (lot > 0) {
+          holdSecs++;
+          holdPeople += parseInt(r['FT Pending']) || 0;
+          // Seats still free in the sections where money is waiting — the fact
+          // that turns "add capacity" into "chase the checkout".
+          const free = (parseInt(r['Capacity']) || 0) - (parseInt(r['Total Enrolled']) || 0);
+          if (free > 0) holdSeats++;
+        }
+        if (ov > 0) blockedSecs++;
+      });
+      const money = v => '$' + Math.round(v).toLocaleString();
+      return {
+        columns: ['', 'Amount', 'Where', 'What moves it'],
+        data: [
+          ['Earned', money(earned), sec.filter(r => n(r['FT Revenue']) > 0).length + ' sections', 'Already collected'],
+          ['Awaiting checkout', money(holds), holdSecs + ' sections \u00B7 ' + holdPeople + ' families',
+            holdSeats > 0 ? 'Follow-up \u2014 ' + holdSeats + ' of these still have seats free' : 'Follow-up with the families holding'],
+          ['Blocked by capacity', money(blocked), blockedSecs + (blockedSecs === 1 ? ' section' : ' sections'),
+            blocked > 0 ? 'Add spots \u2014 demand exceeded seats' : 'Nothing blocked on seats'],
+        ],
+      };
     }},
 
   // ── Users ──
