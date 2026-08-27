@@ -95,6 +95,14 @@ body { font-family: var(--font-body); background: var(--bg-page); color: var(--t
 .section-label { font-family: var(--font-display); font-size: 17px; font-weight: 600; }
 .section-line { flex: 1; height: 1px; background: var(--border); }
 .section-badge { font-size: 10px; color: var(--text-muted); padding: 3px 8px; border: 1px solid var(--border); border-radius: 4px; }
+/* The count doubles as the way into this section's widget list. It has to LOOK
+   like a control at rest — a hover-only affordance is the reason the pencil on
+   the Fast Track report went unnoticed for a release. */
+.section-badge-btn { font-family: var(--font-body); background: var(--bg-surface); cursor: pointer;
+  display: inline-flex; align-items: center; gap: 5px; transition: color .15s, border-color .15s, background .15s; }
+.section-badge-btn .sb-pencil { opacity: .75; font-size: 9px; }
+.section-badge-btn:hover { color: var(--text-primary); border-color: var(--text-muted); background: var(--bg-elevated, var(--bg-surface)); }
+.section-badge-btn:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
 
 /* Widget Grid */
 
@@ -1884,7 +1892,7 @@ function BriefingSection({ reportData, loading, dateRange, briefingRef }) {
 // ═══════════════════════════════════════════════════════
 //  SECTION BLOCK
 // ═══════════════════════════════════════════════════════
-function SectionBlock({ sectionId, widgetIds, reportData, loading, freshRts, targets, onTargetChange, chartTypes, onChartTypeChange, dateRange, aiEnabled, reportLinksEnabled, reportingBaseUrl, priorReportData }) {
+function SectionBlock({ sectionId, widgetIds, reportData, loading, freshRts, targets, onTargetChange, chartTypes, onChartTypeChange, dateRange, aiEnabled, reportLinksEnabled, reportingBaseUrl, priorReportData, onCustomize }) {
   const sec = SECTIONS[sectionId]; if (!sec) return null;
   const [insight, setInsight] = useState(null);
   const [insightLoading, setInsightLoading] = useState(false);
@@ -1951,7 +1959,18 @@ function SectionBlock({ sectionId, widgetIds, reportData, loading, freshRts, tar
           onMouseOut={e=>{if(!insightOpen){e.currentTarget.style.background='linear-gradient(135deg,rgba(124,58,237,0.12),rgba(245,158,11,0.08))';e.currentTarget.style.borderColor='rgba(124,58,237,0.3)';}}}>
           {'\u2728'} {insightLoading ? 'Analyzing...' : insightOpen ? 'Hide Insights' : 'Rec Insights'}
         </button>}
-        <span className="section-badge">{widgetIds.length} widgets</span>
+        {/* The widget count is the way IN to customising this section. Dan:
+            "people don't see it at the top." Edit Dashboard stays where it was;
+            this is a second door onto the SAME modal, focused on this section,
+            so there is only one widget picker to keep correct.
+            Read-only viewers keep the plain badge — there is nothing to open. */}
+        {onCustomize
+          ? <button className="section-badge section-badge-btn" data-customize={sectionId}
+              onClick={() => onCustomize(sectionId)}
+              title={'Add or remove ' + sec.label + ' widgets'}>
+              {widgetIds.length} widgets <span className="sb-pencil">{'\u270E'}</span>
+            </button>
+          : <span className="section-badge">{widgetIds.length} widgets</span>}
         {reportLinksEnabled && SECTION_REPORT_MAP[sectionId] && reportingBaseUrl && (
           <a href={`${reportingBaseUrl}/${RPT_SLUG()}/${SECTION_REPORT_MAP[sectionId]}?token=${RPT_TOKEN()}`} target="_blank" rel="noopener noreferrer"
             style={{fontSize:11,fontWeight:600,color:sec.color||'var(--amber)',textDecoration:'none',
@@ -2058,9 +2077,19 @@ function SectionBlock({ sectionId, widgetIds, reportData, loading, freshRts, tar
 const MAX_PER_SECTION = 999;
 const MAX_TOTAL = 999;
 
-function EditModal({ sections, onSave, onClose, availableReports, toggles }) {
+function EditModal({ sections, onSave, onClose, availableReports, toggles, focusSection }) {
   const [draft, setDraft] = useState(sections.map(s => ({ ...s, widgets: [...s.widgets] })));
-  const [expanded, setExpanded] = useState(sections[0]?.id || '');
+  // Opening from a section's own "N widgets" badge lands on THAT section rather
+  // than on the first one — the whole point of the per-section entry point is
+  // not having to hunt for the section you were already looking at.
+  const [expanded, setExpanded] = useState(focusSection || sections[0]?.id || '');
+  // ...and scroll it into view, because on a long dashboard the expanded
+  // section can open below the fold and look like nothing happened.
+  const focusRef = React.useRef(null);
+  React.useEffect(() => {
+    if (!focusSection || !focusRef.current) return;
+    focusRef.current.scrollIntoView({ block: 'start' });
+  }, [focusSection]);
 
   const totalWidgets = draft.reduce((s, sec) => s + sec.widgets.length, 0);
   const atLimit = totalWidgets >= MAX_TOTAL;
@@ -2101,7 +2130,9 @@ function EditModal({ sections, onSave, onClose, availableReports, toggles }) {
     <div className="modal-overlay" onClick={e => { if (e.target===e.currentTarget) onClose(); }}>
       <div className="modal-panel">
         <div className="modal-header">
-          <span className="modal-title">Edit Dashboard</span>
+          <span className="modal-title">
+            {focusSection && SECTIONS[focusSection] ? SECTIONS[focusSection].label + ' widgets' : 'Edit Dashboard'}
+          </span>
           <button className="modal-close" onClick={onClose}>{'\u2715'}</button>
         </div>
         <div className="modal-body">
@@ -2121,7 +2152,9 @@ function EditModal({ sections, onSave, onClose, availableReports, toggles }) {
             const isOpen = expanded === sec.id;
             const poolWidgets = Object.entries(W).filter(([id,w]) => w.section===sec.id && !sec.widgets.includes(id));
             return (
-              <div key={sec.id+si} className="edit-section">
+              <div key={sec.id+si} className="edit-section"
+                   ref={sec.id === focusSection ? focusRef : null}
+                   data-edit-section={sec.id}>
                 <div className="edit-section-header" onClick={() => setExpanded(isOpen ? '' : sec.id)}>
                   <span style={{fontSize:18}}>{secDef.icon}</span>
                   <span className="edit-section-title">{secDef.label}</span>
@@ -3042,6 +3075,14 @@ function DashboardApp() {
   }
   const [loading, setLoading] = useState(true);
   const [editOpen, setEditOpen] = useState(false);
+  // Which section the edit modal should open focused on. Null = opened from the
+  // toolbar's Edit Dashboard, so no section is singled out.
+  const [editFocus, setEditFocus] = useState(null);
+  function openSectionWidgets(sectionId) {
+    setEditFocus(sectionId);
+    setEditOpen(true);
+    track('edit_opened', { from: 'section', section: sectionId });
+  }
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState(params.get('tab') === 'support' ? 'support' : 'dashboard');
   const [supportRefreshNonce, setSupportRefreshNonce] = useState(0);
@@ -3331,7 +3372,7 @@ function DashboardApp() {
         {!IS_PRINT && !isReadOnly && (
           <div className="dash-header-right">
             <button className="btn" onClick={handleRefresh}>{'\u21BB'} Refresh</button>
-            <button className="btn" onClick={()=>{setEditOpen(true);track('edit_opened');}}>{'\u270E'} Edit Dashboard</button>
+            <button className="btn" onClick={()=>{setEditFocus(null);setEditOpen(true);track('edit_opened',{from:'toolbar'});}}>{'\u270E'} Edit Dashboard</button>
             <div style={{position:'relative'}}>
               <button className="btn" onClick={()=>setSettingsOpen(!settingsOpen)}>{'\u2699'}</button>
               {settingsOpen && <SettingsPopover cacheTTL={config.cacheTTL||15} onCacheTTLChange={handleCacheTTLChange} onClearCache={handleClearCache} onReset={handleReset} theme={theme} onThemeChange={handleThemeChange} emailDigestEnabled={orgMeta.toggles?.emailDigest === true} sections={config.sections} dateRange={dateRange} onSendDigest={handleSendDigest} />}
@@ -3375,7 +3416,8 @@ function DashboardApp() {
         {(IS_PRINT || activeTab === 'dashboard' || !availableReports.support) && displaySections.map((sec, i) => (
           <SectionBlock key={sec.id+i+theme} sectionId={sec.id} widgetIds={sec.widgets} reportData={reportData} loading={loading} freshRts={freshRts} priorReportData={priorReportData}
             targets={targets} onTargetChange={handleTargetChange} chartTypes={chartTypes} onChartTypeChange={handleChartTypeChange} dateRange={dateRange} aiEnabled={!isReadOnly && orgMeta.toggles?.ai !== false}
-            reportLinksEnabled={!isReadOnly && orgMeta.toggles?.reportLinks === true} reportingBaseUrl={orgMeta.reportingBaseUrl || ''} />
+            reportLinksEnabled={!isReadOnly && orgMeta.toggles?.reportLinks === true} reportingBaseUrl={orgMeta.reportingBaseUrl || ''}
+            onCustomize={isReadOnly || IS_PRINT ? null : openSectionWidgets} />
         ))}
         {!IS_PRINT && activeTab === 'support' && availableReports.support && (
           <SupportTab key={'support'+theme} reportData={reportData} loading={loading} freshRts={freshRts} priorReportData={priorReportData} targets={targets}
@@ -3390,7 +3432,8 @@ function DashboardApp() {
           if (!rt) return true;
           const vis = orgMeta.reportVisibility.find(v => v.type === rt);
           return !vis || vis.visible;
-        })} availableReports={availableReports} toggles={orgMeta.toggles || {}} onSave={handleSaveSections} onClose={()=>setEditOpen(false)} />}
+        })} availableReports={availableReports} toggles={orgMeta.toggles || {}} focusSection={editFocus}
+        onSave={handleSaveSections} onClose={()=>{setEditOpen(false);setEditFocus(null);}} />}
     </div>
   );
 }
