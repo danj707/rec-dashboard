@@ -12,8 +12,5 @@
     "@opentelemetry/sdk-node": "^0.219.0",
     "express": "^4.21.0",
     "resend": "^4.0.0"
-  },
-  "devDependencies": {
-    "puppeteer": "^22.0.0"
   }
 }

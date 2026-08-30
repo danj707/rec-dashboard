@@ -36,11 +36,16 @@ const PORT = 4187;
 const ORG = 'rendercheck';
 const TOKEN = 'rendercheck-token';
 
-// puppeteer is a devDependency here (it is not used at runtime). The sibling
-// checkout is a convenience for a sandbox that already has it; CI installs its
-// own. NEVER make a missing browser a silent skip — a render check that opts
-// out when it cannot find one defeats its entire purpose, and the failure it
-// exists to catch is invisible to every other check in this repo.
+// puppeteer is DELIBERATELY NOT IN package.json. It is not used at runtime, and
+// declaring it made Railway's `npm ci` fail against the unchanged lockfile —
+// then, once that was fixed, it would have had every production deploy download
+// a ~150MB browser it never opens. CI installs it on demand instead
+// (`npm install --no-save puppeteer@22`), and this sandbox resolves the sibling
+// checkout that already has one.
+//
+// NEVER make a missing browser a silent skip — a render check that opts out when
+// it cannot find one defeats its entire purpose, and the failure it exists to
+// catch is invisible to every other check in this repo.
 let puppeteer;
 for (const cand of ['puppeteer', '/home/user/rental-report/node_modules/puppeteer',
                     path.join(process.env.HOME || '', 'rental-report/node_modules/puppeteer')]) {
@@ -48,7 +53,7 @@ for (const cand of ['puppeteer', '/home/user/rental-report/node_modules/puppetee
 }
 if (!puppeteer) {
   console.error('puppeteer not available — cannot prove the page renders. '
-    + 'Install it (npm i -D puppeteer); do not skip this check.');
+    + 'CI installs it with `npm install --no-save puppeteer@22`; do not skip this check.');
   process.exit(1);
 }
 

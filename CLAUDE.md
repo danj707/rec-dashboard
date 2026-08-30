@@ -189,8 +189,17 @@ check. Verified in both directions: restoring the bad shape reproduces
 *"the page came up blank (0 chars of text)"*.
 
 **Never let a missing browser become a silent skip** — a render check that opts
-out when it cannot find Chromium defeats its entire purpose. `puppeteer` is a
-devDependency (it is not used at runtime) and CI installs a browser explicitly.
+out when it cannot find Chromium defeats its entire purpose. CI installs one
+explicitly and fails the build if it cannot.
+
+**`puppeteer` is deliberately NOT in `package.json`.** Adding it as a
+devDependency broke the Railway PR preview immediately: `npm ci` fails in ~10s
+against a `package-lock.json` that does not know about it, at `BUILD_IMAGE` with
+no useful log. Regenerating the lock would have fixed that and left a worse
+problem — every production deploy downloading a ~150MB browser it never opens.
+CI installs it on demand (`npm install --no-save puppeteer@22`) and the script
+resolves a sibling checkout when one is present. **Generalise it: a tool only CI
+needs does not belong in the manifest the deploy installs from.**
 
 ## A failed fetch must never render as $0
 
