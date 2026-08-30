@@ -49,3 +49,38 @@ jobs:
       # and 100 of Watertown's 138 "money waiting" sections still have seats.
       - name: Fast Track widgets
         run: node scripts/ft-widgets.spec.js
+
+      # The Memberships section's auto-renew widgets. Card 17301 is SHARED with
+      # rental-report, so a rule about what a row MEANS has to be the same in
+      # both or the dashboard and the report it links to disagree about the same
+      # org on the same day. Pins the three that shipped wrong on the report
+      # side first: a pass is not a membership, a billing cycle belongs to the
+      # plan and not to one row's timestamps, and a feed missing a column must
+      # render a dash rather than a confident zero.
+      - name: Membership book widgets
+        run: node scripts/membership-book.spec.js
+
+      # THE PAGE MUST ACTUALLY RENDER. This repo had no render check at all, for
+      # a 3,500-line React page compiled by in-browser Babel — and its sibling
+      # shipped two blank pages to production before adding one. Every other
+      # check here passes on a page that shows the user nothing: node --check
+      # reads a different file, the JSX check proves the block PARSES, and no
+      # spec mounts a component. Parsing is not running.
+      #
+      # It earned its keep immediately: the Auto-Renew By Plan table was
+      # returning { headers, rows } where TableWidget reads { columns, data },
+      # which unmounts the WHOLE dashboard, and all 73 spec assertions passed on
+      # that build.
+      - name: Ensure a browser for the render check
+        run: |
+          for c in /usr/bin/google-chrome /usr/bin/google-chrome-stable /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$c" ]; then echo "PUPPETEER_EXECUTABLE_PATH=$c" >> $GITHUB_ENV; exit 0; fi
+          done
+          echo "no system Chrome — installing puppeteer's"
+          npm install --no-save puppeteer@22
+          npx puppeteer browsers install chrome
+
+      - name: Dashboard render check (real browser; a blank page fails the build)
+        run: |
+          node -e "require('puppeteer')" 2>/dev/null || npm install --no-save puppeteer@22
+          node scripts/ci-check-render.js
