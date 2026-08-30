@@ -102,6 +102,105 @@ alert on any **tokened** 404, which is what would have caught this in hours
 instead of five weeks. A tokenless 404 stays silent — that is bot traffic — and
 the token itself is never recorded.
 
+## The Memberships section reads the paid book (2026-08-30)
+
+Dan: *"we need a new 'Memberships' section... With according metrics based off
+the memberships reports."*
+
+**The section already existed. What it did not have was anything the memberships
+REPORT had learned.** Card 17301 is **shared** with rental-report
+(`f4496307-…` here, `SHARED_UUIDS.memberships` there), so every column that card
+gained in v2–v4 — `Product Kind`, `Auto Renew`, `Period Start`, `Next Renewal`,
+`Cancel Scheduled At` — has been arriving in this dashboard all along and being
+thrown away. Five tiles counted rows and summed a price.
+
+**The helpers are a deliberate MIRROR, and they carry rental-report's names on
+purpose** so a grep finds both copies. A rule about what a row MEANS has to be
+the same in both repos or the dashboard and the report it links to will disagree
+about the same org on the same day — which is the sibling-sweep rule at the top
+of this file applied to semantics rather than to fetch behaviour.
+
+Three rules, each one a bug that shipped on the report side first:
+
+- **A PASS IS NOT A MEMBERSHIP**, and it is not a membership that merely is not
+  auto-renewing either — `pass` has no subscription column in the schema at all.
+  Norman's feed is 20,341 rows of which **16,940 are passes**, 4,518 of those $5
+  league-tournament gate admissions. `Active Members` counted every one of them.
+  It is gated on the COLUMN, so a pre-v3 cache entry keeps the number the tile
+  has always shown instead of dropping by two thirds for a reason nothing on
+  screen explains — and **the excluded count is named in the sub-line**, because
+  a silent exclusion is how a number stops being trusted.
+- **A BILLING CYCLE BELONGS TO THE PLAN, NOT TO ONE ROW'S TIMESTAMPS.** Dividing
+  by each row's own `Next Renewal − Period Start` reads the time REMAINING in
+  the period on a membership about to renew: at Apex 8 rows had a gap under a
+  day (smallest **15 minutes**) and one derived **44,665 renewals**.
+  `mbPlanCycles` takes the median across a plan's members with sub-day gaps
+  given no vote at all.
+- **PRESENCE, NOT COUNT.** Feeds cache 4 hours, so a pre-v3 response is live
+  alongside a current one. A tile rendering `0` there says *"this org has no
+  auto-renew"*; the truth is *"this feed cannot tell us"*. Every gate tests
+  whether the COLUMN exists, never whether any row has a value. This is the same
+  invariant as *A failed fetch must never render as $0* below, one column down.
+
+**Churn is a HAZARD RATE in the plan's own cadence** — cancellations over
+renewal *opportunities* — never the lifetime share who have ever cancelled. The
+book-level tile carries **no period label**, deliberately: a book of weekly,
+monthly and annual plans has no single cadence, so "per month" would be false
+for part of it. Every per-plan rate does carry one, or the table invites ranking
+a weekly plan against a monthly one.
+
+**Each tile links to the TAB it was computed from** (`reportTab` on the widget
+def). The section header link lands on the report's own default tab, so "Churn
+Per Renewal" used to send a reader to a membership list with no churn on it.
+Built through `RPT_SLUG()`/`RPT_TOKEN()` — never `ORG_SLUG`/`TOKEN` — per the
+reporting-identity rule above; the spec fails if that reverts.
+
+Guards: `scripts/membership-book.spec.js` (**73 assertions, in CI**), which
+LIFTS AND RUNS the helpers and every transform rather than regexing them, over a
+fixture where **the passes outnumber the memberships** and the corrupt sub-day
+rows are the MAJORITY on their plan — nine good rows against one bad passes with
+the sub-day filter deleted, because a median over nine good values ignores the
+tenth. Mutation-tested eleven ways, all failing by name.
+
+**One mutation exposed a gap in the fixture rather than in the code**: deleting
+the churn presence gate passed, because the pre-v3 book held no cancellation for
+it to divide by. With that row's `Renewal Type` set so it survives the inferred
+fallback, the mutation now renders a confident **100%** churn — which is the
+kind of absurd-but-authoritative number the gate exists to prevent.
+
+## The dashboard render check (2026-08-30)
+
+**This repo had none**, for a 3,500-line React page compiled by in-browser
+Babel. `node --check` reads a different file; `ci-check-html.js` proves the
+block PARSES; no spec mounts a component. **Parsing is not running**, and its
+sibling shipped two blank pages to production learning that.
+
+`node scripts/ci-check-render.js` boots a static server for `public/`, answers
+every `/api/` request from fixtures, and drives a real Chromium — failing on any
+uncaught exception, an empty body, or a tile whose COMPUTED VALUE is wrong.
+Cases are keyed on the tile's own `.metric-value`, not on page text: "a widget
+rendered" passes on every regression the specs above name.
+
+**It earned its keep on its first run.** `tbl-mem-autorenew` returned
+`{ headers, rows }` where `TableWidget` reads `{ columns, data }` — which reads
+`data.data.length` off `undefined` and **unmounts the whole dashboard**, not
+just that tile. All 73 spec assertions passed on that build, and so did the JSX
+check. Verified in both directions: restoring the bad shape reproduces
+*"the page came up blank (0 chars of text)"*.
+
+**Never let a missing browser become a silent skip** — a render check that opts
+out when it cannot find Chromium defeats its entire purpose. CI installs one
+explicitly and fails the build if it cannot.
+
+**`puppeteer` is deliberately NOT in `package.json`.** Adding it as a
+devDependency broke the Railway PR preview immediately: `npm ci` fails in ~10s
+against a `package-lock.json` that does not know about it, at `BUILD_IMAGE` with
+no useful log. Regenerating the lock would have fixed that and left a worse
+problem — every production deploy downloading a ~150MB browser it never opens.
+CI installs it on demand (`npm install --no-save puppeteer@22`) and the script
+resolves a sibling checkout when one is present. **Generalise it: a tool only CI
+needs does not belong in the manifest the deploy installs from.**
+
 ## A failed fetch must never render as $0
 
 `fetchReportData` in public/dashboard.html tracks failures per report type and

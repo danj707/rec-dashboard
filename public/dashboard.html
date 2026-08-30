@@ -154,6 +154,12 @@ body { font-family: var(--font-body); background: var(--bg-page); color: var(--t
   transition: opacity 0.15s; color: var(--text-secondary); }
 .gear-btn:hover { opacity: 0.8; }
 .widget-card:hover .gear-btn { opacity: 0.5; }
+/* The tile's own link into the report tab it was computed from. Deliberately
+   NOT hover-only: a control nobody can find is a control that does not exist,
+   and the bug report for it arrives as a feature request. */
+.widget-report-link { text-decoration: none; font-size: 12px; opacity: 0.45; padding: 2px;
+  transition: opacity 0.15s; color: var(--text-secondary); line-height: 1; }
+.widget-report-link:hover { opacity: 1; }
 .widget-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
 .widget-label { font-size: 13px; color: var(--text-secondary); font-weight: 500; letter-spacing: 0.02em; }
 .widget-icon { font-size: 16px; opacity: 0.7; }
@@ -407,6 +413,174 @@ function getMonthRange(offset = 0) {
 }
 
 // ═══════════════════════════════════════════════════════
+//  MEMBERSHIP BOOK HELPERS
+// ═══════════════════════════════════════════════════════
+// These are a deliberate MIRROR of the module-scope helpers in
+// rental-report's public/memberships.html, and they carry the same names on
+// purpose so a grep finds both copies. Card 17301 is SHARED between the two
+// projects (f4496307-… here, SHARED_UUIDS.memberships there), so a rule about
+// what a row MEANS has to be the same in both or the dashboard and the report
+// it links to will disagree about the same org on the same day.
+//
+// They are at module scope, not inside a transform, so a spec can RUN them
+// rather than regex over them.
+//
+// THE THREE THINGS THAT ARE EASY TO GET WRONG, all measured against prod
+// during the report work and all reproduced here:
+//
+//   1. A PASS IS NOT A MEMBERSHIP. Norman's feed is 20,341 rows of which
+//      16,940 are passes — including 4,518 "$5 League Tournament Gate Adult"
+//      admissions. Counting those as members inflates every membership figure
+//      on this section, and it is why 'Active Members' needed a pass gate.
+//   2. A BILLING CYCLE IS A PROPERTY OF THE PLAN, NOT OF ONE ROW. Dividing by
+//      each row's own (Next Renewal − Period Start) reads the time REMAINING
+//      in the period on a membership whose renewal is imminent: at Apex, 8
+//      rows had a gap under a day (smallest 15 minutes) and one derived
+//      44,665 renewals. The median across a plan's members is unmoved by a
+//      minority of corrupt rows.
+//   3. PRESENCE, NOT COUNT. Feeds cache 4 hours, so a pre-v3/v4 response with
+//      none of these columns is live alongside a current one. A widget that
+//      renders 0 there says "this org has no auto-renew"; the truth is "this
+//      feed cannot tell us". Every gate below tests whether the COLUMN is
+//      present, never whether any row has a value.
+
+function mbCol(r, name) { return r ? r[name] : undefined; }
+function mbHasColumn(rows, name) {
+  return Array.isArray(rows) && rows.length > 0 && rows.some(r => r && Object.prototype.hasOwnProperty.call(r, name));
+}
+function mbHasProductKind(rows) { return mbHasColumn(rows, 'Product Kind'); }
+function mbHasAutoRenew(rows) { return mbHasColumn(rows, 'Auto Renew'); }
+function mbHasCancelSchedule(rows) { return mbHasColumn(rows, 'Cancel Scheduled At'); }
+function mbHasPeriod(rows) { return mbHasColumn(rows, 'Period Start'); }
+
+function mbIsPass(r) { return String(mbCol(r, 'Product Kind') || '').toLowerCase() === 'pass'; }
+function mbIsActive(r) { return String(mbCol(r, 'Status') || '').toLowerCase() === 'active'; }
+
+// A membership is CANCELLED if it has a cancellation date; the status word is
+// the fallback, not the test. Reading the word first misses a row whose status
+// has moved on but which carries the date.
+function mbIsCanceled(r) {
+  if (!r) return false;
+  if (mbCol(r, 'Canceled At')) return true;
+  const st = String(mbCol(r, 'Status') || '').toLowerCase();
+  return st === 'canceled' || st === 'cancelled';
+}
+
+// SCHEDULED to cancel is not CANCELLED — the membership is still live and
+// still billing, it just will not renew. The !mbIsCanceled guard is what stops
+// the two being added together the moment one becomes the other.
+function mbCancelPending(r) {
+  return !!(r && mbCol(r, 'Cancel Scheduled At') && !mbIsCanceled(r));
+}
+
+// `Auto Renew` is the truth (stripe_subscription_id IS NOT NULL). `Renewal
+// Type` INFERS it from next_renewal_at and is a different test — it is the
+// pre-v2 fallback only, so a warm 4-hour cache entry still resolves to the
+// same answer rather than reading as nobody auto-renewing.
+function mbIsAutoRenew(r) {
+  if (!r) return false;
+  const explicit = mbCol(r, 'Auto Renew');
+  if (explicit != null && explicit !== '') {
+    return explicit === true || String(explicit).toLowerCase() === 'true' || String(explicit) === '1';
+  }
+  return String(mbCol(r, 'Renewal Type') || '').toLowerCase().indexOf('auto') >= 0;
+}
+
+function mbPlanKey(r) {
+  return (r && (mbCol(r, 'Group / Plan') || mbCol(r, 'Membership Type'))) || '—';
+}
+
+function mbDays(a, b) {
+  const t0 = Date.parse(a), t1 = Date.parse(b);
+  if (isNaN(t0) || isNaN(t1)) return null;
+  return (t1 - t0) / 86400000;
+}
+
+// One ROW's gap. Only ever used as a vote toward its plan's median — see (2).
+function mbRowGapDays(r) {
+  const d = mbDays(mbCol(r, 'Period Start'), mbCol(r, 'Next Renewal'));
+  return d == null || d <= 0 ? null : d;
+}
+
+// The plan's cycle is the MEDIAN of its members' gaps, with sub-day gaps
+// excluded from the vote entirely: they are a renewal about to happen, not a
+// cadence, and they are the input that produced 44,665.
+function mbPlanCycles(rows) {
+  const byPlan = {};
+  (rows || []).forEach(r => {
+    const g = mbRowGapDays(r);
+    if (g == null || g < 1) return;
+    const k = mbPlanKey(r);
+    (byPlan[k] = byPlan[k] || []).push(g);
+  });
+  const out = {};
+  Object.keys(byPlan).forEach(k => {
+    const v = byPlan[k].sort((a, b) => a - b);
+    out[k] = v[Math.floor(v.length / 2)];
+  });
+  return out;
+}
+
+function mbCadence(days) {
+  if (days == null) return null;
+  if (days <= 10) return 'per week';
+  if (days <= 45) return 'per month';
+  if (days <= 120) return 'per quarter';
+  return 'per year';
+}
+
+// THERE IS NO RENEWAL-EVENT HISTORY ANYWHERE — `membership` keeps only the
+// CURRENT period — so renewals are derived: elapsed time divided by the plan's
+// cycle. Verified by remainder at Norman (weekly exact, monthly 0.06 off a
+// whole number, annual exact), which is why this is safe to state at all.
+//
+// NULL, never 0, when it cannot be derived: next_renewal_at is cleared on
+// cancellation, so a member who renewed six times and then left would
+// otherwise read as never having renewed — and would drag down the very plan
+// that kept billing them longest. Above 600 the dates are wrong and a dash is
+// more honest than a confident number.
+function mbRenewalsSoFar(r, planCycle) {
+  if (!r || !planCycle || planCycle < 1) return null;
+  const d = mbDays(mbCol(r, 'Start Date'), mbCol(r, 'Period Start'));
+  if (d == null || d < 0) return null;
+  const n = Math.round(d / planCycle);
+  return n <= 600 ? n : null;
+}
+
+// Churn as a HAZARD RATE: of all renewal opportunities, what share ended in a
+// cancellation. The lifetime share of a four-year-old book having eventually
+// cancelled is unremarkable; the same figure sitting in a KPI row reads as a
+// monthly rate and looks like a fire. Dan: "always report the churn rate based
+// on its renewal period."
+function mbChurnPerCycle(renewals, canceled) {
+  const opportunities = (renewals || 0) + (canceled || 0);
+  if (!opportunities) return null;
+  return canceled / opportunities;
+}
+
+// A per-cycle charge is only comparable across plans once it is per month.
+// Measured: 50 memberships bill WEEKLY, so reading the charge as monthly
+// understates them roughly fourfold.
+function mbMonthlyValue(price, cycleDays) {
+  if (cycleDays == null || cycleDays < 1) return null;
+  return price * (30.44 / cycleDays);
+}
+
+function mbPrice(r) {
+  return pf(mbCol(r, 'Net Collected') || mbCol(r, 'Paid') || mbCol(r, 'Price'));
+}
+
+// The auto-renew BOOK: the rows somebody is actually on auto-renew for. Dan,
+// after two rounds of narrowing a denominator instead: "the memberships showing
+// up in the auto renew tab should be those that are setup for auto renew."
+// That one rule subsumes every exclusion argued for separately — a pass, a
+// season plan and a desk-paid cash plan all have nobody enrolled and fall out
+// together instead of as three special cases.
+function mbBook(rows) {
+  return (rows || []).filter(r => mbIsAutoRenew(r));
+}
+
+// ═══════════════════════════════════════════════════════
 //  SECTION REGISTRY
 // ═══════════════════════════════════════════════════════
 const SECTIONS = {
@@ -429,8 +603,8 @@ const SECTIONS = {
     description: 'User growth, age, gender, and location data',
     defaultWidgets: ['user-total','user-new','user-households','user-residents','user-median-age'] },
   memberships: { id: 'memberships', label: 'Memberships', icon: '\uD83C\uDFAB', color: '#ec4899',
-    description: 'Member counts, revenue, and check-ins',
-    defaultWidgets: ['mem-active','mem-canceled','mem-revenue','mem-net','mem-type-donut'] },
+    description: 'The paid book: who bills automatically, what it earns a month, and who is leaving',
+    defaultWidgets: ['mem-active','mem-passes','mem-autorenew','mem-mrr','mem-churn','mem-leaving','mem-revenue','mem-kind-donut','mem-type-donut','tbl-mem-autorenew'] },
   products: { id: 'products', label: 'Products', icon: '\uD83D\uDECD\uFE0F', color: '#ef4444',
     description: 'Product and POS sales metrics',
     defaultWidgets: ['prod-gross','prod-net','prod-refunds','prod-units','prod-by-product'] },
@@ -912,9 +1086,26 @@ const W = {
     }},
 
   // ── Memberships ──
-  'mem-active': { label: 'Active Members', description: 'Currently active memberships', note: 'Memberships with active status', section: 'memberships',
-    reportType: 'memberships', size: 'sm', icon: '\u2705', component: 'metric',
-    transform: rows => ({ value: rows.filter(r=>(r['status']||r['Status']||'').toLowerCase()==='active').length, format:'number', colorClass:'metric-green' }) },
+  // A PASS IS NOT A MEMBER. This tile counted every active row, and at Norman
+  // 16,940 of 20,341 of them are passes — 4,518 being $5 gate admissions to a
+  // league tournament. Excluded ONLY when the feed can tell us (presence gate),
+  // so a pre-v3 cache entry keeps the number this tile has always shown rather
+  // than dropping by two thirds for a reason nothing on screen explains. The
+  // excluded count is named in the sub-line: a silent exclusion is how a number
+  // stops being trusted.
+  'mem-active': { label: 'Active Members', description: 'Currently active memberships, excluding day passes and gate fees', note: 'Memberships with active status — passes counted separately', section: 'memberships',
+    reportType: 'memberships', size: 'sm', icon: '\u2705', component: 'metric', reportTab: 'memberships',
+    transform: rows => {
+      const active = rows.filter(mbIsActive);
+      if (!mbHasProductKind(rows)) {
+        return { value: active.length, format:'number', colorClass:'metric-green',
+                 sub: 'passes not separable in this feed yet' };
+      }
+      const mem = active.filter(r => !mbIsPass(r));
+      const passes = active.length - mem.length;
+      return { value: mem.length, format:'number', colorClass:'metric-green',
+               sub: passes > 0 ? passes.toLocaleString() + ' active passes excluded' : 'no passes in this window' };
+    } },
   'mem-canceled': { label: 'Canceled', description: 'Canceled memberships', note: 'Memberships that have been canceled', section: 'memberships',
     reportType: 'memberships', size: 'sm', icon: '\u274C', component: 'metric',
     transform: rows => ({ value: rows.filter(r=>(r['status']||r['Status']||'').toLowerCase()==='canceled').length, format:'number', colorClass:'metric-red' }) },
@@ -942,6 +1133,125 @@ const W = {
       const s=Object.entries(g).sort((a,b)=>b[1]-a[1]);
       return { labels:s.map(e=>e[0]), values:s.map(e=>e[1]) };
     }},
+  // ── The auto-renew book ──
+  // Everything below reads the columns card 17301 gained in v2-v4. Each one is
+  // PRESENCE-gated: on an older cached feed the tile renders an em dash and
+  // says why, because a 0 here would state "this org earns nothing from
+  // auto-renew" when the truth is "this feed cannot tell us".
+  'mem-passes': { label: 'Day Passes & Gate Fees', description: 'Active passes, which can never auto-renew', note: 'Passes have no subscription column at all — schema, not configuration', section: 'memberships',
+    reportType: 'memberships', size: 'sm', icon: '🎫', component: 'metric', reportTab: 'memberships',
+    transform: rows => {
+      if (!mbHasProductKind(rows)) return { value: null, format:'number', sub:'not in this feed yet' };
+      const passes = rows.filter(r => mbIsActive(r) && mbIsPass(r));
+      return { value: passes.length, format:'number',
+               sub: passes.length ? '$' + Math.round(passes.reduce((s,r)=>s+mbPrice(r),0)).toLocaleString() + ' of admissions' : 'this org sells none' };
+    } },
+  'mem-autorenew': { label: 'On Auto-Renew', description: 'Memberships that bill automatically', note: 'Reads the subscription id, not the inferred renewal type', section: 'memberships',
+    reportType: 'memberships', size: 'sm', icon: '🔁', component: 'metric', reportTab: 'autorenew',
+    transform: rows => {
+      const book = mbBook(rows);
+      const plans = new Set(book.map(mbPlanKey));
+      return { value: book.length, format:'number', colorClass:'metric-green',
+               sub: book.length ? 'across ' + plans.size + ' plan' + (plans.size === 1 ? '' : 's') : 'no plan here is set up for it' };
+    } },
+  'mem-mrr': { label: 'Monthly Recurring', description: 'Auto-renew revenue per month', note: 'Each charge converted to a monthly figure using its plan’s own cycle', section: 'memberships',
+    reportType: 'memberships', size: 'sm', icon: '💵', component: 'metric', reportTab: 'autorenew',
+    transform: rows => {
+      if (!mbHasPeriod(rows)) return { value: null, format:'currency', sub:'billing cycle not in this feed yet' };
+      const cycles = mbPlanCycles(rows);
+      const book = mbBook(rows);
+      // ONE POPULATION. A total over every auto-renewer beside a monthly figure
+      // over only those with a known cycle is two correct sums that do not
+      // reconcile, which is how a reader stops trusting either.
+      let monthly = 0, known = 0, unknown = 0;
+      book.forEach(r => {
+        const mv = mbMonthlyValue(mbPrice(r), cycles[mbPlanKey(r)]);
+        if (mv == null) { unknown++; return; }
+        monthly += mv; known++;
+      });
+      return { value: known ? monthly : null, format:'currency', colorClass:'metric-green',
+               sub: known
+                 ? 'over ' + known.toLocaleString() + ' membership' + (known === 1 ? '' : 's')
+                   + (unknown ? ' · ' + unknown + ' on a cycle this feed cannot read' : '')
+                 : 'no readable billing cycle here' };
+    } },
+  'mem-churn': { label: 'Churn Per Renewal', description: 'Share of renewal opportunities ending in a cancellation', note: 'A rate per renewal, NOT the lifetime share who have ever cancelled', section: 'memberships',
+    reportType: 'memberships', size: 'sm', icon: '📉', component: 'metric', reportTab: 'autorenew',
+    deltaGoodWhenDown: true,
+    transform: rows => {
+      if (!mbHasPeriod(rows)) return { value: null, format:'percent', sub:'renewal dates not in this feed yet' };
+      // The rate must be taken over rows of EVERY status. A view that hides
+      // cancellations makes this structurally 0.0% for every org forever, and
+      // reads as a healthy book rather than a broken number.
+      const cycles = mbPlanCycles(rows);
+      const book = mbBook(rows);
+      let renewals = 0, canceled = 0;
+      book.forEach(r => {
+        if (mbIsCanceled(r)) { canceled++; return; }
+        const n = mbRenewalsSoFar(r, cycles[mbPlanKey(r)]);
+        if (n != null) renewals += n;
+      });
+      const churn = mbChurnPerCycle(renewals, canceled);
+      // NO PERIOD LABEL on the book-level rate, deliberately: a book of weekly,
+      // monthly and annual plans has no single cadence, so "per month" would be
+      // false for part of it. "Per renewal" is unit-free and true whatever the mix.
+      return { value: churn == null ? null : churn * 100, format:'percent',
+               colorClass: churn != null && churn > 0.1 ? 'metric-red' : '',
+               sub: churn == null ? 'no renewal history to derive' : canceled.toLocaleString() + ' cancellations over ' + (renewals + canceled).toLocaleString() + ' renewal opportunities' };
+    } },
+  'mem-leaving': { label: 'Leaving At Period End', description: 'Still billing, already cancelled for the end of the period', note: 'The only forward-looking churn signal the schema carries', section: 'memberships',
+    reportType: 'memberships', size: 'sm', icon: '⏳', component: 'metric', reportTab: 'autorenew',
+    deltaGoodWhenDown: true,
+    transform: rows => {
+      if (!mbHasCancelSchedule(rows)) return { value: null, format:'number', sub:'not in this feed yet' };
+      const pending = rows.filter(mbCancelPending);
+      return { value: pending.length, format:'number',
+               colorClass: pending.length ? 'metric-red' : '',
+               sub: pending.length
+                 ? '$' + Math.round(pending.reduce((s,r)=>s+mbPrice(r),0)).toLocaleString() + ' a cycle · open the tab for who'
+                 : 'nobody has cancelled ahead' };
+    } },
+  'mem-kind-donut': { label: 'Memberships vs Passes', description: 'What this org actually sells', note: 'A pass has no subscription column, so the split decides what every other tile can mean', section: 'memberships',
+    reportType: 'memberships', size: 'md', icon: '🧾', component: 'donut', reportTab: 'memberships',
+    transform: rows => {
+      if (!mbHasProductKind(rows)) return { labels: [], values: [] };
+      const active = rows.filter(mbIsActive);
+      const passes = active.filter(mbIsPass).length;
+      return { labels: ['Memberships', 'Passes'], values: [active.length - passes, passes] };
+    } },
+  'tbl-mem-autorenew': { label: 'Auto-Renew By Plan', description: 'Every plan somebody is actually on auto-renew for', note: 'Listed only where on > 0 — an eligible-but-unenrolled plan is a candidate, not a book entry', section: 'memberships',
+    reportType: 'memberships', size: 'lg', icon: '🔁', component: 'table', reportTab: 'autorenew',
+    transform: rows => {
+      const cycles = mbPlanCycles(rows);
+      const g = {};
+      mbBook(rows).forEach(r => {
+        const k = mbPlanKey(r);
+        if (!g[k]) g[k] = { n: 0, revenue: 0, renewals: 0, canceled: 0 };
+        g[k].n++;
+        g[k].revenue += mbPrice(r);
+        if (mbIsCanceled(r)) { g[k].canceled++; return; }
+        const n = mbRenewalsSoFar(r, cycles[k]);
+        if (n != null) g[k].renewals += n;
+      });
+      const rowsOut = Object.entries(g)
+        .sort((a, b) => b[1].revenue - a[1].revenue)
+        .slice(0, 12)
+        .map(([plan, v]) => {
+          const churn = mbChurnPerCycle(v.renewals, v.canceled);
+          // EVERY per-plan rate carries its cadence. A weekly plan losing 5% a
+          // week and a monthly plan losing 5% a month are not the same thing,
+          // and a bare column invites ranking them against each other.
+          const cad = mbCadence(cycles[plan]);
+          return [plan, v.n.toLocaleString(),
+                  '$' + Math.round(v.revenue).toLocaleString(),
+                  v.renewals.toLocaleString(),
+                  churn == null ? '—' : (churn * 100).toFixed(1) + '%' + (cad ? ' ' + cad : '')];
+        });
+      // TableWidget takes { columns, data } — a { headers, rows } shape reads
+      // `data.data.length` off undefined and unmounts the WHOLE dashboard, not
+      // just this tile. Caught by the render check; every spec passed on it.
+      return { columns: ['Plan', 'On auto-renew', 'Per cycle', 'Renewals', 'Churn'], data: rowsOut };
+    } },
   'tbl-memberships': { label: 'Membership Summary', description: 'Types with active count and revenue', note: 'Membership types with active count and revenue', section: 'memberships',
     reportType: 'memberships', size: 'lg', icon: '\uD83D\uDCCB', component: 'table',
     transform: rows => {
@@ -1813,6 +2123,20 @@ function WidgetCard({ widgetId, reportData, loading, freshRts, target, onTargetC
         </div>
         <div style={{display:'flex',alignItems:'center',gap:4}}>
           {switchable && <VizSwitcher current={effComponent} onSelect={t => onChartTypeChange(widgetId, t)} />}
+          {/* A TILE'S DEEP LINK GOES TO THE TAB IT WAS COMPUTED FROM. The
+              section header already links to the report, but it lands on the
+              report's own default tab — so "Churn Per Renewal" sent a reader to
+              a membership list with no churn on it, and they had to know which
+              tab to click. Built through RPT_SLUG/RPT_TOKEN, never ORG_SLUG or
+              TOKEN: those are THIS dashboard's names for the org and are exactly
+              what drifted when Shrewsbury was renamed. */}
+          {def.reportTab && reportingBaseUrl && SECTION_REPORT_MAP[def.section] && (
+            <a className="widget-report-link"
+               href={`${reportingBaseUrl}/${RPT_SLUG()}/${SECTION_REPORT_MAP[def.section]}?token=${RPT_TOKEN()}&tab=${def.reportTab}`}
+               target="_blank" rel="noopener noreferrer"
+               data-report-tab={def.reportTab}
+               title={`Open this in the ${SECTIONS[def.section] ? SECTIONS[def.section].label : ''} report`}>{'\u2197'}</a>
+          )}
           {isMetric && <button className="gear-btn" onClick={()=>{setEditingTarget(!editingTarget);setTargetInput(target||'');}} title="Set target">{'\u2699'}</button>}
           <span className="widget-icon">{def.icon}</span>
         </div>

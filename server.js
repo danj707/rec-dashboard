@@ -1572,7 +1572,14 @@ const INSIGHT_PROMPTS = {
   courts: 'Analyze these court utilization metrics. Focus on: instant vs managed booking mix, busiest courts, utilization patterns, and growth opportunities.',
   fasttrack: 'Analyze these Fast Track pre-registration metrics. Focus on: conversion rates, pending signups that need follow-up, demand vs capacity, and which programs generate the most interest.',
   'users-demographics': 'Analyze these user and demographic metrics. Focus on: user growth trends, geographic concentration, age/gender distribution, and community reach.',
-  memberships: 'Analyze these membership metrics. Focus on: active vs canceled ratio, revenue per member, renewal patterns, and retention opportunities.',
+  // Every number on this section is easy to misread, so the prompt says so.
+  // Churn Per Renewal is a hazard rate and NOT the share who have ever
+  // cancelled; renewals are DERIVED from the period dates because no renewal
+  // history exists anywhere in the schema; a weekly plan's rate and a monthly
+  // plan's rate are different units and must not be ranked against each other;
+  // and a pass is not a membership that merely is not auto-renewing — it has no
+  // subscription column at all, so it can never convert.
+  memberships: 'Analyze these membership metrics. The book splits into MEMBERSHIPS and PASSES: a pass (day pass, gate fee) has no subscription field in the schema at all, so it can never auto-renew and must never be described as a conversion opportunity. "Churn Per Renewal" is a hazard rate — the share of renewal OPPORTUNITIES that ended in a cancellation — not the share of members who have ever cancelled; do not describe it as monthly unless a plan\'s own cadence says so, and never rank a weekly plan\'s rate against a monthly one without naming both periods. Renewal counts are derived from the billing period dates, not logged, so treat them as estimates. Converting somebody to auto-renew means getting a card on file, not flipping a plan setting: auto-renew is only available on card payments. Focus on: which plans hold the book and what they earn a month, which plans leak members fastest in their own period, anyone scheduled to leave at period end and what that is worth, and plans with no auto-renew configured at all.',
   products: 'Analyze these product/POS sales metrics. Focus on: top sellers, revenue trends, refund rates, and sales volume patterns.',
   instructors: 'Analyze these instructor payout metrics. Focus on: revenue per instructor, section coverage, top performers, and refund exposure.',
   support: 'Analyze these resident support metrics. Rec\'s support team handles these conversations on the org\'s behalf, so frame insights around what residents are struggling with and what the org could fix upstream. Focus on: which topics drive the most volume, whether AI resolution is holding up or escalating, how fast residents get resolved, and any topic that looks like a self-service or documentation gap rather than a one-off.',
