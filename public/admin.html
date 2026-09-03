@@ -34,11 +34,32 @@ code { font-family: 'JetBrains Mono', monospace; font-size: 0.85em; background: 
 .chevron { font-size: 14px; color: #9ca3af; transition: transform 0.25s ease; display: inline-block; }
 .collapsible.open .chevron { transform: rotate(180deg); }
 .collapsible-body { overflow: hidden; max-height: 0; transition: max-height 0.35s ease; }
-.collapsible.open .collapsible-body { max-height: 5000px; }
+/* THE OPEN CAP SILENTLY TRUNCATED CONTENT. A collapsible animates on
+   max-height, so the open state needs a number — and it was 5000px with
+   overflow:hidden, so any section taller than that had the remainder clipped
+   and UNREACHABLE. Reported 2026-09-03 as "dashboard is not scrolling, I have
+   too many orgs": 29 org cards at two per row is well past 5000px, so the last
+   cards were cut mid-card and the page went straight to the next section. The
+   page scrolled fine; the section was truncated.
+   The cap has to stay a length for the transition to work at all (a
+   transition to `none` does not animate), so it is now a value no section can
+   reach. Do not lower it to "tidy up" — it is a ceiling, not a size. */
+.collapsible.open .collapsible-body { max-height: 100000px; }
 .collapsible-inner { padding: 16px 0; }
 
 /* Org cards */
-.org-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(480px, 1fr)); gap: 16px; }
+/* Its own scroller, per Dan: "add a scrollbar here so I can grab the org
+   data". With 29 orgs the grid is ~15 rows, which buries every section below
+   it — the fix above stops the clipping, and this stops the section being a
+   mile long. scrollbar-gutter keeps the columns from reflowing when the bar
+   appears, and the padding stops a card sitting under it. */
+.org-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(480px, 1fr)); gap: 16px;
+  max-height: min(68vh, 780px); overflow-y: auto; scrollbar-gutter: stable; padding-right: 4px; }
+/* A visible bar, because an invisible one is the same dead end as no bar. */
+.org-grid::-webkit-scrollbar { width: 10px; }
+.org-grid::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 6px; }
+.org-grid::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 6px; }
+.org-grid::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 .org-card { background: #ffffff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 20px; transition: border-color 0.2s, box-shadow 0.2s; }
 .org-card:hover { border-color: #cbd5e1; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
 .org-card-header { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; }
