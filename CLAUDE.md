@@ -152,9 +152,45 @@ from the sibling repo, and a throwing hook now fails by name rather than
 vanishing. *A harness that accepts an unknown field and drops it is worse than
 one that rejects it.*
 
+### The list, reworked after the second look
+
+Dan: *"set fixed column widths here, it's a bit of a jumbled mess. time of
+registration, then household owner, then participant name, then section or
+program name, then price. Add column headers. And animate the lightning bolt or
+something make it seem more 'alive'. Doesn't feel like it's doing anything."*
+And: *"when a new registration happens, the bottom one drops off, the new
+one(s) pop on the top, highlighted, then the highlighting fades after 10
+seconds or so."*
+
+- **FIXED COLUMN TRACKS.** The rows change under the reader every minute, so
+  natural widths meant every poll re-measured the table and the columns jumped.
+  Only the section flexes. Headers name the five columns.
+- **A ROW HAS AN IDENTITY.** The feed carries no booking id, so `liveKey()` is
+  the four things that cannot collide for two different registrations: the
+  second, the buyer, the participant, the section. **Rows are keyed by it, never
+  by array index** — otherwise React reuses a `<tr>` for a different
+  registration and the highlight lands on the wrong person.
+- **AN ARRIVAL IS A DIFF AGAINST THE PREVIOUS POLL**, not a timestamp
+  comparison: a row can arrive with an older stamp than one already on screen
+  (a staff-entered registration backdated by minutes).
+- **THE FIRST LOAD HIGHLIGHTS NOTHING.** Every row is new to an empty set, and
+  a card that lights up entirely on arrival has a highlight that means nothing —
+  the point is to catch the eye when ONE thing lands.
+- **The fade is the animation's job; the class comes off on a timer** (10s), so
+  a later re-render cannot replay it on a row that is no longer news. Reduced
+  motion still gets the highlight, without the movement.
+- **UNPAUSING REFRESHES IMMEDIATELY.** Otherwise the reader unticks the box and
+  waits up to a minute staring at the list they paused — the opposite of what
+  un-pausing a live feed should mean. It is also what makes the arrival
+  behaviour testable in a browser without waiting 60 seconds.
+- **The bolt pulses.** It is the only thing on the card that moves between
+  registrations, so it is what says the widget is still watching. Slow and
+  low-contrast on purpose: this sits on a dashboard somebody leaves open, and a
+  hard blink is an irritation rather than a signal.
+
 ### Guards
 
-`scripts/live-widgets.spec.js` (**61 assertions, in CI**), which LIFTS AND RUNS
+`scripts/live-widgets.spec.js` (**77 assertions, in CI**), which LIFTS AND RUNS
 the four date helpers rather than regexing them. Mutation-tested four ways, all
 failing by name: a "0 signups today" rendered on a dead feed, the live TTL
 override removed so the org's 15 minutes wins, "today" taken from the browser's
@@ -165,7 +201,7 @@ familiar one: `!/new Date\(r\[/` file-wide fails because other tiles
 legitimately build Dates for their own charts. Scope an assertion to the
 surface it is about — it slices the widget now.
 
-Plus six `ci-check-render.js` cases keyed on **computed values**: the row count,
+Plus **eighteen** `ci-check-render.js` cases keyed on **computed values**: the row count,
 today's count (three of the five fixture rows share the newest day, so a widget
 printing `rows.length` reads 5 and fails), exactly seven bars, the last bar
 marked today and carrying its own count, and the section sitting above the

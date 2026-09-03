@@ -137,18 +137,57 @@ body { font-family: var(--font-body); background: var(--bg-page); color: var(--t
 .live-spark { display: flex; align-items: flex-end; gap: 3px; height: 34px; margin: 8px 0 12px; }
 .live-spark i { flex: 1; background: var(--border); border-radius: 1px 1px 0 0; display: block; min-height: 3px; }
 .live-spark i.today { background: #16a34a; }
-.live-list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--border); }
-.live-list li { display: flex; align-items: baseline; gap: 8px; padding: 6px 0;
-                border-bottom: 1px solid var(--border-subtle); font-size: 11.5px; }
-.live-list li:last-child { border-bottom: 0; }
-.live-list .lt { color: var(--text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; width: 46px; }
-.live-list .ln { font-weight: 600; color: var(--text-primary); white-space: nowrap; }
-.live-list .lp { color: var(--text-secondary); white-space: nowrap; }
-/* The section name is the only thing allowed to take the slack, and it
-   truncates rather than wrapping — a row that grows to two lines makes the
-   list jump every time it refreshes. */
-.live-list .ls { flex: 1; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.live-list .lm { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--text-primary); white-space: nowrap; }
+/* FIXED COLUMNS. The rows change under the reader every minute, so natural
+   widths meant every poll re-measured the table and the columns jumped. Only
+   the section flexes; everything else is a fixed track. */
+.live-table { width: 100%; table-layout: fixed; border-collapse: collapse; margin-top: 4px; }
+.live-table th { text-align: left; font-size: 9px; font-weight: 700; letter-spacing: .06em;
+                 text-transform: uppercase; color: var(--text-muted);
+                 padding: 6px 8px 6px 0; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.live-table td { padding: 7px 8px 7px 0; border-bottom: 1px solid var(--border-subtle);
+                 font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.live-table tr:last-child td { border-bottom: 0; }
+.live-table .lt { width: 52px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.live-table .ln { width: 27%; font-weight: 600; color: var(--text-primary); }
+.live-table .lp { width: 24%; color: var(--text-secondary); }
+.live-table .ls { color: var(--text-secondary); }
+.live-table .lm { width: 62px; padding-right: 0; text-align: right;
+                  font-variant-numeric: tabular-nums; font-weight: 600; color: var(--text-primary); }
+.live-table th.lm { text-align: right; }
+
+/* A NEW REGISTRATION ANNOUNCES ITSELF, then stops. Dan: "the new one(s) pop on
+   the top, highlighted, then the highlighting fades after 10 seconds or so."
+   The fade is the ANIMATION's job and the class comes off on a timer, so a
+   later re-render cannot replay it on a row that is no longer news. */
+@media (prefers-reduced-motion: no-preference) {
+  .live-table tr.live-new td { animation: liveArrive 10s ease-out both; }
+  @keyframes liveArrive {
+    0%   { background: rgba(22,163,74,.28); transform: translateY(-4px); }
+    6%   { background: rgba(22,163,74,.28); transform: translateY(0); }
+    100% { background: rgba(22,163,74,0);   transform: translateY(0); }
+  }
+}
+/* Reduced motion still gets the signal, just without the movement. */
+@media (prefers-reduced-motion: reduce) {
+  .live-table tr.live-new td { background: rgba(22,163,74,.16); }
+}
+
+/* THE BOLT HAS A PULSE. Dan: "animate the lightning bolt or something, make it
+   seem more 'alive'. Doesn't feel like it's doing anything." It is the only
+   thing on the card that moves between registrations, so it is what says the
+   widget is still watching. Slow and low-contrast on purpose — this sits on a
+   dashboard somebody leaves open, and a hard blink at 60-second intervals is
+   an irritation, not a signal. */
+.live-bolt { display: inline-block; transform-origin: 50% 60%; }
+@media (prefers-reduced-motion: no-preference) {
+  .live-bolt { animation: liveBolt 2.8s ease-in-out infinite; }
+  @keyframes liveBolt {
+    0%, 62%, 100% { opacity: .55; transform: scale(1); }
+    68%           { opacity: 1;   transform: scale(1.18); }
+    74%           { opacity: .7;  transform: scale(1); }
+    80%           { opacity: 1;   transform: scale(1.1); }
+  }
+}
 .live-foot { margin-top: 8px; font-size: 10px; color: var(--text-muted); }
 @media (max-width: 1100px) { .widget-grid { grid-template-columns: repeat(3, 1fr); } }
 @media (max-width: 800px) { .widget-grid { grid-template-columns: repeat(2, 1fr); } }
@@ -2238,6 +2277,8 @@ function WidgetCard({ widgetId, reportData, loading, freshRts, target, onTargetC
    wrong clock) must not be told a different number from the person sitting in
    the rec centre. The newest row's own date is the day being counted. */
 const LIVE_POLL_MS = 60000;
+const LIVE_FLASH_MS = 10000;
+const LIVE_ROWS = 8;
 const LIVE_DAYS    = 7;
 
 // Local calendar dates, built from PARTS. `new Date("2026-09-03")` is UTC
@@ -2267,11 +2308,32 @@ function liveMoney(v) {
   return Number.isFinite(n) && n > 0 ? '$' + Math.round(n).toLocaleString() : '';
 }
 
+/* A ROW'S IDENTITY. The feed carries no booking id, so the key is the four
+   things that together cannot collide for two different registrations: the
+   second it happened, who bought it, for whom, and into what. Two rows that
+   match on all four ARE the same registration. */
+function liveKey(r) {
+  return [r['Signed Up At'], r['Customer Name'], r['Participant'] || '', r['Section']].join('\u0000');
+}
+
 function CoffeeCounter({ reportingBaseUrl, onAvailable }) {
   const [rows, setRows] = useState(null);
   const [err, setErr]   = useState(false);
   const [at, setAt]     = useState(null);
   const [paused, setPaused] = useState(false);
+  /* WHAT ARRIVED SINCE THE LAST LOOK. Dan: "when a new registration happens,
+     the bottom one drops off, the new one(s) pop on the top, highlighted, then
+     the highlighting fades." So the widget has to remember what it had already
+     shown — a diff against the previous poll, not a timestamp comparison,
+     because a row can arrive with an older stamp than one already on screen
+     (a staff-entered registration backdated by minutes).
+
+     THE FIRST LOAD HIGHLIGHTS NOTHING. Every row is "new" to an empty set, and
+     a card that lights up entirely on arrival is a card whose highlight means
+     nothing — the point is to catch the eye when ONE thing lands. */
+  const [flash, setFlash] = React.useState(() => new Set());
+  const seenRef  = React.useRef(null);
+  const timerRef = React.useRef(null);
 
   const load = React.useCallback(() => {
     const w = liveWindow(LIVE_DAYS);
@@ -2283,6 +2345,20 @@ function CoffeeCounter({ reportingBaseUrl, onAvailable }) {
       .then(r => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
       .then(j => {
         if (!j || !Array.isArray(j.rows)) throw new Error('shape');
+        const keys = j.rows.map(liveKey);
+        const seen = seenRef.current;
+        if (seen) {
+          const fresh = keys.filter(k => !seen.has(k));
+          if (fresh.length) {
+            setFlash(new Set(fresh));
+            // The class comes off after the highlight has faded, so a later
+            // re-render cannot replay the animation on a row that is no longer
+            // news. Cleared on unmount as well, or a closed tab still fires it.
+            clearTimeout(timerRef.current);
+            timerRef.current = setTimeout(() => setFlash(new Set()), LIVE_FLASH_MS);
+          }
+        }
+        seenRef.current = new Set(keys);
         setRows(j.rows); setErr(false); setAt(new Date());
         if (onAvailable) onAvailable(true);
       })
@@ -2294,11 +2370,19 @@ function CoffeeCounter({ reportingBaseUrl, onAvailable }) {
      LOOKS live and is not — and "watch people register" was the literal ask.
      Pausing stops the clock, because a list that reorders under the cursor
      while you are reading a name is worse than a stale one. */
+  const pausedRef = React.useRef(paused);
   useEffect(() => {
+    /* UNPAUSING REFRESHES IMMEDIATELY. Otherwise the reader ticks the box back
+       off and waits up to a minute staring at the list they paused, which is
+       the opposite of what un-pausing a live feed should mean. */
+    const wasPaused = pausedRef.current;
+    pausedRef.current = paused;
     if (paused) return;
+    if (wasPaused) load();
     const t = setInterval(load, LIVE_POLL_MS);
     return () => clearInterval(t);
   }, [load, paused]);
+  useEffect(() => () => clearTimeout(timerRef.current), []);
 
   /* ABSENT, NEVER A ZERO, when the feed cannot answer. A "0 signups today"
      counter on a registration morning says nobody registered when the truth is
@@ -2342,7 +2426,7 @@ function CoffeeCounter({ reportingBaseUrl, onAvailable }) {
           <label className="live-pause" title="Stops the 60-second refresh, so a row cannot move while you are reading it.">
             <input type="checkbox" checked={paused} onChange={e => setPaused(e.target.checked)} /> Pause
           </label>
-          <span className="widget-icon">{'\u26A1'}</span>
+          <span className="widget-icon live-bolt" aria-hidden="true">{'\u26A1'}</span>
         </div>
       </div>
 
@@ -2362,27 +2446,45 @@ function CoffeeCounter({ reportingBaseUrl, onAvailable }) {
         ))}
       </div>
 
-      <ul className="live-list">
-        {rows.slice(0, 8).map((r, i) => (
-          <li key={i}>
-            <span className="lt">{liveClock(r['Signed Up At'])}</span>
-            <span className="ln">{r['Customer Name']}</span>
-            {/* A dash, not the buyer's name repeated: a booking for the account
-                holder has no separate participant, and echoing the buyer would
-                imply a child who is not there. */}
-            <span className="lp">{r['Participant'] || ''}</span>
-            <span className="ls" title={r['Program'] || ''}>{r['Section']}</span>
-            <span className="lm">{liveMoney(r['Price']) || '\u2014'}</span>
-          </li>
-        ))}
-      </ul>
+      {/* FIXED COLUMNS, because the rows change under the reader. With natural
+          widths every poll re-measured the table and the columns jumped — Dan:
+          "it's a bit of a jumbled mess". `table-layout: fixed` means a new row
+          slides in without moving the four already on screen. */}
+      <table className="live-table">
+        <thead>
+          <tr>
+            <th className="lt">Time</th>
+            <th className="ln">Household owner</th>
+            <th className="lp">Participant</th>
+            <th className="ls">Section</th>
+            <th className="lm">Price</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.slice(0, LIVE_ROWS).map(r => {
+            const k = liveKey(r);
+            return (
+              <tr key={k} className={flash.has(k) ? 'live-new' : ''} data-live-new={flash.has(k) ? '1' : undefined}>
+                <td className="lt">{liveClock(r['Signed Up At'])}</td>
+                <td className="ln" title={r['Email'] || ''}>{r['Customer Name']}</td>
+                {/* A blank, not the buyer's name repeated: a booking for the
+                    account holder has no separate participant, and echoing the
+                    buyer would imply a child who is not there. */}
+                <td className="lp">{r['Participant'] || ''}</td>
+                <td className="ls" title={(r['Section'] || '') + (r['Program'] && r['Program'] !== r['Section'] ? ' \u00b7 ' + r['Program'] : '')}>{r['Section']}</td>
+                <td className="lm">{liveMoney(r['Price']) || '\u2014'}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
 
       <div className="live-foot">
         {at ? 'Updated ' + liveClock(at.getFullYear() + '-01-01T' + String(at.getHours()).padStart(2,'0') + ':' + String(at.getMinutes()).padStart(2,'0')) : ''}
         {paused ? ' \u00b7 paused' : ' \u00b7 refreshes every minute'}
         {/* The list is the top of a feed, not the whole of it — say so rather
             than letting eight rows read as the day's total. */}
-        {rows.length > 8 ? ' \u00b7 showing 8 of ' + rows.length : ''}
+        {rows.length > LIVE_ROWS ? ' \u00b7 showing ' + LIVE_ROWS + ' of ' + rows.length : ''}
       </div>
     </div>
   );

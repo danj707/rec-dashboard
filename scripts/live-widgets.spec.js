@@ -174,7 +174,7 @@ if (H.liveWindow) {
   ok(/const ttl = LIVE_REPORT_TTL_MS\[reportType\] \|\| \(orgConfig\?\.cacheTTL \|\| 15\) \* 60 \* 1000;/.test(srv),
      "...and the override wins over the org's own preference: an org that set a 30-minute cache did not ask for a stale \"right now\"");
   ok(/const LIVE_POLL_MS = 60000;/.test(code), 'the page polls every 60s');
-  ok(/if \(paused\) return;\s*\n\s*const t = setInterval\(load, LIVE_POLL_MS\);/.test(code),
+  ok(/if \(paused\) return;[\s\S]{0,120}?const t = setInterval\(load, LIVE_POLL_MS\);/.test(code),
      'and Pause STOPS the timer rather than hiding its effect — a list that reorders under the cursor while you read a name is worse than a stale one');
   ok(/return \(\) => clearInterval\(t\);/.test(code),
      'the interval is cleared on unmount, or switching tabs leaves a timer polling forever');
@@ -264,6 +264,46 @@ if (H.liveWindow) {
      'the inner bar is hidden by default');
   ok(/\.loading-bar\.active \.loading-bar-inner \{ display: block; \}/.test(code),
      '...and shown only while the bar is active');
+}
+
+/* ── 9d. THE LIST: FIXED COLUMNS, HEADERS, AND AN ARRIVAL THAT ANNOUNCES ──
+   Dan: "set fixed column widths here, it's a bit of a jumbled mess... Add
+   column headers. And animate the lightning bolt or something, make it seem
+   more 'alive'. Doesn't feel like it's doing anything." And: "when a new
+   registration happens, the bottom one drops off, the new one(s) pop on the
+   top, highlighted, then the highlighting fades after 10 seconds or so." */
+{
+  ok(/table-layout: fixed/.test(code),
+     'the columns are FIXED tracks — the rows change every minute, so natural widths re-measured the table and the columns jumped');
+  ['Time', 'Household owner', 'Participant', 'Section', 'Price'].forEach(h =>
+    ok(new RegExp('>' + h + '</th>').test(code), 'the list has a ' + h + ' header'));
+
+  /* THE ROW KEY IS THE ROW'S IDENTITY. The feed carries no booking id, so it
+     is the four things that cannot collide for two different registrations —
+     and it has to be a KEY, not an index, or React reuses a <tr> for a
+     different registration and the highlight lands on the wrong person. */
+  ok(/function liveKey\(r\)/.test(code), 'a row has a stable identity');
+  ok(/key=\{k\}/.test(code), '...and the rows are keyed by it, never by array index');
+
+  /* A DIFF AGAINST THE PREVIOUS POLL, not a timestamp comparison: a row can
+     arrive with an older stamp than one already on screen (a staff-entered
+     registration backdated by minutes). */
+  ok(/const fresh = keys\.filter\(k => !seen\.has\(k\)\);/.test(code),
+     'an arrival is a row the previous poll did not have');
+  ok(/if \(seen\) \{/.test(code),
+     'THE FIRST LOAD HIGHLIGHTS NOTHING — every row is new to an empty set, and a card that lights up entirely on arrival has a highlight that means nothing');
+  ok(/setTimeout\(\(\) => setFlash\(new Set\(\)\), LIVE_FLASH_MS\)/.test(code),
+     'and the highlight comes off on a timer, so a later re-render cannot replay it on a row that is no longer news');
+  ok(/const LIVE_FLASH_MS = 10000;/.test(code), '...after ten seconds');
+  ok(/clearTimeout\(timerRef\.current\), \[\]\)/.test(code),
+     'the timer is cleared on unmount');
+
+  ok(/if \(wasPaused\) load\(\);/.test(code),
+     'unpausing refreshes immediately, rather than leaving the reader staring for up to a minute at the list they paused');
+  ok(/\.live-bolt \{ animation: liveBolt/.test(code),
+     'the bolt has a pulse — it is the only thing that moves between registrations, so it is what says the widget is still watching');
+  ok(/prefers-reduced-motion: reduce[\s\S]{0,120}live-new/.test(code),
+     'and reduced motion still gets the highlight, just without the movement');
 }
 
 /* ── 10. THE CARD, and the four defects it fixes ──────────────────────────

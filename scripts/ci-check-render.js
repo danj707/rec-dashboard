@@ -129,6 +129,14 @@ const ENROLLMENTS = [
     'Section': 'Apple Picking', 'Program': 'Rec Connect Fall', 'Price': 30 },
 ];
 
+/* THE SECOND POLL BRINGS ONE MORE. A widget that highlights arrivals can only
+   be tested against a feed that CHANGES — with a constant payload the
+   highlight is indistinguishable from no highlight at all. This row is newest,
+   so it lands at the top, and it is the ONLY one that may light up. */
+const ENROLL_ARRIVAL = { 'Signed Up At': liveIso(0, '23:59:01'), 'Customer Name': 'Newly Arrived',
+  'Participant': 'Kid Arrived', 'Section': 'Just Registered', 'Program': 'Just Registered', 'Price': 42 };
+let enrollCalls = 0;
+
 const FIXTURES = {
   memberships: MEMBERSHIPS,
   enrollments: ENROLLMENTS,
@@ -257,6 +265,49 @@ const CASES = [
     needs: '.modal-body', absent: '.add-section-btn[data-add-live]' },
   { name: 'live · it is the FIRST row in the editor',
     needs: '.modal-body > [data-edit-live]:first-child' },
+
+  /* COLUMN HEADERS, in the order Dan named them, and FIXED tracks — the rows
+     change under the reader every minute, so natural widths re-measured the
+     table on every poll and the columns jumped. */
+  { name: 'live · the list has column headers', needs: 'body[data-livehead="Time|Household owner|Participant|Section|Price"]',
+    act: async page => {
+      // Close the editor first: it is a modal left open by the cases above.
+      await page.evaluate(() => {
+        const b = [...document.querySelectorAll('button')].find(x => (x.textContent || '').trim() === 'Cancel');
+        if (b) b.click();
+      });
+      await page.waitForSelector('.live-table thead th', { timeout: 15000 });
+      await page.evaluate(() => {
+        const hs = [...document.querySelectorAll('.live-table thead th')].map(h => h.textContent.trim());
+        document.body.setAttribute('data-livehead', hs.join('|'));
+        document.body.setAttribute('data-livefixed', getComputedStyle(document.querySelector('.live-table')).tableLayout);
+      });
+    } },
+  { name: 'live · ...and fixed column tracks', needs: 'body[data-livefixed="fixed"]' },
+
+  /* A NEW REGISTRATION HIGHLIGHTS, AND ONLY THE NEW ONE. Dan: "the new one(s)
+     pop on the top, highlighted, then the highlighting fades." Unpausing
+     forces the refresh, and the stub serves one extra row from the second call
+     — so a widget that highlights everything, or nothing, fails. */
+  { name: 'live · a new registration lands highlighted, at the top',
+    needs: '.live-table tbody tr:first-child[data-live-new="1"] td.ln',
+    act: async page => {
+      await page.waitForSelector('.live-pause input', { timeout: 15000 });
+      await page.click('.live-pause input');          // pause
+      await page.click('.live-pause input');          // unpause -> immediate refetch
+      await page.waitForSelector('[data-live-new="1"]', { timeout: 15000 });
+    } },
+  { name: 'live · ...and it is the only one highlighted',
+    needs: '.live-table tbody tr:first-child[data-live-new="1"]',
+    absent: '.live-table tbody tr:nth-child(2)[data-live-new="1"]' },
+  { name: 'live · the bolt is animated', needs: 'body[data-livebolt="1"]',
+    act: async page => {
+      await page.evaluate(() => {
+        const el = document.querySelector('.live-bolt');
+        const running = el && el.getAnimations && el.getAnimations().length > 0;
+        if (running) document.body.setAttribute('data-livebolt', '1');
+      });
+    } },
 ];
 
 (async () => {
@@ -286,6 +337,10 @@ const CASES = [
       // fetchReportData reads json.rows off /:org/api/data/:reportType.
       const m = /\/api\/data\/([a-z-]+)/.exec(u);
       const rt = m ? m[1] : null;
+      if (rt === 'enrollments') {
+        enrollCalls++;
+        return json({ rows: enrollCalls > 1 ? [ENROLL_ARRIVAL, ...ENROLLMENTS] : ENROLLMENTS });
+      }
       return json({ rows: (rt && FIXTURES[rt]) || [] });
     }
     req.continue();
