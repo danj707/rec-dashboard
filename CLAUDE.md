@@ -30,7 +30,12 @@ for the one question she asks daily.
 eight signups, and a Pause. Every instinct to add a filter here should be
 resisted: the reports exist for analysis, this is the thing you leave open.
 
-- **ABSENT, NEVER A ZERO.** A failed or unanswered feed renders **nothing** —
+- **A SKELETON WHILE IT LOADS; ABSENT ONLY IF IT FAILS.** Rendering nothing
+  during the first fetch left a "Live Widgets" heading over blank space for the
+  several seconds the query takes — Dan: *"now the widget is gone lol"*, which
+  was the load, not a failure. Not-yet-answered and could-not-answer are
+  different states and only one of them is absence.
+- **ABSENT, NEVER A ZERO.** A failed feed renders **nothing** —
   not a zero — and **the section hides with its widgets**, because a "Live
   Widgets" heading over a blank grid reads as broken rather than as absent. On
   a registration morning *"0 signups today"* when the truth is "nothing
@@ -229,7 +234,7 @@ spec pins that.
 
 ### Guards
 
-`scripts/live-widgets.spec.js` (**94 assertions, in CI**), which LIFTS AND RUNS
+`scripts/live-widgets.spec.js` (**96 assertions, in CI**), which LIFTS AND RUNS
 the four date helpers rather than regexing them. Mutation-tested four ways, all
 failing by name: a "0 signups today" rendered on a dead feed, the live TTL
 override removed so the org's 15 minutes wins, "today" taken from the browser's

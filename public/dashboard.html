@@ -2503,7 +2503,30 @@ function CoffeeCounter({ reportingBaseUrl, onAvailable, recOrgId }) {
      counter on a registration morning says nobody registered when the truth is
      that nothing answered — the most damaging false reading this dashboard
      could show, and the same rule as the failed-feed banner. */
-  if (err || !rows) return null;
+  if (err) return null;
+  /* BUT NOT-YET-ANSWERED IS NOT FAILED. Rendering nothing while the first
+     fetch is in flight left a "Live Widgets" heading over blank space for the
+     several seconds the query takes — Dan: "now the widget is gone lol",
+     which was the load, not a failure. A skeleton says "coming", the way every
+     other widget on this dashboard already does; absence is reserved for the
+     feed that could not answer at all. */
+  if (!rows) {
+    return (
+      <div className="widget-card widget-md live-card" data-live-loading="1">
+        <div className="widget-header">
+          <div>
+            <span className="widget-label"><span className="live-dot" /> {'\u2615'} Coffee Counter</span>
+            <div style={{fontSize:10,color:'var(--text-muted)',marginTop:2,fontWeight:400}}>
+              <span className="live-chip">Live</span>
+              Loading the last {LIVE_DAYS} days{'\u2026'}
+            </div>
+          </div>
+          <span className="widget-icon live-bolt" aria-hidden="true">{'\u26A1'}</span>
+        </div>
+        <div className="skeleton skeleton-chart" />
+      </div>
+    );
+  }
 
   const today   = rows.length ? liveDay(rows[0]['Signed Up At']) : '';
   const todayRows = rows.filter(r => liveDay(r['Signed Up At']) === today);

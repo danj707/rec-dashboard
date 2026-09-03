@@ -147,8 +147,14 @@ if (H.liveWindow) {
 
 /* ── 4. NO CONFIDENT ZERO, at either end ───────────────────────────────────*/
 {
-  ok(/if \(err \|\| !rows\) return null;/.test(code),
-     'a failed or unanswered feed renders NOTHING — a "0 signups today" counter on a registration morning is the worst reading this dashboard could show');
+  ok(/if \(err\) return null;/.test(code),
+     'a FAILED feed renders nothing — a "0 signups today" counter on a registration morning is the worst reading this dashboard could show');
+  /* But not-yet-answered is not failed. Rendering nothing during the first
+     fetch left a heading over blank space for several seconds — Dan: "now the
+     widget is gone lol", which was the load, not a failure. */
+  ok(/if \(!rows\) \{[\s\S]{0,900}?skeleton skeleton-chart/.test(code),
+     '...and a feed that has not answered YET shows a skeleton, the way every other widget here does');
+  ok(/data-live-loading="1"/.test(code), 'the loading card is distinguishable from the loaded one');
   ok(/availableReports\.enrollments && \(/.test(code),
      'and the section renders only where the feed exists at all');
   /* THE SECTION HIDES WITH ITS WIDGETS. This was an env gate for about an hour
