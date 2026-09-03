@@ -122,6 +122,12 @@ money AS (
 SELECT
   TO_CHAR(b.created_at AT TIME ZONE b.tz,   'YYYY-MM-DD"T"HH24:MI:SS')            AS "Signed Up At",
   CONCAT(u.first_name, ' ', u.last_name)                                          AS "Customer Name",
+  -- THE BUYER'S OWN ID, because the widget links the household owner straight
+  -- into Rec: /admin/o/<org>/users/<id>. It is `users.id`, the uuid — NOT
+  -- `rec_id`, the six-character code staff read out at a desk, which looks
+  -- like an id, renders identically in a link, and 404s. That mistake is
+  -- already recorded for the check-ins report.
+  b.customer_user_id::text                                                        AS "User ID",
   u.email                                                                         AS "Email",
   -- The participant, which is NOT the buyer: a parent registers a child, and
   -- the roster question is who is IN the class. Null when the booking is for

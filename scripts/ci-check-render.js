@@ -118,13 +118,18 @@ function liveIso(daysAgo, clock) {
 }
 const ENROLLMENTS = [
   { 'Signed Up At': liveIso(0, '14:41:48'), 'Customer Name': 'Rita Perri', 'Participant': null,
-    'Section': 'Play on 60+ Beginner Oxygen Dance', 'Program': 'Oxygen Dance Aerobics', 'Price': 25 },
+    'User ID': 'user-rita', 'Section Id': 'sec-oxygen',
+    'Section': 'Play on 60+ Beginner Oxygen Dance', 'Program': 'Oxygen Dance Aerobics', 'Price': 25, 'Paid': 25 },
   { 'Signed Up At': liveIso(0, '13:06:40'), 'Customer Name': 'Ryan Little', 'Participant': 'Brayden Little',
     'Section': 'Boys (Grades 4-5) Tryouts', 'Program': 'SBA Travel Teams', 'Price': 25 },
   { 'Signed Up At': liveIso(0, '11:35:00'), 'Customer Name': 'Nicole Baldarelli', 'Participant': 'Cameron Baldarelli',
     'Section': 'Music, Movement & Sensory Play', 'Program': 'Music, Movement & Sensory Play', 'Price': 60 },
+  /* YESTERDAY, and LATER IN THE DAY than the row above it — which is exactly
+     what made the list look unsorted: a column showing only a clock cannot say
+     that 8:15p was yesterday. This row is what proves the weekday prefix. */
   { 'Signed Up At': liveIso(1, '20:15:37'), 'Customer Name': 'Kaitlin Gentile', 'Participant': 'Cecelia Gentile',
-    'Section': 'Girls Grades 7-8', 'Program': 'Shrewsbury Rec Youth Basketball', 'Price': 170 },
+    'User ID': 'user-kaitlin', 'Section Id': 'sec-girls78',
+    'Section': 'Girls Grades 7-8', 'Program': 'Shrewsbury Rec Youth Basketball', 'Price': 170, 'Paid': 0 },
   { 'Signed Up At': liveIso(3, '09:02:00'), 'Customer Name': 'Zaid Syed', 'Participant': null,
     'Section': 'Apple Picking', 'Program': 'Rec Connect Fall', 'Price': 30 },
 ];
@@ -160,6 +165,10 @@ const CONFIG = {
   // enrollments present = the card has a public link, which is the ONLY
   // thing that puts the Live Widgets section on the page.
   availableReports: { memberships: true, enrollments: true },
+  // The rec.us org uuid the admin links are addressed by. Deliberately NOT the
+  // dashboard's own slug or token — a link built from those is the drift that
+  // broke every report link for five weeks.
+  recOrgId: 'rec-org-uuid',
   orgName: 'Render Check Parks',
   toggles: { ai: false, reportLinks: true, aiBriefing: false, emailDigest: false },
   // THE LINK IDENTITY. Deliberately DIFFERENT from this dashboard's own slug and
@@ -217,15 +226,6 @@ const CASES = [
   { name: 'live · the coffee counter reads its own feed', needs: '[data-live-coffee="5"]' },
   // THREE of the five rows are today. A widget printing rows.length reads 5.
   { name: 'live · and counts TODAY, not the list', needs: '[data-live-today="3"]' },
-  // The sparkline is one bar per day across the window, INCLUDING the days with
-  // nothing — built from the window rather than from the days the rows happen
-  // to carry, or a quiet Tuesday silently disappears and the shape lies.
-  { name: 'live · seven bars, one per day', needs: '.live-spark i:nth-child(7)',
-    absent: '.live-spark i:nth-child(8)' },
-  { name: 'live · today is the last bar and carries its own count',
-    needs: '.live-spark i:last-child.today[data-live-bar="3"]' },
-  // It sits ABOVE the stored sections: live data is what you want on arrival,
-  // and a section below the fold is one nobody opens the dashboard for.
   { name: 'live · above the date-ranged sections', needs: '.dashboard-section[data-live-section] + .dashboard-section' },
   // HALF WIDTH (Dan). widget-lg spans all four columns; this is a list of
   // eight short rows, not a chart, and full-bleed it dwarfed the dashboard.
@@ -300,6 +300,37 @@ const CASES = [
   { name: 'live · ...and it is the only one highlighted',
     needs: '.live-table tbody tr:first-child[data-live-new="1"]',
     absent: '.live-table tbody tr:nth-child(2)[data-live-new="1"]' },
+  /* THE TIMELINE replaced a per-day bar chart (Dan: "what is the odd bar chart
+     there... how about a moving timeline of the days/time... and when people
+     pay, it gets a dollar sign"). Keyed on the MARKS, because a lane with no
+     marks in it renders as a perfectly good empty timeline. */
+  { name: 'live · the timeline plots every registration', needs: '.live-timeline[data-live-marks="6"]' },
+  { name: 'live · a paid registration carries a dollar sign', needs: '.lt-mark.paid[data-live-mark="paid"]' },
+  { name: 'live · an unpaid one does not', needs: '.lt-mark[data-live-mark="unpaid"]',
+    absent: '.lt-mark.paid[data-live-mark="unpaid"]' },
+  { name: 'live · the last day is labelled Today', needs: '.lt-day.today' },
+  /* ROWS FROM ANOTHER DAY SAY SO. The list is sorted newest-first and always
+     was; a column showing only a clock made it look shuffled, because 8:15p
+     yesterday sorts below 2:41p today. */
+  { name: 'live · a row from another day carries its weekday',
+    needs: 'body[data-liveday="1"]',
+    act: async page => {
+      await page.waitForSelector('.live-table tbody tr', { timeout: 15000 });
+      await page.evaluate(() => {
+        const cells = [...document.querySelectorAll('.live-table td.lt')].map(c => c.textContent.trim());
+        const today = cells.filter(t => /^\d{1,2}:\d{2}[ap]$/.test(t)).length;
+        const dated = cells.filter(t => /^(Sun|Mon|Tue|Wed|Thu|Fri|Sat) \d{1,2}:\d{2}[ap]$/.test(t)).length;
+        if (today > 0 && dated > 0) document.body.setAttribute('data-liveday', '1');
+      });
+    } },
+  /* LINKS INTO REC, built from the ids rather than the names — a link built
+     from rec_id or from a section NAME renders identically and 404s. */
+  { name: 'live · the household owner links into Rec',
+    needs: 'a.live-link[data-live-user="user-rita"][href="https://www.rec.us/admin/o/rec-org-uuid/users/user-rita"]' },
+  { name: 'live · the section links into Rec',
+    needs: 'a.live-link[data-live-section="sec-oxygen"][href="https://www.rec.us/admin/o/rec-org-uuid/programming/sections/sec-oxygen"]' },
+  { name: 'live · a row with no id is plain text, not a dead link',
+    needs: '.live-table tbody tr', absent: 'a.live-link[href$="/users/undefined"]' },
   { name: 'live · the bolt is animated', needs: 'body[data-livebolt="1"]',
     act: async page => {
       await page.evaluate(() => {

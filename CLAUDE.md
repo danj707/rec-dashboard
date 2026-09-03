@@ -188,9 +188,48 @@ seconds or so."*
   low-contrast on purpose: this sits on a dashboard somebody leaves open, and a
   hard blink is an irritation rather than a signal.
 
+### A timeline instead of a bar chart, and links into Rec
+
+Dan: *"what is the odd bar chart there....how about a moving timeline of the
+days/time...and when people pay, it gets a dollar sign."* And: *"the HH owner
+and the section should be clickable directly to Rec, can we do that?"*
+
+- **THE BAR CHART SAID ALMOST NOTHING** this card does not say better in words.
+  A timeline says **WHEN** — the rush when registration opens, the long quiet
+  evening, the burst that just landed — which is the thing somebody watching a
+  registration day is watching for. One mark per registration at its own
+  minute, staggered across three rows so a cluster reads as a cluster.
+- **A PAID REGISTRATION CARRIES A `$`; an unpaid one is a plain dot.**
+  Registered and paid-for are different facts and the gap between them is worth
+  seeing on a card about money arriving.
+- **NOW is drawn.** Without it the last day reads as empty rather than as
+  not-yet-happened.
+- **A row outside the window is dropped, never clamped** onto the edge, which
+  would invent a signup at midnight.
+
+**THE LIST WAS ALWAYS SORTED; THE CLOCK HID IT.** Dan: *"shouldn't this be
+sorted by time? look at the times there"* — 11:23a, then 4:04p, then 2:12p.
+Newest first, and those are three different **days**, which a column showing
+only a clock cannot say. Today keeps the bare time (that is the day being
+watched); every other row is prefixed with its weekday, and a rule is drawn
+where the day changes — a list scanned in two seconds is read by its shape, not
+only by its text.
+
+**THE REC LINKS ARE COPIED, NOT GUESSED.** Both shapes already exist in the
+reporting project: `/admin/o/<org>/users/<id>` and
+`/admin/o/<org>/programming/sections/<id>`. A link built from the wrong id
+renders identically and 404s — the `rec_id` vs `users.id` mistake already
+recorded there. So **card v3 carries `User ID`** (`b.customer_user_id`, the
+uuid), the org uuid is sent as `recOrgId`, and either missing renders **plain
+text**: a link to nowhere is worse than no link.
+
+**`orgMeta` IS A WHITELIST**, so a field the server sends and that map forgets
+is silently absent — `recOrgId` has to be copied into it explicitly, and the
+spec pins that.
+
 ### Guards
 
-`scripts/live-widgets.spec.js` (**77 assertions, in CI**), which LIFTS AND RUNS
+`scripts/live-widgets.spec.js` (**94 assertions, in CI**), which LIFTS AND RUNS
 the four date helpers rather than regexing them. Mutation-tested four ways, all
 failing by name: a "0 signups today" rendered on a dead feed, the live TTL
 override removed so the org's 15 minutes wins, "today" taken from the browser's

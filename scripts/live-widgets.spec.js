@@ -217,21 +217,67 @@ if (H.liveWindow) {
   const widget = code.slice(code.indexOf('function CoffeeCounter'), code.indexOf('function LiveSection'));
   ok(!/new Date\(r\[/.test(widget) && !/new Date\(ts/.test(widget) && !/new Date\(String\(/.test(widget),
      'nothing in the widget parses a feed timestamp through new Date() — that is UTC midnight and lands on the previous day west of UTC');
-  ok(/new Date\(d0\.getFullYear\(\), d0\.getMonth\(\), d0\.getDate\(\) \+ i\)/.test(widget),
-     '...and the day it does build for the sparkline comes from PARTS');
+  ok(/liveAt\(r\['Signed Up At'\]\)/.test(code),
+     "...and the instant it does build comes through liveAt, which reads the stamp's PARTS");
 }
 
-/* ── 9. THE SPARKLINE IS BUILT FROM THE WINDOW ────────────────────────────
-   One bar per day across the last seven, including the days with nothing.
-   Built from the days the rows happen to carry, a quiet Tuesday disappears and
-   the shape lies about the week. */
+/* ── 9. THE TIMELINE ──────────────────────────────────────────────────────
+   It replaced a per-day bar chart. Dan: "what is the odd bar chart there...
+   how about a moving timeline of the days/time... and when people pay, it gets
+   a dollar sign." A count-per-day bar said almost nothing this card does not
+   say better in words; a timeline says WHEN, which is what somebody watching a
+   registration day is watching for. */
 {
-  ok(/for \(let i = 0; i < LIVE_DAYS; i\+\+\)/.test(code),
-     'the bars are generated from the window, not from the rows');
-  ok(/i === days\.length - 1 \? 'today' : ''/.test(code),
-     'the last bar is marked as today');
-  ok(/still filling/.test(code),
-     "...and the panel says today is still filling, or a half-finished day reads as a decline");
+  ok(/function liveTimeline\(rows, days\)/.test(code), 'the timeline is a module-scope model, so a spec can run it');
+  ok(/paid: Number\(r\['Paid'\]\) > 0/.test(code),
+     'a mark is PAID by what has actually arrived, not by what was charged — registered and paid for are different facts');
+  ok(/\{m\.paid \? '\$' : ''\}/.test(code), "...and a paid one carries the dollar sign");
+  ok(/lane: seen\[day\] % 3/.test(code),
+     'marks stagger across three rows, so a cluster reads as a cluster rather than as one dot');
+  ok(/if \(t == null \|\| t < t0 \|\| t > t1\) return;/.test(code),
+     'a row outside the window is dropped rather than clamped onto the edge, which would invent a signup at midnight');
+  ok(/nowLeft: Math\.min\(100, Math\.max\(0,/.test(code),
+     'NOW is drawn, and clamped into the lane — without it the last day reads as empty rather than as not-yet-happened');
+  ok(/'Today' : \['Sun','Mon','Tue','Wed','Thu','Fri','Sat'\]/.test(code),
+     'the last day is labelled Today');
+  ok(/function liveAt\(ts\)/.test(code) && /new Date\(Number\(m\[1\]\), Number\(m\[2\]\) - 1/.test(code),
+     'an instant is rebuilt from PARTS — new Date(str) would read the org-local stamp as UTC and slide an evening signup onto the wrong day');
+}
+
+/* ── 9a. THE CLOCK ALONE HID THE ORDER ────────────────────────────────────
+   Dan, reading the list: "shouldn't this be sorted by time? look at the times
+   there" — 11:23a, then 4:04p, then 2:12p. It IS sorted, newest first; those
+   are three different DAYS, and a column showing only a clock cannot say so. */
+{
+  ok(/function liveWhen\(ts, todayKey\)/.test(code), 'the time cell knows which day it is showing');
+  ok(/if \(!day \|\| day === todayKey\) return clock;/.test(code),
+     'today keeps the bare clock — that is the day being watched, and prefixing every row would be noise');
+  ok(/\['Sun','Mon','Tue','Wed','Thu','Fri','Sat'\]\[d\.getDay\(\)\] \+ ' ' \+ clock/.test(code),
+     '...and every other row carries its weekday');
+  ok(/live-daybreak/.test(code),
+     'plus a rule where the day changes: a list scanned in two seconds is read by its shape, not only by its text');
+}
+
+/* ── 9e. LINKS INTO REC, built from ids rather than names ─────────────────
+   Dan: "the HH owner and the section should be clickable directly to Rec."
+   Both URL shapes are COPIED from the reporting project, not guessed — a link
+   built from the wrong id renders identically and 404s, which is the mistake
+   already recorded there for rec_id vs users.id. */
+{
+  ok(/'https:\/\/www\.rec\.us\/admin\/o\/' \+ orgId \+ '\/users\/' \+ userId/.test(code),
+     'the household owner links to the Rec user page');
+  ok(/'https:\/\/www\.rec\.us\/admin\/o\/' \+ orgId \+ '\/programming\/sections\/' \+ sectionId/.test(code),
+     'the section links to the Rec section page');
+  ok(/orgId && userId \? /.test(code) && /orgId && sectionId \? /.test(code),
+     'both return null without an org or an id...');
+  ok(/return u \? <a className="live-link"/.test(code),
+     '...and the cell then renders plain text — a link to nowhere is worse than no link');
+  ok(/recOrgId: json\.recOrgId \|\| ''/.test(code),
+     'orgMeta is a whitelist, so the org uuid has to be copied into it explicitly or it is silently absent');
+  ok(/recOrgId: org\.orgId,/.test(srv), 'and the server sends it');
+  ok(/AS "User ID"/.test(sql), 'the card carries the buyer\'s own id');
+  ok(/b\.customer_user_id::text/.test(sql),
+     "...which is users.id, NOT rec_id — the six-character desk code looks like an id, renders identically in a link, and 404s");
 }
 
 /* ── 9b. IT IS HALF WIDTH, AND THE EDITOR TREATS IT AS A STATE ────────────

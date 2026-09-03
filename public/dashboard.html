@@ -134,9 +134,31 @@ body { font-family: var(--font-body); background: var(--bg-page); color: var(--t
 .live-count .live-n { font-family: var(--font-display); font-size: 34px; font-weight: 700; line-height: 1;
                       color: var(--text-primary); font-variant-numeric: tabular-nums; }
 .live-count .live-u { font-size: 11px; color: var(--text-muted); }
-.live-spark { display: flex; align-items: flex-end; gap: 3px; height: 34px; margin: 8px 0 12px; }
-.live-spark i { flex: 1; background: var(--border); border-radius: 1px 1px 0 0; display: block; min-height: 3px; }
-.live-spark i.today { background: #16a34a; }
+/* THE TIMELINE. One lane across the last seven days; every mark is one
+   registration at its own minute, and a paid one carries a $. Marks are
+   absolutely placed, so adding one costs no layout anywhere else on the card. */
+.live-timeline { position: relative; height: 42px; margin: 10px 0 12px;
+                 border-bottom: 1px solid var(--border); }
+.live-timeline .lt-day { position: absolute; top: 0; bottom: 0; }
+.live-timeline .lt-day i { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--border-subtle); }
+.live-timeline .lt-day em { position: absolute; bottom: -14px; left: 3px; font-style: normal;
+                            font-size: 8.5px; letter-spacing: .04em; color: var(--text-muted); white-space: nowrap; }
+.live-timeline .lt-day.today em { color: #16a34a; font-weight: 700; }
+/* NOW is a real edge on this card, so it is drawn. Without it the last day
+   reads as empty rather than as not-yet-happened. */
+.live-timeline .lt-now { position: absolute; top: 0; bottom: 0; width: 1px; background: #16a34a; opacity: .5; }
+.live-timeline .lt-mark { position: absolute; width: 9px; height: 9px; margin-left: -4px;
+                          font-size: 9px; line-height: 9px; text-align: center; border-radius: 50%;
+                          background: var(--border); color: transparent; }
+.live-timeline .lt-mark.paid { background: transparent; color: #16a34a; font-weight: 700; border-radius: 0; }
+@media (prefers-reduced-motion: no-preference) {
+  .live-timeline .lt-mark.fresh { animation: liveMarkIn 10s ease-out both; }
+  @keyframes liveMarkIn {
+    0%   { transform: scale(2.2); }
+    8%   { transform: scale(1); }
+    100% { transform: scale(1); }
+  }
+}
 /* FIXED COLUMNS. The rows change under the reader every minute, so natural
    widths meant every poll re-measured the table and the columns jumped. Only
    the section flexes; everything else is a fixed track. */
@@ -147,7 +169,7 @@ body { font-family: var(--font-body); background: var(--bg-page); color: var(--t
 .live-table td { padding: 7px 8px 7px 0; border-bottom: 1px solid var(--border-subtle);
                  font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .live-table tr:last-child td { border-bottom: 0; }
-.live-table .lt { width: 52px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.live-table .lt { width: 72px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .live-table .ln { width: 27%; font-weight: 600; color: var(--text-primary); }
 .live-table .lp { width: 24%; color: var(--text-secondary); }
 .live-table .ls { color: var(--text-secondary); }
@@ -188,6 +210,12 @@ body { font-family: var(--font-body); background: var(--bg-page); color: var(--t
     80%           { opacity: 1;   transform: scale(1.1); }
   }
 }
+/* A link into Rec. Underlined on hover only: a column of eight underlined
+   names reads as a wall of links rather than a list of people. */
+.live-table tr.live-daybreak td { border-top: 1px solid var(--border); }
+.live-link { color: inherit; text-decoration: none; }
+.live-link:hover { text-decoration: underline; color: var(--amber); }
+.live-table .ls .live-link:hover { color: var(--amber); }
 .live-foot { margin-top: 8px; font-size: 10px; color: var(--text-muted); }
 @media (max-width: 1100px) { .widget-grid { grid-template-columns: repeat(3, 1fr); } }
 @media (max-width: 800px) { .widget-grid { grid-template-columns: repeat(2, 1fr); } }
@@ -2303,6 +2331,93 @@ function liveClock(ts) {
   const h = Number(m[1]), ap = h >= 12 ? 'p' : 'a', h12 = h % 12 === 0 ? 12 : h % 12;
   return h12 + ':' + m[2] + ap;
 }
+/* AN INSTANT FROM PARTS. Same rule as everywhere else here: the feed's string
+   is already in the ORG's timezone, so it is read field by field and rebuilt
+   locally rather than handed to `new Date(str)`, which would treat it as UTC
+   and slide an evening signup onto the wrong day. */
+function liveAt(ts) {
+  const m = String(ts || '').match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+  if (!m) return null;
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5])).getTime();
+}
+
+/* THE TIMELINE. Dan, on the bar chart it replaces: "what is the odd bar chart
+   there... how about a moving timeline of the days/time... and when people pay,
+   it gets a dollar sign."
+
+   A count-per-day bar told you almost nothing this card does not say better in
+   words. A timeline says WHEN — the 9am rush on the morning registration opens,
+   the long quiet evening, the burst that just landed — which is the thing
+   somebody watching a registration day is watching FOR.
+
+   Every mark is one registration, placed by its own minute. A registration
+   that has been PAID gets a $; one that has not is a plain dot, because
+   "registered" and "paid for" are different facts and the gap between them is
+   worth seeing. Marks stagger across three rows so a cluster reads as a
+   cluster rather than as one dot. */
+function liveTimeline(rows, days) {
+  const w = liveWindow(days);
+  const p = w.start.split('-');
+  const t0 = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2])).getTime();
+  const q = w.end.split('-');
+  // The lane ends at the END of today, so every day is an equal slice and the
+  // "now" marker has somewhere to sit inside the last one.
+  const t1 = new Date(Number(q[0]), Number(q[1]) - 1, Number(q[2]) + 1).getTime();
+  const span = t1 - t0 || 1;
+  const seen = {};
+  const marks = [];
+  (rows || []).forEach(r => {
+    const t = liveAt(r['Signed Up At']);
+    if (t == null || t < t0 || t > t1) return;
+    const day = liveDay(r['Signed Up At']);
+    seen[day] = (seen[day] || 0) + 1;
+    marks.push({
+      key: liveKey(r),
+      left: ((t - t0) / span) * 100,
+      lane: seen[day] % 3,
+      paid: Number(r['Paid']) > 0,
+      label: liveClock(r['Signed Up At']) + ' \u00b7 ' + (r['Customer Name'] || '') +
+             ' \u00b7 ' + (r['Section'] || '') +
+             (Number(r['Paid']) > 0 ? ' \u00b7 paid ' + liveMoney(r['Paid']) : ' \u00b7 not yet paid'),
+    });
+  });
+  const dayLabels = [];
+  for (let i = 0; i < days; i++) {
+    const d = new Date(t0 + i * (span / days) + 3600000);   // midday-ish, so DST cannot round to the wrong day
+    dayLabels.push({ left: (i / days) * 100,
+                     text: i === days - 1 ? 'Today' : ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()] });
+  }
+  const now = Date.now();
+  return { marks, dayLabels, nowLeft: Math.min(100, Math.max(0, ((now - t0) / span) * 100)) };
+}
+
+/* REC ADMIN LINKS. Both shapes are already in use in the reporting project —
+   copied, not guessed: a link built from the wrong id renders identically and
+   404s, which is the mistake already recorded there for rec_id vs users.id.
+   Both return null without an id or an org, and the cell then renders plain
+   text: a link to nowhere is worse than no link. */
+function liveUserUrl(orgId, userId) {
+  return orgId && userId ? 'https://www.rec.us/admin/o/' + orgId + '/users/' + userId : null;
+}
+function liveSectionUrl(orgId, sectionId) {
+  return orgId && sectionId ? 'https://www.rec.us/admin/o/' + orgId + '/programming/sections/' + sectionId : null;
+}
+
+/* THE CLOCK ALONE HID THE ORDER. Dan, reading the list: "shouldn't this be
+   sorted by time? look at the times there" — 11:23a, then 4:04p, then 2:12p.
+   It IS sorted, newest first; those are three different DAYS, and a column
+   showing only a clock cannot say so. Today keeps the bare time (that is the
+   day being watched); every other row is prefixed with its weekday. */
+function liveWhen(ts, todayKey) {
+  const clock = liveClock(ts);
+  const day = liveDay(ts);
+  if (!day || day === todayKey) return clock;
+  const m = day.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return clock;
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()] + ' ' + clock;
+}
+
 function liveMoney(v) {
   const n = Number(v);
   return Number.isFinite(n) && n > 0 ? '$' + Math.round(n).toLocaleString() : '';
@@ -2316,7 +2431,7 @@ function liveKey(r) {
   return [r['Signed Up At'], r['Customer Name'], r['Participant'] || '', r['Section']].join('\u0000');
 }
 
-function CoffeeCounter({ reportingBaseUrl, onAvailable }) {
+function CoffeeCounter({ reportingBaseUrl, onAvailable, recOrgId }) {
   const [rows, setRows] = useState(null);
   const [err, setErr]   = useState(false);
   const [at, setAt]     = useState(null);
@@ -2394,23 +2509,7 @@ function CoffeeCounter({ reportingBaseUrl, onAvailable }) {
   const todayRows = rows.filter(r => liveDay(r['Signed Up At']) === today);
   const todayVal  = todayRows.reduce((n, r) => n + (Number(r['Price']) || 0), 0);
 
-  // Seven bars, oldest first, one per day in the window — including the days
-  // with nothing, which is why they are built from the window rather than from
-  // whatever days happen to appear in the rows.
-  const w = liveWindow(LIVE_DAYS);
-  const byDay = {};
-  rows.forEach(r => { const d = liveDay(r['Signed Up At']); byDay[d] = (byDay[d] || 0) + 1; });
-  const days = [];
-  {
-    const p = w.start.split('-');
-    const d0 = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]));
-    for (let i = 0; i < LIVE_DAYS; i++) {
-      const d = new Date(d0.getFullYear(), d0.getMonth(), d0.getDate() + i);
-      const key = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-      days.push({ key, n: byDay[key] || 0 });
-    }
-  }
-  const peak = days.reduce((m, d) => Math.max(m, d.n), 0) || 1;
+  const tl = liveTimeline(rows, LIVE_DAYS);
 
   return (
     <div className="widget-card widget-md live-card" data-live-coffee={String(rows.length)}>
@@ -2435,14 +2534,21 @@ function CoffeeCounter({ reportingBaseUrl, onAvailable }) {
         <span className="live-u">{todayRows.length === 1 ? 'signup' : 'signups'} today{liveMoney(todayVal) ? ' \u00b7 ' + liveMoney(todayVal) : ''}</span>
       </div>
 
-      {/* TODAY IS THE LAST BAR AND IT IS SHORT BECAUSE THE DAY IS NOT OVER —
-          said on screen, because a reader comparing it to yesterday otherwise
-          reads a half-finished day as a decline. */}
-      <div className="live-spark" title="Signups per day, oldest first. Today is the last bar and is still filling.">
-        {days.map((d, i) => (
-          <i key={d.key} className={i === days.length - 1 ? 'today' : ''}
-             style={{height: Math.max(3, Math.round(d.n / peak * 100)) + '%'}}
-             data-live-bar={String(d.n)} />
+      {/* WHEN, not how many. One mark per registration at its own minute; a $
+          where the money has actually arrived. The right-hand edge is now. */}
+      <div className="live-timeline" data-live-marks={String(tl.marks.length)}
+           title="Every registration in the last seven days, placed at the time it happened. $ means paid.">
+        {tl.dayLabels.map((d, i) => (
+          <span key={i} className={'lt-day' + (i === tl.dayLabels.length - 1 ? ' today' : '')}
+                style={{left: d.left + '%'}}><i /><em>{d.text}</em></span>
+        ))}
+        <span className="lt-now" style={{left: tl.nowLeft + '%'}} title="Now" />
+        {tl.marks.map(m => (
+          <span key={m.key}
+                className={'lt-mark' + (m.paid ? ' paid' : '') + (flash.has(m.key) ? ' fresh' : '')}
+                data-live-mark={m.paid ? 'paid' : 'unpaid'}
+                style={{left: m.left + '%', top: (6 + m.lane * 10) + 'px'}}
+                title={m.label}>{m.paid ? '$' : ''}</span>
         ))}
       </div>
 
@@ -2461,17 +2567,30 @@ function CoffeeCounter({ reportingBaseUrl, onAvailable }) {
           </tr>
         </thead>
         <tbody>
-          {rows.slice(0, LIVE_ROWS).map(r => {
+          {rows.slice(0, LIVE_ROWS).map((r, i, arr) => {
             const k = liveKey(r);
+            // A rule where the day changes. The weekday prefix already says it,
+            // but a list scanned in two seconds is read by its shape.
+            const newDay = i > 0 && liveDay(r['Signed Up At']) !== liveDay(arr[i - 1]['Signed Up At']);
             return (
-              <tr key={k} className={flash.has(k) ? 'live-new' : ''} data-live-new={flash.has(k) ? '1' : undefined}>
-                <td className="lt">{liveClock(r['Signed Up At'])}</td>
-                <td className="ln" title={r['Email'] || ''}>{r['Customer Name']}</td>
+              <tr key={k} className={(flash.has(k) ? 'live-new' : '') + (newDay ? ' live-daybreak' : '')} data-live-new={flash.has(k) ? '1' : undefined}>
+                <td className="lt">{liveWhen(r['Signed Up At'], today)}</td>
+                <td className="ln" title={r['Email'] || ''}>{(() => {
+                  const u = liveUserUrl(recOrgId, r['User ID']);
+                  return u ? <a className="live-link" href={u} target="_blank" rel="noopener noreferrer"
+                               data-live-user={String(r['User ID'])}>{r['Customer Name']}</a>
+                           : r['Customer Name'];
+                })()}</td>
                 {/* A blank, not the buyer's name repeated: a booking for the
                     account holder has no separate participant, and echoing the
                     buyer would imply a child who is not there. */}
                 <td className="lp">{r['Participant'] || ''}</td>
-                <td className="ls" title={(r['Section'] || '') + (r['Program'] && r['Program'] !== r['Section'] ? ' \u00b7 ' + r['Program'] : '')}>{r['Section']}</td>
+                <td className="ls" title={(r['Section'] || '') + (r['Program'] && r['Program'] !== r['Section'] ? ' \u00b7 ' + r['Program'] : '')}>{(() => {
+                  const u = liveSectionUrl(recOrgId, r['Section Id']);
+                  return u ? <a className="live-link" href={u} target="_blank" rel="noopener noreferrer"
+                               data-live-section={String(r['Section Id'])}>{r['Section']}</a>
+                           : r['Section'];
+                })()}</td>
                 <td className="lm">{liveMoney(r['Price']) || '\u2014'}</td>
               </tr>
             );
@@ -2490,7 +2609,7 @@ function CoffeeCounter({ reportingBaseUrl, onAvailable }) {
   );
 }
 
-function LiveSection({ reportingBaseUrl }) {
+function LiveSection({ reportingBaseUrl, recOrgId }) {
   const sec = SECTIONS.live;
   /* THE SECTION HIDES WITH ITS WIDGETS. The counter renders nothing when the
      feed cannot answer — that is the absence rule — but a header and an empty
@@ -2509,7 +2628,7 @@ function LiveSection({ reportingBaseUrl }) {
         <div className="section-line" />
       </div>
       <div className="widget-grid">
-        <CoffeeCounter reportingBaseUrl={reportingBaseUrl} onAvailable={setAlive} />
+        <CoffeeCounter reportingBaseUrl={reportingBaseUrl} recOrgId={recOrgId} onAvailable={setAlive} />
       </div>
     </div>
   );
@@ -3908,7 +4027,11 @@ function DashboardApp() {
         const json = await resp.json();
         setAvailableReports(json.availableReports || {});
         var _m = { name: json.orgName, logoUrl: json.logoUrl, city: json.city, state: json.state, toggles: json.toggles || {}, reportingBaseUrl: json.reportingBaseUrl || '',
-          reportingSlug: json.reportingSlug || '', reportingToken: json.reportingToken || '', reportVisibility: json.reportVisibility || null, readOnly: json.readOnly || false, expiresAt: json.expiresAt || null, supportReadOnly: json.supportReadOnly || false, supportNotify: json.supportNotify || [], announcements: json.announcements || [] };
+          reportingSlug: json.reportingSlug || '', reportingToken: json.reportingToken || '', reportVisibility: json.reportVisibility || null, readOnly: json.readOnly || false, expiresAt: json.expiresAt || null, supportReadOnly: json.supportReadOnly || false, supportNotify: json.supportNotify || [], announcements: json.announcements || [],
+          // The rec.us org uuid, for admin deep links. Explicitly copied like every
+          // other field here — orgMeta is a whitelist, so a key the server sends
+          // and this map forgets is simply absent, silently.
+          recOrgId: json.recOrgId || '' };
         window._orgMeta = _m;
         setOrgMeta(_m);
         window._orgGeo = json.city && json.state ? `${json.city}, ${json.state}` : '';
@@ -4198,7 +4321,7 @@ function DashboardApp() {
             printed "right now" is a lie the moment the paper leaves the
             printer. */}
         {!IS_PRINT && activeTab === 'dashboard' && availableReports.enrollments && (
-          <LiveSection reportingBaseUrl={orgMeta.reportingBaseUrl || ''} />
+          <LiveSection reportingBaseUrl={orgMeta.reportingBaseUrl || ''} recOrgId={orgMeta.recOrgId || ''} />
         )}
         {(IS_PRINT || activeTab === 'dashboard' || !availableReports.support) && displaySections.map((sec, i) => (
           <SectionBlock key={sec.id+i+theme} sectionId={sec.id} widgetIds={sec.widgets} reportData={reportData} loading={loading} freshRts={freshRts} priorReportData={priorReportData}

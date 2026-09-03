@@ -531,7 +531,18 @@ async function fetchMetabaseData(orgSlug, reportType, query) {
     const url = `${METABASE_URL}/api/public/card/${uuid}/query/json${paramStr}`;
     console.log(`[FETCH] ${orgSlug}/${reportType} → ${uuid} (shared=${isShared})`);
     const resp = await fetch(url);
-    if (!resp.ok) throw new Error(`Metabase ${resp.status}: ${resp.statusText}`);
+    if (!resp.ok) {
+      /* SAY WHAT METABASE SAID. "Metabase 400: Bad Request" is what this threw
+         for a Watertown programs prewarm that had actually spent 3m45s and hit
+         a statement timeout — a slow card and a broken one are opposite
+         problems with opposite fixes, and the status alone cannot tell them
+         apart. The body carries the reason; 200 characters of it is plenty.
+         Same lesson the sibling repo learned when its health check spent an
+         afternoon reporting healthy-but-slow cards as down. */
+      let why = '';
+      try { why = (await resp.text()).slice(0, 200).replace(/\s+/g, ' ').trim(); } catch (e) {}
+      throw new Error(`Metabase ${resp.status}: ${resp.statusText}${why ? ' — ' + why : ''}`);
+    }
     const rows = await resp.json();
     console.log(`[DATA] ${orgSlug}/${reportType}: ${rows.length} rows${rows.length > 0 ? ', cols: ' + Object.keys(rows[0]).join(', ') : ''}`);
     return rows;
@@ -1489,6 +1500,11 @@ app.get('/:org/api/config', authMiddleware, async (req, res) => {
   }
 
   res.json({ config, availableReports, orgName: org.name, logoUrl: org.logoUrl, city: org.city, state: org.state,
+    // The rec.us organisation uuid, which is what an admin link is addressed
+    // by: https://www.rec.us/admin/o/<recOrgId>/users/<id>. Ours to send —
+    // this page is already token-authenticated for exactly this org, and the
+    // same id is in every report URL it renders.
+    recOrgId: org.orgId,
     toggles: config?.toggles || { ai: true, reportLinks: false, aiBriefing: false, emailDigest: false },
     reportingBaseUrl: REPORTING_BASE_URL,
     // The slug and token rental-report actually serves this org under. The page
