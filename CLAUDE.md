@@ -127,9 +127,34 @@ After any API push to the card, re-set the Start/End Date variables to type
 **Date** and re-save until it registers three parameters rather than six.
 Flip link: https://rec.metabaseapp.com/question/21286
 
+### Three things the first look found (2026-09-03, same evening)
+
+- **HALF WIDTH.** It shipped `widget-lg`, which spans all four columns — right
+  for a chart, wrong for eight short rows, and full-bleed it dwarfed the board.
+- **THE EDITOR OFFERED TO ADD IT WHILE IT WAS ALREADY ON SCREEN.** Dan: *"if
+  it's already loaded, shouldn't it be highlighted, and at the top with a
+  widget counter of 1?"* Adding it would have produced a **second, empty copy**,
+  because the section renders outside `config.sections`. It is shown the way
+  Support is now — pinned first, labelled *"Always on · not date-filtered"*,
+  1 widget, and removed from the addable list. A control that offers to add
+  what is already there is the dead end this file keeps recording.
+- **"SPINNING FOREVER, TOP BAR NEVER STOPS."** It had already stopped, and
+  that was the problem: `.loading-bar-inner` carried a background and a 30%
+  width unconditionally while only the ANIMATION was gated on `.active`, so a
+  finished load left a static amber stub under the header that reads exactly
+  like a progress bar wedged at 30%. Pre-existing, on every dashboard. The
+  inner bar is `display: none` unless the bar is active.
+
+**AND THE RENDER HARNESS SILENTLY IGNORED `act`.** Four cases for the above
+failed against perfectly good code because this repo's `ci-check-render.js` had
+no per-case interaction hook — it accepted the field and dropped it. Ported
+from the sibling repo, and a throwing hook now fails by name rather than
+vanishing. *A harness that accepts an unknown field and drops it is worse than
+one that rejects it.*
+
 ### Guards
 
-`scripts/live-widgets.spec.js` (**54 assertions, in CI**), which LIFTS AND RUNS
+`scripts/live-widgets.spec.js` (**61 assertions, in CI**), which LIFTS AND RUNS
 the four date helpers rather than regexing them. Mutation-tested four ways, all
 failing by name: a "0 signups today" rendered on a dead feed, the live TTL
 override removed so the org's 15 minutes wins, "today" taken from the browser's

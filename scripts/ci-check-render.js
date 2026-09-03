@@ -219,6 +219,44 @@ const CASES = [
   // It sits ABOVE the stored sections: live data is what you want on arrival,
   // and a section below the fold is one nobody opens the dashboard for.
   { name: 'live · above the date-ranged sections', needs: '.dashboard-section[data-live-section] + .dashboard-section' },
+  // HALF WIDTH (Dan). widget-lg spans all four columns; this is a list of
+  // eight short rows, not a chart, and full-bleed it dwarfed the dashboard.
+  { name: 'live · the counter is half width', needs: '.live-card.widget-md', absent: '.live-card.widget-lg' },
+  /* THE LOADING BAR STOPS. Its inner bar carried a background and a 30% width
+     unconditionally — only the ANIMATION was gated — so a finished load left a
+     static amber stub under the header that reads as a progress bar stuck at
+     30%. Dan: "spinning forever, top bar never stops." Computed style, because
+     that stub renders identically to a real one in the DOM. */
+  { name: 'dashboard · the loading bar stops when loading does',
+    needs: 'body[data-loadbar="none"]',
+    act: async page => {
+      await page.waitForSelector('.widget-card', { timeout: 30000 });
+      await page.evaluate(() => {
+        const bar = document.querySelector('.loading-bar');
+        const inner = document.querySelector('.loading-bar-inner');
+        // Only meaningful once loading has finished; `.active` is the class the
+        // bar carries while it has not.
+        if (bar && !bar.classList.contains('active') && inner)
+          document.body.setAttribute('data-loadbar', getComputedStyle(inner).display);
+      });
+    } },
+  /* THE EDITOR SHOWS IT AS A STATE, NOT A CHOICE. It was in "Add a Section"
+     while already rendering above — and adding it would have produced a second,
+     empty copy, because the section is rendered outside config.sections. */
+  { name: 'live · the editor lists it as always-on, first', needs: '[data-edit-live]',
+    act: async page => {
+      await page.waitForSelector('.widget-card', { timeout: 30000 });
+      const clicked = await page.evaluate(() => {
+        const b = [...document.querySelectorAll('button')].find(x => /Edit Dashboard/.test(x.textContent || ''));
+        if (!b) { document.body.setAttribute('data-noedit', String(document.querySelectorAll('button').length)); return false; }
+        b.click(); return true;
+      });
+      if (clicked) await page.waitForSelector('.modal-body', { timeout: 15000 }).catch(() => {});
+    } },
+  { name: 'live · ...and never offers to add it again',
+    needs: '.modal-body', absent: '.add-section-btn[data-add-live]' },
+  { name: 'live · it is the FIRST row in the editor',
+    needs: '.modal-body > [data-edit-live]:first-child' },
 ];
 
 (async () => {
@@ -266,7 +304,18 @@ const CASES = [
 
   for (const c of CASES) {
     let bad = null;
-    if (c.needs) {
+    /* A per-case `act` hook, ported from the sibling repo's render check. Some
+       states only exist after an interaction — the widget editor is behind a
+       button, and a computed style has to be READ and stamped before a
+       selector can assert it. Without this the hook was silently ignored and
+       four cases failed against perfectly good code, which is its own lesson:
+       a harness that accepts an unknown field and drops it is worse than one
+       that rejects it. */
+    if (c.act) {
+      try { await c.act(page); }
+      catch (e) { bad = 'act() threw: ' + String(e.message).split('\n')[0].slice(0, 160); }
+    }
+    if (!bad && c.needs) {
       const found = await page.$(c.needs);
       if (!found) bad = 'rendered no "' + c.needs + '"';
     }

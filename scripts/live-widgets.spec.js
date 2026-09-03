@@ -234,6 +234,38 @@ if (H.liveWindow) {
      "...and the panel says today is still filling, or a half-finished day reads as a decline");
 }
 
+/* ── 9b. IT IS HALF WIDTH, AND THE EDITOR TREATS IT AS A STATE ────────────
+   Dan, seeing it in "Add a Section" while it was already rendering above:
+   "if it's already loaded, shouldn't it be highlighted, and at the top with a
+   widget counter of 1?" Adding it would have produced a SECOND, empty copy —
+   the section renders outside config.sections — so it is shown the way Support
+   is: pinned, labelled always-on, not offered. */
+{
+  ok(/widget-card widget-md live-card/.test(code),
+     'the counter is half width — widget-lg spans all four columns, and this is eight short rows, not a chart');
+  ok(/data-edit-live/.test(code), 'the editor carries a pinned row for it');
+  ok(/1 widget<\/span>|>1 widget</.test(code) || /1 widget/.test(code),
+     '...with its widget count');
+  ok(/if \(s\.id === 'live'\) return false;/.test(code),
+     'and it is excluded from the addable list, or the editor offers to add what is already there');
+  const editIdx = code.indexOf('data-edit-live');
+  const supIdx  = code.indexOf('availableReports.support && (');
+  ok(editIdx > 0 && supIdx > editIdx,
+     'it is the FIRST pinned row, which is where the section itself sits on the page');
+}
+
+/* ── 9c. THE LOADING BAR STOPS ────────────────────────────────────────────
+   Its inner bar carried a background and a 30% width unconditionally and only
+   the ANIMATION was gated, so a finished load left a static amber stub under
+   the header. Dan: "spinning forever, top bar never stops." It had already
+   stopped; that was the problem. */
+{
+  ok(/\.loading-bar-inner \{[^}]*display: none;/.test(code),
+     'the inner bar is hidden by default');
+  ok(/\.loading-bar\.active \.loading-bar-inner \{ display: block; \}/.test(code),
+     '...and shown only while the bar is active');
+}
+
 /* ── 10. THE CARD, and the four defects it fixes ──────────────────────────
    Ported from Laurel's own card 3571. THE LIVE CARD IS THE SOURCE OF TRUTH —
    read it before writing to it. */

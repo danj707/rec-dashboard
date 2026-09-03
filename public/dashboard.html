@@ -298,7 +298,13 @@ body { font-family: var(--font-body); background: var(--bg-page); color: var(--t
 .widget-card.widget-stale { opacity: 0.4; pointer-events: none; transition: opacity 0.2s; }
 .loading-bar { height: 3px; background: var(--bg-surface); overflow: hidden; }
 .loading-bar.active .loading-bar-inner { animation: loadSlide 1.2s ease-in-out infinite; }
-.loading-bar-inner { height: 100%; width: 30%; background: var(--amber); border-radius: 2px; }
+/* THE INNER BAR ONLY EXISTS WHILE LOADING. It carried a background and a 30%
+   width unconditionally and only the ANIMATION was gated, so once a load
+   finished the page kept a static amber stub sitting under the header — which
+   reads as a progress bar stuck at 30%. Dan: "spinning forever, top bar never
+   stops." It had already stopped; that was the problem. */
+.loading-bar-inner { height: 100%; width: 30%; background: var(--amber); border-radius: 2px; display: none; }
+.loading-bar.active .loading-bar-inner { display: block; }
 @keyframes loadSlide { 0% { transform: translateX(-100%); } 100% { transform: translateX(430%); } }
 
 /* Modal */
@@ -2323,7 +2329,7 @@ function CoffeeCounter({ reportingBaseUrl, onAvailable }) {
   const peak = days.reduce((m, d) => Math.max(m, d.n), 0) || 1;
 
   return (
-    <div className="widget-card widget-lg live-card" data-live-coffee={String(rows.length)}>
+    <div className="widget-card widget-md live-card" data-live-coffee={String(rows.length)}>
       <div className="widget-header">
         <div>
           <span className="widget-label"><span className="live-dot" /> {'\u2615'} Coffee Counter</span>
@@ -2760,6 +2766,9 @@ function EditModal({ sections, onSave, onClose, availableReports, toggles, focus
       if (activeSectionIds.has(s.id)) return false;
       if (s.id === 'ai-briefing') return false;  // disabled until data pipeline audit
       if (s.id === 'support') return false;      // lives in its own tab, not section config
+      // Always on and rendered outside config.sections — offering to "add" it
+      // would create a duplicate that renders nothing.
+      if (s.id === 'live') return false;
       // Also hide sections whose report is hidden on the reporting side (from window._reportVisibility)
       if (window._reportVisibility) {
         const rt = SECTION_REPORT_MAP[s.id];
@@ -2781,6 +2790,26 @@ function EditModal({ sections, onSave, onClose, availableReports, toggles, focus
           <button className="modal-close" onClick={onClose}>{'\u2715'}</button>
         </div>
         <div className="modal-body">
+          {/* LIVE WIDGETS IS ALWAYS ON, so it is shown as a state rather than
+              offered as a choice. Dan, seeing it in "Add a Section" while it
+              was already rendering above: "if it's already loaded, shouldn't
+              it be highlighted, and at the top with a widget counter of 1?"
+              Yes — a control that offers to add what is already there is the
+              dead end this codebase keeps writing down, and adding it would
+              have produced a duplicate section that renders nothing. Same
+              shape as the Support row below it, and FIRST, because that is
+              where the section itself sits on the page. */}
+          {availableReports.enrollments && (
+            <div className="edit-section" data-edit-live="1" style={{opacity:0.85,cursor:'default'}}
+              title="Live data, always on — it ignores the date range and refreshes itself">
+              <div style={{display:'flex',alignItems:'center',gap:10,padding:'12px 14px'}}>
+                <span style={{fontSize:15}}>{SECTIONS.live.icon}</span>
+                <span style={{fontSize:13,fontWeight:600,color:'var(--text-primary)'}}>{SECTIONS.live.label}</span>
+                <span style={{fontSize:10,fontWeight:600,padding:'2px 8px',borderRadius:8,background:'rgba(22,163,74,.12)',color:'#16a34a'}}>{'\u26A1'} Always on {'\u00b7'} not date-filtered</span>
+                <span style={{fontSize:11,color:'var(--text-muted)',marginLeft:'auto'}}>1 widget</span>
+              </div>
+            </div>
+          )}
           {availableReports.support && (
             <div className="edit-section" style={{opacity:0.85,cursor:'default'}}
               title="Included with every dashboard — Rec runs resident support for your org">
