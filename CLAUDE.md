@@ -96,12 +96,32 @@ reads non-zero for a comped booking.
 signed off cache-independently through the public endpoint with the app's own
 `date/single` parameters: **shrewsbury, 7-day window, 126 rows in 20.7s.**
 
-**Worth knowing about that 20.7s:** it is a cold run, and it is why the feed
-caches for a minute rather than being fetched per poll — an open dashboard
-costs about one query a minute for its org, not one per viewer. The cost is in
-the `money` CTE, which aggregates the org's whole `order_item` ledger rather
-than the window; narrowing it is the obvious optimisation if this ever needs
-one. Nothing waits on it: the widget renders when it answers.
+### v2 — THE WINDOW IS APPLIED BEFORE THE MONEY (2026-09-03, same day)
+
+The first version was slow in a way that only showed up on a second org.
+Measured through the public endpoint: **Shrewsbury 20.7s, then 42.2s;
+Watertown 46s.** The cause is not the feed's size — it returns 126 rows — it is
+that the `money` CTE aggregated the org's **whole `order_item` ledger** and was
+then joined to a handful of windowed bookings. A widget asking for seven days
+was paying for every registration the org had ever taken.
+
+`bk` resolves the windowed bookings first and `money` joins to it, so the
+per-item work runs over a week instead of a history: **Shrewsbury 1.05s.**
+
+**PROVEN IDENTICAL, not assumed.** Same org, same window, fingerprinted over
+(signed-up-at, customer, section, price, paid): **126 rows, $11,123 charged /
+$11,123 paid, md5 `173198a77f96255c22982d9fa9c067a5`** — byte-identical to the
+deployed v1. `oi.organization_id = bk.org_id` is **kept** even though the
+booking join makes it redundant, so the claim being made is "same query,
+smaller input" rather than "a different query that looks right".
+
+**THE DATE TAGS MOVED INTO `bk`,** which is the whole point — a window applied
+after the aggregate is the bug being fixed, and `live-widgets.spec.js` asserts
+their POSITION (between `bk AS (` and `money AS (`), not merely their presence.
+
+The 60-second cache stays: an open dashboard costs about one query a minute for
+its org, not one per viewer. Nothing waits on it — the widget renders when it
+answers.
 
 After any API push to the card, re-set the Start/End Date variables to type
 **Date** and re-save until it registers three parameters rather than six.
@@ -109,7 +129,7 @@ Flip link: https://rec.metabaseapp.com/question/21286
 
 ### Guards
 
-`scripts/live-widgets.spec.js` (**46 assertions, in CI**), which LIFTS AND RUNS
+`scripts/live-widgets.spec.js` (**54 assertions, in CI**), which LIFTS AND RUNS
 the four date helpers rather than regexing them. Mutation-tested four ways, all
 failing by name: a "0 signups today" rendered on a dead feed, the live TTL
 override removed so the org's 15 minutes wins, "today" taken from the browser's

@@ -254,6 +254,30 @@ if (H.liveWindow) {
      'Price is the item\'s own charge, never order_item.price — the rate card reads non-zero for a comped booking');
   ok(/AS "Participant"/.test(sql),
      'and the participant is carried, because a parent registering a child is the common case and one "name" column has to pick a side');
+
+  /* v2: THE WINDOW IS APPLIED BEFORE THE MONEY. The money CTE used to
+     aggregate the org's whole order_item ledger and then be joined to a
+     handful of windowed bookings, so a seven-day widget paid for every
+     registration the org had ever taken — 46s at Watertown, 42.2s at
+     Shrewsbury. Scoping it to the bookings the feed returns is 1.05s for
+     byte-identical output (126 rows, $11,123/$11,123, md5 173198a7…). */
+  ok(/^bk AS \(/m.test(sql),
+     'the windowed bookings are resolved in their own CTE, before any money is touched');
+  {
+    // The date tags must sit INSIDE bk — i.e. before the money CTE opens.
+    const bkAt    = sql.indexOf('\nbk AS (');
+    const moneyAt = sql.indexOf('\nmoney AS (');
+    const startAt = sql.indexOf('{{start_date}}');
+    const endAt   = sql.indexOf('{{end_date}}');
+    ok(bkAt > 0 && moneyAt > bkAt && startAt > bkAt && startAt < moneyAt && endAt > bkAt && endAt < moneyAt,
+       '...and the DATE TAGS live in it — a window applied after the aggregate is the bug this replaced');
+  }
+  ok(/FROM bk\n  JOIN order_item oi ON oi\.booking_id = bk\.id/.test(sql),
+     'the money CTE reads the windowed bookings rather than the org');
+  ok(/oi\.organization_id = bk\.org_id/.test(sql),
+     "...and KEEPS the org predicate, so this is the same query over a smaller input rather than a different query");
+  ok(!/JOIN order_item oi ON oi\.organization_id = cfg\.org_id/.test(sql),
+     'the org-wide order_item scan is gone');
 }
 
 /* ── report ───────────────────────────────────────────────────────────────*/
