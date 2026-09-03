@@ -332,8 +332,28 @@ const SHARED_UUIDS = {
   // (programs / facility / memberships / passes / products / events /
   // deposits / fees_tax / other) — reconciles exactly with the GL rollup.
   // Metabase card #19141 "Org Dashboard — Revenue by Stream (payment-dated)".
-  revstreams: '4c75c2e7-b4c0-44f3-b5bc-f8aac598730b'
+  revstreams: '4c75c2e7-b4c0-44f3-b5bc-f8aac598730b',
+  /* ── LIVE WIDGETS ──────────────────────────────────────────────────────
+     Card 21286 "Enrollments Live" — one row per confirmed section booking,
+     newest first, behind the Coffee Counter. Mirrored at
+     sql/enrollments-live.sql; the live card is the source of truth.
+
+     ENV-GATED, and that is the whole absence rule for this widget: the key is
+     omitted entirely until somebody creates the card's public link, so
+     availableReports has no `enrollments`, the Live Widgets section does not
+     render, and nobody sees a "0 signups today" counter that means "nothing
+     answered". A confident zero on a registration morning is the most
+     damaging false reading this dashboard could show. */
+  ...(process.env.MB_ENROLLMENTS_UUID ? { enrollments: process.env.MB_ENROLLMENTS_UUID } : {})
 };
+
+/* A LIVE WIDGET NEEDS ITS OWN CLOCK. Everything else here is a dashboard of a
+   window somebody chose and caches 15 minutes by org config; a counter whose
+   whole claim is "right now" cannot be a quarter of an hour behind. 60s is
+   also what the page polls at, so most ticks are served from this cache and
+   the card is queried about once a minute per org rather than once per
+   viewer. */
+const LIVE_REPORT_TTL_MS = { enrollments: 60 * 1000 };
 
 // Reports that don't accept date parameters
 const NO_DATE_REPORTS = new Set([
@@ -497,7 +517,9 @@ async function fetchMetabaseData(orgSlug, reportType, query) {
   
   // Check org-specific cache TTL
   const orgConfig = dashboardConfigs[orgSlug];
-  const ttl = (orgConfig?.cacheTTL || 15) * 60 * 1000;
+  // A live feed's TTL is a property of the FEED, not of the org's preference:
+  // an org that set a 30-minute cache did not ask for a stale "right now".
+  const ttl = LIVE_REPORT_TTL_MS[reportType] || (orgConfig?.cacheTTL || 15) * 60 * 1000;
   
   const doFetch = async () => {
     const paramStr = params.length ? `?parameters=${encodeURIComponent(JSON.stringify(params))}` : '';

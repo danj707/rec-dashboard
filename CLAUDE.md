@@ -1,5 +1,121 @@
 # Project notes for Claude
 
+## Live Widgets — a new section, and the Coffee Counter (2026-09-03)
+
+Dan, after the first one was built on the reporting side and taken back off the
+same afternoon: *"I ruminated on the live reports/widgets, and decided they
+don't belong on the reporting project side... The new live coffee counter
+widget, and all other live widgets, need to live on the org-dashboard project.
+A dashboard is the spot for live data, not static reports."*
+
+**THE LINE IS BETWEEN A REPORT AND A DASHBOARD, not between two features.** A
+report answers a question about a window somebody chose; a panel refreshing
+itself under that answer is a second, contradictory clock on the same screen.
+So `SECTIONS.live` is `_special` — it renders its own component instead of
+going through the date-ranged `reportData` pipeline that every other section
+uses, because that pipeline is keyed on the range these widgets ignore. The
+section header says *"not date-filtered"* where the numbers are, since a reader
+cannot otherwise tell which clock a figure is on.
+
+### The Coffee Counter
+
+Named for Laurel Rossiter at Shrewsbury, whose feedback on the reporting
+project produced it: *"registration day opens and I can literally watch people
+register for stuff and keep track... I don't have that umbrella viewpoint that
+I'm used to having, and I miss it."* What she already had was a Metabase card
+with four columns, newest first, no filters — and it beat a seven-tab report
+for the one question she asks daily.
+
+**THE DESIGN IS THE RESTRAINT.** Today's count, a seven-day sparkline, the last
+eight signups, and a Pause. Every instinct to add a filter here should be
+resisted: the reports exist for analysis, this is the thing you leave open.
+
+- **ABSENT, NEVER A ZERO.** `MB_ENROLLMENTS_UUID` is unset until somebody
+  creates the card's public link, and `SHARED_UUIDS` **omits the key entirely**
+  rather than carrying a broken one — so `availableReports.enrollments` is
+  false, the section does not render, and nobody sees *"0 signups today"* when
+  the truth is that nothing answered. A failed fetch renders nothing too. On a
+  registration morning that false zero is the most damaging thing this
+  dashboard could show.
+- **IT HAS ITS OWN CLOCK.** `LIVE_REPORT_TTL_MS` caches this feed for **60
+  seconds** and **beats the org's own `cacheTTL`** — an org that set a
+  30-minute cache did not ask for a stale "right now". The page polls at the
+  same 60s, so most ticks are served from that cache and the card is queried
+  about once a minute per org rather than once per viewer.
+- **"TODAY" COMES FROM THE FEED, NOT THE BROWSER.** The card stamps each signup
+  in the ORG's timezone, so the day being counted is the newest ROW's own day.
+  A viewer in another zone — or with a wrong clock — must not be told a
+  different number from the person sitting in the rec centre.
+- **Nothing parses a feed timestamp through `new Date()`.** It is a bare local
+  wall-clock string already converted to the org's zone; parsing and
+  reformatting re-applies the VIEWER's zone and moves an evening signup onto
+  the wrong day. The window is built from date PARTS for the same reason — a
+  `toISOString()` window asks for tomorrow from late afternoon onwards in the
+  US, on the one feed whose entire value is today.
+- **The sparkline is built from the WINDOW, not from the rows' own days**, so a
+  day with no signups is a real empty bar rather than silently missing. Today
+  is the last bar and the panel says it is still filling — otherwise a
+  half-finished day reads as a decline.
+- **Money is blank, never `$0`.** A free registration and a price we could not
+  read are different facts.
+- **Pause stops the timer**, because a list that reorders under the cursor
+  while you are reading a name is worse than a stale one.
+- **It renders ABOVE the stored sections and is NOT in `config.sections`.** Live
+  data is what you want on arrival, and gating it on a per-org config would
+  mean nobody sees it until they go looking in the editor for a widget they do
+  not know exists. **Never in print:** a printed "right now" is a lie the moment
+  the paper leaves the printer.
+
+### Card 21286, and the four defects it fixes
+
+`sql/enrollments-live.sql` mirrors it; **the live card is the source of truth —
+read it before writing to it.** Ported from Laurel's own card 3571, and each
+difference is a bug in the original:
+
+1. **`Signed Up At` reads `created_at`, not `updated_at`.** 3571 selects and
+   sorts on `updated_at` while its own date filter is bound to `created_at`, so
+   the column and the filter describe different events and "newest first" is
+   really "most recently TOUCHED first" — a transfer or a staff note re-dates a
+   months-old signup to today and floats it to the top.
+2. **The org is a parameter.** 3571 hardcodes Shrewsbury's uuid while its
+   description says Madison — it was copied.
+3. **The timezone comes from the org's majority location**, not a hardcoded
+   `America/New_York`, which renders a 9pm signup on the wrong DAY for the
+   non-Eastern half of the platform.
+4. **No `updated_at > '2025-04-15'` floor** silently truncating history.
+
+Plus `Participant` (a parent registering a child is the common case, and one
+"name" column has to pick a side). **It is not a revenue report:** `Price` is
+`applied_pricing` finalCents, never `order_item.price` — the rate card, which
+reads non-zero for a comped booking.
+
+**TO ACTIVATE:** set `MB_ENROLLMENTS_UUID` to the card's public UUID. The
+Metabase-side steps are the usual ones — after any API push, re-set the
+Start/End Date variables to type **Date** and re-save until the card registers
+three parameters rather than six. Flip link:
+https://rec.metabaseapp.com/question/21286
+
+### Guards
+
+`scripts/live-widgets.spec.js` (**46 assertions, in CI**), which LIFTS AND RUNS
+the four date helpers rather than regexing them. Mutation-tested four ways, all
+failing by name: a "0 signups today" rendered on a dead feed, the live TTL
+override removed so the org's 15 minutes wins, "today" taken from the browser's
+clock instead of the newest row, and the print exclusion dropped.
+
+**One assertion failed on correct code first time**, and the lesson is the
+familiar one: `!/new Date\(r\[/` file-wide fails because other tiles
+legitimately build Dates for their own charts. Scope an assertion to the
+surface it is about — it slices the widget now.
+
+Plus six `ci-check-render.js` cases keyed on **computed values**: the row count,
+today's count (three of the five fixture rows share the newest day, so a widget
+printing `rows.length` reads 5 and fails), exactly seven bars, the last bar
+marked today and carrying its own count, and the section sitting above the
+date-ranged ones. **The fixture's dates are built relative to today** — with
+hardcoded dates the sparkline draws seven empty bars and every bar assertion is
+vacuous.
+
 ## Metabase public-card fetches — keep in lockstep with rental-report (IMPORTANT)
 
 This app and `danj707/rental-report` both fetch Metabase public cards with

@@ -116,6 +116,40 @@ body { font-family: var(--font-body); background: var(--bg-page); color: var(--t
 @media (max-width: 600px) { .kpi-strip { flex-wrap: wrap; } .kpi-strip-item { flex: 1 1 45%; } .kpi-strip-value { font-size: 20px; } }
 @media print { .kpi-strip { break-inside: avoid; } }
 .widget-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+/* ── Live Widgets ────────────────────────────────────────────────────────
+   Everything here is themed through the same tokens as the rest of the
+   dashboard, so the card reads the same in light and dark. The one literal
+   colour is the live green, which has to mean "live" in both. */
+.live-card { display: flex; flex-direction: column; }
+.live-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #16a34a;
+            box-shadow: 0 0 0 3px rgba(22,163,74,.16); margin-right: 5px; vertical-align: middle; }
+@media (prefers-reduced-motion: no-preference) {
+  .live-dot { animation: livePulse 2.4s ease-in-out infinite; }
+  @keyframes livePulse { 0%,100% { box-shadow: 0 0 0 3px rgba(22,163,74,.16); } 50% { box-shadow: 0 0 0 6px rgba(22,163,74,.05); } }
+}
+.live-chip { background: rgba(22,163,74,.12); color: #16a34a; padding: 1px 5px; border-radius: 3px;
+             font-weight: 600; font-size: 9px; margin-right: 4px; }
+.live-pause { display: flex; align-items: center; gap: 5px; font-size: 10px; color: var(--text-muted); cursor: pointer; }
+.live-count { display: flex; align-items: baseline; gap: 8px; margin: 10px 0 2px; }
+.live-count .live-n { font-family: var(--font-display); font-size: 34px; font-weight: 700; line-height: 1;
+                      color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.live-count .live-u { font-size: 11px; color: var(--text-muted); }
+.live-spark { display: flex; align-items: flex-end; gap: 3px; height: 34px; margin: 8px 0 12px; }
+.live-spark i { flex: 1; background: var(--border); border-radius: 1px 1px 0 0; display: block; min-height: 3px; }
+.live-spark i.today { background: #16a34a; }
+.live-list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--border); }
+.live-list li { display: flex; align-items: baseline; gap: 8px; padding: 6px 0;
+                border-bottom: 1px solid var(--border-subtle); font-size: 11.5px; }
+.live-list li:last-child { border-bottom: 0; }
+.live-list .lt { color: var(--text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; width: 46px; }
+.live-list .ln { font-weight: 600; color: var(--text-primary); white-space: nowrap; }
+.live-list .lp { color: var(--text-secondary); white-space: nowrap; }
+/* The section name is the only thing allowed to take the slack, and it
+   truncates rather than wrapping — a row that grows to two lines makes the
+   list jump every time it refreshes. */
+.live-list .ls { flex: 1; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.live-list .lm { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--text-primary); white-space: nowrap; }
+.live-foot { margin-top: 8px; font-size: 10px; color: var(--text-muted); }
 @media (max-width: 1100px) { .widget-grid { grid-template-columns: repeat(3, 1fr); } }
 @media (max-width: 800px) { .widget-grid { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 500px) { .widget-grid { grid-template-columns: 1fr; } }
@@ -616,6 +650,25 @@ const SECTIONS = {
     defaultWidgets: ['sup-total','sup-ai-resolution','sup-hours-saved','sup-dollars-saved','sup-escalated','sup-median-resolution','sup-volume-trend','sup-by-topic','sup-resolution-mix','sup-by-channel','sup-top-articles','tbl-support-topics'] },
   'ai-briefing': { id: 'ai-briefing', label: 'AI Executive Briefing', icon: '\u2728', color: '#a855f7',
     description: 'AI-generated narrative summary from all dashboard data',
+    defaultWidgets: [], _special: true },
+
+  /* ── LIVE WIDGETS ────────────────────────────────────────────────────────
+     Dan, 2026-09-03, after building the first one on the reporting side and
+     taking it back off: "I ruminated on the live reports/widgets, and decided
+     they don't belong on the reporting project side... A dashboard is the spot
+     for live data, not static reports."
+
+     THE WHOLE SECTION IS OUTSIDE THE DATE PICKER, which is what makes it a
+     different kind of thing rather than a differently-styled widget: every
+     other section answers a question about a window somebody chose, and these
+     answer "right now". Mixing the two under one date range is how a number
+     comes to mean two things.
+
+     _special, like the briefing: it renders its own component instead of going
+     through the shared reportData pipeline, because that pipeline is keyed on
+     the date range these widgets deliberately ignore. */
+  live: { id: 'live', label: 'Live Widgets', icon: '\u26A1', color: '#16a34a',
+    description: 'Right now, refreshing itself \u2014 not scoped to the date range above',
     defaultWidgets: [], _special: true },
 
 };
@@ -2156,6 +2209,191 @@ function WidgetCard({ widgetId, reportData, loading, freshRts, target, onTargetC
             ? (label) => { var u = reportingBaseUrl + '/' + RPT_SLUG() + '/programs?token=' + RPT_TOKEN() + '&tab=revenue&program=' + encodeURIComponent(label); if (dateRange) { u += '&start_date=' + dateRange.start + '&end_date=' + dateRange.end; } window.open(u, '_blank'); }
             : undefined
         } />}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════
+//  LIVE WIDGETS
+// ═══════════════════════════════════════════════════════
+/* "Laurel's Coffee Chart", named for Laurel Rossiter at Shrewsbury, whose
+   feedback produced it: "registration day opens and I can literally watch
+   people register for stuff and keep track... I don't have that umbrella
+   viewpoint that I'm used to having, and I miss it."
+
+   THE DESIGN IS THE RESTRAINT. What she already had was a Metabase card with
+   four columns, newest first, no filters and no date range — and it beat a
+   seven-tab report for the one question she asks daily. So this widget offers
+   a Pause and nothing else. Every instinct to add a filter here should be
+   resisted: the reports exist for analysis, this is the thing you leave open.
+
+   IT COUNTS "TODAY" FROM THE FEED, NOT FROM THE BROWSER. The card stamps each
+   signup in the ORG's timezone; a viewer in another zone (or a laptop with a
+   wrong clock) must not be told a different number from the person sitting in
+   the rec centre. The newest row's own date is the day being counted. */
+const LIVE_POLL_MS = 60000;
+const LIVE_DAYS    = 7;
+
+// Local calendar dates, built from PARTS. `new Date("2026-09-03")` is UTC
+// midnight and lands on the previous day west of UTC — the bug this codebase
+// and its sibling have both been bitten by.
+function liveWindow(days) {
+  const t = new Date();
+  const iso = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  const end = new Date(t.getFullYear(), t.getMonth(), t.getDate());
+  const start = new Date(end.getFullYear(), end.getMonth(), end.getDate() - (days - 1));
+  return { start: iso(start), end: iso(end) };
+}
+
+// The card emits a bare local wall-clock string already converted to the org's
+// timezone ("2026-09-03T14:41:48"), so it is READ, never parsed as a Date and
+// reformatted — that would re-apply the viewer's zone and shift an evening
+// signup onto the wrong day.
+function liveDay(ts)  { return String(ts || '').slice(0, 10); }
+function liveClock(ts) {
+  const m = String(ts || '').match(/^\d{4}-\d{2}-\d{2}T(\d{2}):(\d{2})/);
+  if (!m) return '';
+  const h = Number(m[1]), ap = h >= 12 ? 'p' : 'a', h12 = h % 12 === 0 ? 12 : h % 12;
+  return h12 + ':' + m[2] + ap;
+}
+function liveMoney(v) {
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? '$' + Math.round(n).toLocaleString() : '';
+}
+
+function CoffeeCounter({ reportingBaseUrl }) {
+  const [rows, setRows] = useState(null);
+  const [err, setErr]   = useState(false);
+  const [at, setAt]     = useState(null);
+  const [paused, setPaused] = useState(false);
+
+  const load = React.useCallback(() => {
+    const w = liveWindow(LIVE_DAYS);
+    const qs = new URLSearchParams({ start: w.start, end: w.end });
+    const url = IS_SHARE
+      ? `/share/${SHARE_TOKEN}/data/enrollments?${qs}`
+      : `/${ORG_SLUG}/api/data/enrollments?token=${TOKEN}&${qs}`;
+    fetch(url)
+      .then(r => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then(j => {
+        if (!j || !Array.isArray(j.rows)) throw new Error('shape');
+        setRows(j.rows); setErr(false); setAt(new Date());
+      })
+      .catch(() => setErr(true));
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+  /* It refreshes, because a list of names that has not moved since breakfast
+     LOOKS live and is not — and "watch people register" was the literal ask.
+     Pausing stops the clock, because a list that reorders under the cursor
+     while you are reading a name is worse than a stale one. */
+  useEffect(() => {
+    if (paused) return;
+    const t = setInterval(load, LIVE_POLL_MS);
+    return () => clearInterval(t);
+  }, [load, paused]);
+
+  /* ABSENT, NEVER A ZERO, when the feed cannot answer. A "0 signups today"
+     counter on a registration morning says nobody registered when the truth is
+     that nothing answered — the most damaging false reading this dashboard
+     could show, and the same rule as the failed-feed banner. */
+  if (err || !rows) return null;
+
+  const today   = rows.length ? liveDay(rows[0]['Signed Up At']) : '';
+  const todayRows = rows.filter(r => liveDay(r['Signed Up At']) === today);
+  const todayVal  = todayRows.reduce((n, r) => n + (Number(r['Price']) || 0), 0);
+
+  // Seven bars, oldest first, one per day in the window — including the days
+  // with nothing, which is why they are built from the window rather than from
+  // whatever days happen to appear in the rows.
+  const w = liveWindow(LIVE_DAYS);
+  const byDay = {};
+  rows.forEach(r => { const d = liveDay(r['Signed Up At']); byDay[d] = (byDay[d] || 0) + 1; });
+  const days = [];
+  {
+    const p = w.start.split('-');
+    const d0 = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]));
+    for (let i = 0; i < LIVE_DAYS; i++) {
+      const d = new Date(d0.getFullYear(), d0.getMonth(), d0.getDate() + i);
+      const key = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+      days.push({ key, n: byDay[key] || 0 });
+    }
+  }
+  const peak = days.reduce((m, d) => Math.max(m, d.n), 0) || 1;
+
+  return (
+    <div className="widget-card widget-lg live-card" data-live-coffee={String(rows.length)}>
+      <div className="widget-header">
+        <div>
+          <span className="widget-label"><span className="live-dot" /> {'\u2615'} Coffee Counter</span>
+          <div style={{fontSize:10,color:'var(--text-muted)',marginTop:2,fontWeight:400}}>
+            <span className="live-chip">Live</span>
+            Registrations as they happen {'\u00b7'} last {LIVE_DAYS} days
+          </div>
+        </div>
+        <div style={{display:'flex',alignItems:'center',gap:8}}>
+          <label className="live-pause" title="Stops the 60-second refresh, so a row cannot move while you are reading it.">
+            <input type="checkbox" checked={paused} onChange={e => setPaused(e.target.checked)} /> Pause
+          </label>
+          <span className="widget-icon">{'\u26A1'}</span>
+        </div>
+      </div>
+
+      <div className="live-count">
+        <span className="live-n" data-live-today={String(todayRows.length)}>{todayRows.length}</span>
+        <span className="live-u">{todayRows.length === 1 ? 'signup' : 'signups'} today{liveMoney(todayVal) ? ' \u00b7 ' + liveMoney(todayVal) : ''}</span>
+      </div>
+
+      {/* TODAY IS THE LAST BAR AND IT IS SHORT BECAUSE THE DAY IS NOT OVER —
+          said on screen, because a reader comparing it to yesterday otherwise
+          reads a half-finished day as a decline. */}
+      <div className="live-spark" title="Signups per day, oldest first. Today is the last bar and is still filling.">
+        {days.map((d, i) => (
+          <i key={d.key} className={i === days.length - 1 ? 'today' : ''}
+             style={{height: Math.max(3, Math.round(d.n / peak * 100)) + '%'}}
+             data-live-bar={String(d.n)} />
+        ))}
+      </div>
+
+      <ul className="live-list">
+        {rows.slice(0, 8).map((r, i) => (
+          <li key={i}>
+            <span className="lt">{liveClock(r['Signed Up At'])}</span>
+            <span className="ln">{r['Customer Name']}</span>
+            {/* A dash, not the buyer's name repeated: a booking for the account
+                holder has no separate participant, and echoing the buyer would
+                imply a child who is not there. */}
+            <span className="lp">{r['Participant'] || ''}</span>
+            <span className="ls" title={r['Program'] || ''}>{r['Section']}</span>
+            <span className="lm">{liveMoney(r['Price']) || '\u2014'}</span>
+          </li>
+        ))}
+      </ul>
+
+      <div className="live-foot">
+        {at ? 'Updated ' + liveClock(at.getFullYear() + '-01-01T' + String(at.getHours()).padStart(2,'0') + ':' + String(at.getMinutes()).padStart(2,'0')) : ''}
+        {paused ? ' \u00b7 paused' : ' \u00b7 refreshes every minute'}
+        {/* The list is the top of a feed, not the whole of it — say so rather
+            than letting eight rows read as the day's total. */}
+        {rows.length > 8 ? ' \u00b7 showing 8 of ' + rows.length : ''}
+      </div>
+    </div>
+  );
+}
+
+function LiveSection({ reportingBaseUrl }) {
+  const sec = SECTIONS.live;
+  return (
+    <div className="dashboard-section" data-live-section="1">
+      <div className="section-header">
+        <span className="section-icon">{sec.icon}</span>
+        <span className="section-label">{sec.label}</span>
+        <span className="section-badge" title={sec.description}>{'\u23F1'} not date-filtered</span>
+        <div className="section-line" />
+      </div>
+      <div className="widget-grid">
+        <CoffeeCounter reportingBaseUrl={reportingBaseUrl} />
+      </div>
     </div>
   );
 }
@@ -3810,6 +4048,17 @@ function DashboardApp() {
       <div>
         {false && !IS_PRINT && config.sections.some(s => s.id === 'ai-briefing') && (
           <BriefingSection reportData={reportData} loading={loading} dateRange={dateRange} briefingRef={briefingRef} />
+        )}
+        {/* ABOVE the stored sections, and NOT read from config.sections: this
+            is live data, so it is the thing you want on arrival, and gating it
+            on a per-org config would mean nobody sees it until they go looking
+            in the editor for a widget they do not know exists. It renders only
+            where the feed exists at all (availableReports.enrollments is
+            absent until the card has a public link), and never in print — a
+            printed "right now" is a lie the moment the paper leaves the
+            printer. */}
+        {!IS_PRINT && activeTab === 'dashboard' && availableReports.enrollments && (
+          <LiveSection reportingBaseUrl={orgMeta.reportingBaseUrl || ''} />
         )}
         {(IS_PRINT || activeTab === 'dashboard' || !availableReports.support) && displaySections.map((sec, i) => (
           <SectionBlock key={sec.id+i+theme} sectionId={sec.id} widgetIds={sec.widgets} reportData={reportData} loading={loading} freshRts={freshRts} priorReportData={priorReportData}

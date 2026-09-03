@@ -60,6 +60,14 @@ jobs:
       - name: Membership book widgets
         run: node scripts/membership-book.spec.js
 
+      # LIVE WIDGETS are the one section here that ignores the date picker, and
+      # every way they can be wrong still renders a plausible tile: a confident
+      # "0 signups today" when the feed did not answer, a "right now" served
+      # from a 15-minute cache, a day counted off the viewer's clock instead of
+      # the org's, or a printed page claiming to be live.
+      - name: Live Widgets — the Coffee Counter
+        run: node scripts/live-widgets.spec.js
+
       # THE PAGE MUST ACTUALLY RENDER. This repo had no render check at all, for
       # a 3,500-line React page compiled by in-browser Babel — and its sibling
       # shipped two blank pages to production before adding one. Every other

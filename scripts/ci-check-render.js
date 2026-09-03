@@ -103,8 +103,35 @@ const MEMBERSHIPS = [
     'Group / Plan': 'League Tournament Gate Adult', 'Net Collected': '5', 'Paid': '5' })),
 ];
 
+/* THE SIGNUP FEED behind the Coffee Counter. Dates are built RELATIVE TO TODAY
+   on purpose: the widget's sparkline is one bar per day across the last seven,
+   so a fixture with hardcoded dates draws seven empty bars and every bar
+   assertion becomes vacuous.
+   THREE ROWS SHARE THE NEWEST DAY and two do not, so "signups today" is 3 and
+   not the row count — a widget printing the total passes on a single-day
+   fixture. */
+function liveIso(daysAgo, clock) {
+  const t = new Date();
+  const d = new Date(t.getFullYear(), t.getMonth(), t.getDate() - daysAgo);
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-'
+       + String(d.getDate()).padStart(2, '0') + 'T' + clock;
+}
+const ENROLLMENTS = [
+  { 'Signed Up At': liveIso(0, '14:41:48'), 'Customer Name': 'Rita Perri', 'Participant': null,
+    'Section': 'Play on 60+ Beginner Oxygen Dance', 'Program': 'Oxygen Dance Aerobics', 'Price': 25 },
+  { 'Signed Up At': liveIso(0, '13:06:40'), 'Customer Name': 'Ryan Little', 'Participant': 'Brayden Little',
+    'Section': 'Boys (Grades 4-5) Tryouts', 'Program': 'SBA Travel Teams', 'Price': 25 },
+  { 'Signed Up At': liveIso(0, '11:35:00'), 'Customer Name': 'Nicole Baldarelli', 'Participant': 'Cameron Baldarelli',
+    'Section': 'Music, Movement & Sensory Play', 'Program': 'Music, Movement & Sensory Play', 'Price': 60 },
+  { 'Signed Up At': liveIso(1, '20:15:37'), 'Customer Name': 'Kaitlin Gentile', 'Participant': 'Cecelia Gentile',
+    'Section': 'Girls Grades 7-8', 'Program': 'Shrewsbury Rec Youth Basketball', 'Price': 170 },
+  { 'Signed Up At': liveIso(3, '09:02:00'), 'Customer Name': 'Zaid Syed', 'Participant': null,
+    'Section': 'Apple Picking', 'Program': 'Rec Connect Fall', 'Price': 30 },
+];
+
 const FIXTURES = {
   memberships: MEMBERSHIPS,
+  enrollments: ENROLLMENTS,
   gl: [], facility: [], programs: [], 'court-utilization': [], fasttrack: [],
   users: [], products: [], 'instructor-payout': [],
 };
@@ -122,7 +149,9 @@ const CONFIG = {
                                               'mem-type-donut','tbl-mem-autorenew'] }],
     toggles: { ai: false, reportLinks: true, aiBriefing: false, emailDigest: false },
   },
-  availableReports: { memberships: true },
+  // enrollments present = the card has a public link, which is the ONLY
+  // thing that puts the Live Widgets section on the page.
+  availableReports: { memberships: true, enrollments: true },
   orgName: 'Render Check Parks',
   toggles: { ai: false, reportLinks: true, aiBriefing: false, emailDigest: false },
   // THE LINK IDENTITY. Deliberately DIFFERENT from this dashboard's own slug and
@@ -171,6 +200,25 @@ const CASES = [
     needs: 'a.widget-report-link[href*="token=reporting-token"]' },
   { name: 'memberships · never our own slug',
     needs: 'a.widget-report-link', absent: `a.widget-report-link[href*="/${ORG}/"]` },
+
+  /* ── LIVE WIDGETS ────────────────────────────────────────────────────────
+     Keyed on COMPUTED VALUES. "A live section rendered" passes on a counter
+     printing the row count, on a sparkline drawn from the wrong days, and on a
+     list wired to the wrong feed. */
+  { name: 'live · the section is on the page', needs: '[data-live-section]' },
+  { name: 'live · the coffee counter reads its own feed', needs: '[data-live-coffee="5"]' },
+  // THREE of the five rows are today. A widget printing rows.length reads 5.
+  { name: 'live · and counts TODAY, not the list', needs: '[data-live-today="3"]' },
+  // The sparkline is one bar per day across the window, INCLUDING the days with
+  // nothing — built from the window rather than from the days the rows happen
+  // to carry, or a quiet Tuesday silently disappears and the shape lies.
+  { name: 'live · seven bars, one per day', needs: '.live-spark i:nth-child(7)',
+    absent: '.live-spark i:nth-child(8)' },
+  { name: 'live · today is the last bar and carries its own count',
+    needs: '.live-spark i:last-child.today[data-live-bar="3"]' },
+  // It sits ABOVE the stored sections: live data is what you want on arrival,
+  // and a section below the fold is one nobody opens the dashboard for.
+  { name: 'live · above the date-ranged sections', needs: '.dashboard-section[data-live-section] + .dashboard-section' },
 ];
 
 (async () => {
