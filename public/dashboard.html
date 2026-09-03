@@ -2261,7 +2261,7 @@ function liveMoney(v) {
   return Number.isFinite(n) && n > 0 ? '$' + Math.round(n).toLocaleString() : '';
 }
 
-function CoffeeCounter({ reportingBaseUrl }) {
+function CoffeeCounter({ reportingBaseUrl, onAvailable }) {
   const [rows, setRows] = useState(null);
   const [err, setErr]   = useState(false);
   const [at, setAt]     = useState(null);
@@ -2278,9 +2278,10 @@ function CoffeeCounter({ reportingBaseUrl }) {
       .then(j => {
         if (!j || !Array.isArray(j.rows)) throw new Error('shape');
         setRows(j.rows); setErr(false); setAt(new Date());
+        if (onAvailable) onAvailable(true);
       })
-      .catch(() => setErr(true));
-  }, []);
+      .catch(() => { setErr(true); if (onAvailable) onAvailable(false); });
+  }, [onAvailable]);
 
   useEffect(() => { load(); }, [load]);
   /* It refreshes, because a list of names that has not moved since breakfast
@@ -2383,6 +2384,14 @@ function CoffeeCounter({ reportingBaseUrl }) {
 
 function LiveSection({ reportingBaseUrl }) {
   const sec = SECTIONS.live;
+  /* THE SECTION HIDES WITH ITS WIDGETS. The counter renders nothing when the
+     feed cannot answer — that is the absence rule — but a header and an empty
+     grid left behind is its own dead end: a "Live Widgets" heading with a blank
+     space under it reads as broken rather than as absent. Optimistic on mount
+     so the section does not flash out and back in on a slow first fetch; it
+     hides only once a fetch has actually FAILED. */
+  const [alive, setAlive] = useState(true);
+  if (!alive) return null;
   return (
     <div className="dashboard-section" data-live-section="1">
       <div className="section-header">
@@ -2392,7 +2401,7 @@ function LiveSection({ reportingBaseUrl }) {
         <div className="section-line" />
       </div>
       <div className="widget-grid">
-        <CoffeeCounter reportingBaseUrl={reportingBaseUrl} />
+        <CoffeeCounter reportingBaseUrl={reportingBaseUrl} onAvailable={setAlive} />
       </div>
     </div>
   );

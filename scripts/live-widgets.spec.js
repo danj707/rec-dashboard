@@ -151,8 +151,20 @@ if (H.liveWindow) {
      'a failed or unanswered feed renders NOTHING — a "0 signups today" counter on a registration morning is the worst reading this dashboard could show');
   ok(/availableReports\.enrollments && \(/.test(code),
      'and the section renders only where the feed exists at all');
-  ok(/\.\.\.\(process\.env\.MB_ENROLLMENTS_UUID \? \{ enrollments: process\.env\.MB_ENROLLMENTS_UUID \} : \{\}\)/.test(srv),
-     'the card key is OMITTED until its public link exists, rather than being present and answering 404 — that is what keeps availableReports honest');
+  /* THE SECTION HIDES WITH ITS WIDGETS. This was an env gate for about an hour
+     (Dan: "what is MB_ENROLLMENTS_UUID lol"), which put a deploy step between
+     publishing a card and seeing the widget for no benefit — the rule that had
+     to hold is that a dead feed can never render a zero, and that lives in the
+     component, not in a variable. A header over an empty grid is its own dead
+     end, so the section goes too. */
+  ok(/if \(!alive\) return null;/.test(code),
+     'the Live Widgets section hides itself when its widgets have nothing — a heading over a blank space reads as broken, not as absent');
+  ok(/const \[alive, setAlive\] = useState\(true\);/.test(code),
+     '...optimistically, so a slow first fetch does not flash the section out and back in');
+  ok(/\.catch\(\(\) => \{ setErr\(true\); if \(onAvailable\) onAvailable\(false\); \}\)/.test(code),
+     'and it is a FAILED fetch that hides it, never a pending one');
+  ok(/enrollments: 'e663ecfb-71b4-4de1-b984-13c69beab005'/.test(srv),
+     'the card is wired as a literal, like every other shared card in this file');
 }
 
 /* ── 5. IT HAS ITS OWN CLOCK ───────────────────────────────────────────────*/

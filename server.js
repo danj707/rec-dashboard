@@ -338,13 +338,18 @@ const SHARED_UUIDS = {
      newest first, behind the Coffee Counter. Mirrored at
      sql/enrollments-live.sql; the live card is the source of truth.
 
-     ENV-GATED, and that is the whole absence rule for this widget: the key is
-     omitted entirely until somebody creates the card's public link, so
-     availableReports has no `enrollments`, the Live Widgets section does not
-     render, and nobody sees a "0 signups today" counter that means "nothing
-     answered". A confident zero on a registration morning is the most
-     damaging false reading this dashboard could show. */
-  ...(process.env.MB_ENROLLMENTS_UUID ? { enrollments: process.env.MB_ENROLLMENTS_UUID } : {})
+     A LITERAL, like every other card here. This was an env var for about an
+     hour (Dan: "what is MB_ENROLLMENTS_UUID lol"), which put a deploy-time
+     step between a card being published and the widget appearing — for no
+     benefit, because the absence rule is enforced where it belongs: the widget
+     renders NOTHING when the feed cannot answer, and the section hides itself
+     when its widgets do. A confident "0 signups today" on a registration
+     morning is the reading that had to be impossible; an env var was never
+     what made it so.
+
+     Verified live before wiring: shrewsbury, 7-day window, 126 rows in 20.7s
+     through the public endpoint with the app's own date/single parameters. */
+  enrollments: 'e663ecfb-71b4-4de1-b984-13c69beab005'
 };
 
 /* A LIVE WIDGET NEEDS ITS OWN CLOCK. Everything else here is a dashboard of a

@@ -30,13 +30,16 @@ for the one question she asks daily.
 eight signups, and a Pause. Every instinct to add a filter here should be
 resisted: the reports exist for analysis, this is the thing you leave open.
 
-- **ABSENT, NEVER A ZERO.** `MB_ENROLLMENTS_UUID` is unset until somebody
-  creates the card's public link, and `SHARED_UUIDS` **omits the key entirely**
-  rather than carrying a broken one — so `availableReports.enrollments` is
-  false, the section does not render, and nobody sees *"0 signups today"* when
-  the truth is that nothing answered. A failed fetch renders nothing too. On a
-  registration morning that false zero is the most damaging thing this
-  dashboard could show.
+- **ABSENT, NEVER A ZERO.** A failed or unanswered feed renders **nothing** —
+  not a zero — and **the section hides with its widgets**, because a "Live
+  Widgets" heading over a blank grid reads as broken rather than as absent. On
+  a registration morning *"0 signups today"* when the truth is "nothing
+  answered" is the most damaging thing this dashboard could show.
+  **This was an env gate (`MB_ENROLLMENTS_UUID`) for about an hour** — Dan:
+  *"what is MB_ENROLLMENTS_UUID lol"* — which put a deploy step between
+  publishing a card and seeing the widget, for no benefit: the rule that had to
+  hold lives in the component, not in a variable. The card is a literal now,
+  like every other entry in `SHARED_UUIDS`.
 - **IT HAS ITS OWN CLOCK.** `LIVE_REPORT_TTL_MS` caches this feed for **60
   seconds** and **beats the org's own `cacheTTL`** — an org that set a
   30-minute cache did not ask for a stale "right now". The page polls at the
@@ -89,11 +92,20 @@ Plus `Participant` (a parent registering a child is the common case, and one
 `applied_pricing` finalCents, never `order_item.price` — the rate card, which
 reads non-zero for a comped booking.
 
-**TO ACTIVATE:** set `MB_ENROLLMENTS_UUID` to the card's public UUID. The
-Metabase-side steps are the usual ones — after any API push, re-set the
-Start/End Date variables to type **Date** and re-save until the card registers
-three parameters rather than six. Flip link:
-https://rec.metabaseapp.com/question/21286
+**Public UUID `e663ecfb-71b4-4de1-b984-13c69beab005`**, wired 2026-09-03 and
+signed off cache-independently through the public endpoint with the app's own
+`date/single` parameters: **shrewsbury, 7-day window, 126 rows in 20.7s.**
+
+**Worth knowing about that 20.7s:** it is a cold run, and it is why the feed
+caches for a minute rather than being fetched per poll — an open dashboard
+costs about one query a minute for its org, not one per viewer. The cost is in
+the `money` CTE, which aggregates the org's whole `order_item` ledger rather
+than the window; narrowing it is the obvious optimisation if this ever needs
+one. Nothing waits on it: the widget renders when it answers.
+
+After any API push to the card, re-set the Start/End Date variables to type
+**Date** and re-save until it registers three parameters rather than six.
+Flip link: https://rec.metabaseapp.com/question/21286
 
 ### Guards
 
