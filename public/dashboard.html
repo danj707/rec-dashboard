@@ -2407,6 +2407,53 @@ function liveTimeline(rows, today) {
   return { marks, tickLabels, nowLeft };
 }
 
+/* ── REGISTRATIONS BY PROGRAM ──────────────────────────────────────────────
+   Dan, 2026-09-04: "another live card — this one will be a live programs card,
+   showing the most recent registrations by program. Admins can watch both
+   users enrolling in sections, AND section revenue increasing."
+
+   IT IS A RE-AGGREGATION OF THE COFFEE COUNTER'S FEED, not a second card.
+   Card 21286 already returns Program, Section, Price and Paid on every
+   registration row, so a by-program view needs no new query, no push and no
+   tag flip — and the two widgets cannot report different numbers for the same
+   minute, because there is only one set of rows.
+
+   MOST RECENT FIRST, which is the ask. Not biggest-first: the question this
+   answers is "what is happening right now", and a program that took forty
+   registrations last night is not news at 9am. Ordered on the raw timestamp
+   STRING — an ISO-shaped stamp sorts correctly as text, and `new Date()` on
+   the feed's org-local string would re-apply the viewer's zone.
+
+   CHARGED AND PAID ARE BOTH KEPT, and the card prints which is which. They
+   diverge by design: a registration on a payment plan is charged in full and
+   has only its first installment paid, so a single "revenue" number here would
+   be true of one and false of the other.
+
+   MONEY IS null WHEN NOTHING CARRIED A PRICE, never 0 — a free programme and a
+   price we could not read are different facts, the same rule the counter's own
+   money column follows. */
+function liveByProgram(rows, today) {
+  if (!today) return [];
+  const by = new Map();
+  (rows || []).forEach(r => {
+    if (liveDay(r['Signed Up At']) !== today) return;
+    const name = String(r['Program'] == null ? '' : r['Program']).trim() || '(no programme)';
+    let g = by.get(name);
+    if (!g) g = { program: name, signups: 0, charged: null, paid: null, lastAt: '', sections: new Set() };
+    g.signups += 1;
+    const pr = r['Price'], pd = r['Paid'];
+    if (pr != null && Number.isFinite(Number(pr))) g.charged = (g.charged || 0) + Number(pr);
+    if (pd != null && Number.isFinite(Number(pd))) g.paid    = (g.paid    || 0) + Number(pd);
+    const ts = String(r['Signed Up At'] || '');
+    if (ts > g.lastAt) g.lastAt = ts;
+    if (r['Section']) g.sections.add(String(r['Section']));
+    by.set(name, g);
+  });
+  return [...by.values()]
+    .map(g => Object.assign(g, { sectionCount: g.sections.size }))
+    .sort((a, b) => (a.lastAt < b.lastAt ? 1 : a.lastAt > b.lastAt ? -1 : 0));
+}
+
 /* REC ADMIN LINKS. Both shapes are already in use in the reporting project —
    copied, not guessed: a link built from the wrong id renders identically and
    404s, which is the mistake already recorded there for rec_id vs users.id.
@@ -2447,7 +2494,14 @@ function liveKey(r) {
   return [r['Signed Up At'], r['Customer Name'], r['Participant'] || '', r['Section']].join('\u0000');
 }
 
-function CoffeeCounter({ reportingBaseUrl, onAvailable, recOrgId }) {
+/* ONE FEED, TWO WIDGETS. Both live widgets read the same registrations, so the
+   fetch, the poll and the arrival diff live HERE and each card is a reader.
+   Two independent polls would double the query on every org and — worse — let
+   the two cards straddle a cache boundary and disagree about the same minute,
+   which on a pair of cards sitting side by side is the one thing that would
+   make a viewer stop trusting either. Same rule as the reporting project's
+   progAutopayCell going through progAutopayShare rather than its own maths. */
+function useLiveEnrollments(onAvailable) {
   const [rows, setRows] = useState(null);
   const [err, setErr]   = useState(false);
   const [at, setAt]     = useState(null);
@@ -2514,6 +2568,12 @@ function CoffeeCounter({ reportingBaseUrl, onAvailable, recOrgId }) {
     return () => clearInterval(t);
   }, [load, paused]);
   useEffect(() => () => clearTimeout(timerRef.current), []);
+
+  return { rows, err, at, paused, setPaused, flash };
+}
+
+function CoffeeCounter({ feed, recOrgId }) {
+  const { rows, err, at, paused, setPaused, flash } = feed;
 
   /* ABSENT, NEVER A ZERO, when the feed cannot answer. A "0 signups today"
      counter on a registration morning says nobody registered when the truth is
@@ -2648,6 +2708,126 @@ function CoffeeCounter({ reportingBaseUrl, onAvailable, recOrgId }) {
   );
 }
 
+function ProgramsLive({ feed, recOrgId }) {
+  const { rows, err, at, paused, flash } = feed;
+
+  // Same three states as the counter, and for the same reasons: absence is for
+  // a feed that FAILED, a skeleton is for one that has not answered yet, and a
+  // confident zero is never rendered for either.
+  if (err) return null;
+  if (!rows) {
+    return (
+      <div className="widget-card widget-md live-card" data-live-progloading="1">
+        <div className="widget-header">
+          <div>
+            <span className="widget-label"><span className="live-dot" /> {'\u{1F3AF}'} Programs Live</span>
+            <div style={{fontSize:10,color:'var(--text-muted)',marginTop:2,fontWeight:400}}>
+              <span className="live-chip">Live</span>
+              Loading today{'\u2026'}
+            </div>
+          </div>
+          <span className="widget-icon live-bolt" aria-hidden="true">{'\u26A1'}</span>
+        </div>
+        <div className="skeleton skeleton-chart" />
+      </div>
+    );
+  }
+
+  const today = rows.length ? liveDay(rows[0]['Signed Up At']) : '';
+  const progs = liveByProgram(rows, today);
+  // A row is fresh if any registration behind it is one of the arrivals the
+  // shared feed just diffed — so a program lights up when it takes a signup,
+  // which is the whole point of watching this card.
+  const isFresh = g => rows.some(r => liveDay(r['Signed Up At']) === today &&
+                                      (String(r['Program'] || '').trim() || '(no programme)') === g.program &&
+                                      flash.has(liveKey(r)));
+  const totalCharged = progs.reduce((n, g) => n + (g.charged || 0), 0);
+  const totalSignups = progs.reduce((n, g) => n + g.signups, 0);
+
+  /* NOTHING TODAY IS A REAL ANSWER, and it is not the same as a broken feed.
+     Before registration opens this card legitimately has nothing, and saying
+     so beats an empty table that reads as a failure. */
+  if (!progs.length) {
+    return (
+      <div className="widget-card widget-md live-card" data-live-progs="0">
+        <div className="widget-header">
+          <div>
+            <span className="widget-label"><span className="live-dot" /> {'\u{1F3AF}'} Programs Live</span>
+            <div style={{fontSize:10,color:'var(--text-muted)',marginTop:2,fontWeight:400}}>
+              <span className="live-chip">Live</span>
+              Registrations by programme {'\u00b7'} today
+            </div>
+          </div>
+          <span className="widget-icon live-bolt" aria-hidden="true">{'\u26A1'}</span>
+        </div>
+        <div style={{padding:'18px 4px',fontSize:12,color:'var(--text-muted)'}}>
+          No registrations yet today.
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="widget-card widget-md live-card" data-live-progs={String(progs.length)}>
+      <div className="widget-header">
+        <div>
+          <span className="widget-label"><span className="live-dot" /> {'\u{1F3AF}'} Programs Live</span>
+          <div style={{fontSize:10,color:'var(--text-muted)',marginTop:2,fontWeight:400}}>
+            <span className="live-chip">Live</span>
+            Registrations by programme {'\u00b7'} today
+          </div>
+        </div>
+        <span className="widget-icon live-bolt" aria-hidden="true">{'\u26A1'}</span>
+      </div>
+
+      <div className="live-big" data-live-progtotal={String(totalSignups)}>
+        <strong>{totalSignups}</strong>
+        <span>across {progs.length} programme{progs.length > 1 ? 's' : ''}
+          {totalCharged > 0 ? ' \u00b7 ' + liveMoney(totalCharged) + ' charged' : ''}</span>
+      </div>
+
+      <table className="live-table">
+        <thead>
+          <tr>
+            <th className="lt">Last</th>
+            <th className="ls">Programme</th>
+            <th className="lp">Signups</th>
+            <th className="lm">Charged</th>
+          </tr>
+        </thead>
+        <tbody>
+          {progs.slice(0, LIVE_ROWS).map(g => (
+            <tr key={g.program} className={isFresh(g) ? 'live-new' : ''}
+                data-live-prog={g.program} data-live-prog-signups={String(g.signups)}>
+              <td className="lt">{liveClock(g.lastAt)}</td>
+              <td className="ls" title={g.sectionCount + ' section' + (g.sectionCount === 1 ? '' : 's') +
+                                        ': ' + [...g.sections].join(', ')}>{g.program}</td>
+              <td className="lp">{g.signups}</td>
+              {/* CHARGED leads because it is the money the registration
+                  committed; PAID is shown underneath only when it differs, so a
+                  payment plan reads as "charged now, arriving later" rather
+                  than as a discrepancy. A programme whose rows carried no price
+                  at all gets a dash, never $0. */}
+              <td className="lm" data-live-prog-charged={g.charged == null ? '' : String(g.charged)}>
+                {g.charged == null ? '\u2014' : liveMoney(g.charged)}
+                {g.charged != null && g.paid != null && g.paid !== g.charged
+                  ? <div style={{fontSize:9,color:'var(--text-muted)',fontWeight:400}}>{liveMoney(g.paid)} paid</div>
+                  : null}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <div className="live-foot">
+        {at ? 'Updated ' + liveClock(at.getFullYear() + '-01-01T' + String(at.getHours()).padStart(2,'0') + ':' + String(at.getMinutes()).padStart(2,'0')) : ''}
+        {paused ? ' \u00b7 paused' : ' \u00b7 refreshes every minute'}
+        {progs.length > LIVE_ROWS ? ' \u00b7 showing ' + LIVE_ROWS + ' of ' + progs.length : ''}
+      </div>
+    </div>
+  );
+}
+
 function LiveSection({ reportingBaseUrl, recOrgId }) {
   const sec = SECTIONS.live;
   /* THE SECTION HIDES WITH ITS WIDGETS. The counter renders nothing when the
@@ -2657,6 +2837,7 @@ function LiveSection({ reportingBaseUrl, recOrgId }) {
      so the section does not flash out and back in on a slow first fetch; it
      hides only once a fetch has actually FAILED. */
   const [alive, setAlive] = useState(true);
+  const feed = useLiveEnrollments(setAlive);
   if (!alive) return null;
   return (
     <div className="dashboard-section" data-live-section="1">
@@ -2667,7 +2848,8 @@ function LiveSection({ reportingBaseUrl, recOrgId }) {
         <div className="section-line" />
       </div>
       <div className="widget-grid">
-        <CoffeeCounter reportingBaseUrl={reportingBaseUrl} recOrgId={recOrgId} onAvailable={setAlive} />
+        <CoffeeCounter feed={feed} recOrgId={recOrgId} />
+        <ProgramsLive feed={feed} recOrgId={recOrgId} />
       </div>
     </div>
   );

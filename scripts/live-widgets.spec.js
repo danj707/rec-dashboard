@@ -90,7 +90,8 @@ try {
   H = new Function(
     liftFn(src, 'liveWindow') + '\n' + liftFn(src, 'liveDay') + '\n' +
     liftFn(src, 'liveClock') + '\n' + liftFn(src, 'liveMoney') + '\n' +
-    'return { liveWindow, liveDay, liveClock, liveMoney };')();
+    liftFn(src, 'liveKey') + '\n' + liftFn(src, 'liveByProgram') + '\n' +
+    'return { liveWindow, liveDay, liveClock, liveMoney, liveKey, liveByProgram };')();
   pass++;
 } catch (e) {
   // A guard that DIES instead of failing has not told anyone what broke.
@@ -417,6 +418,75 @@ if (H.liveWindow) {
 }
 
 /* ── report ───────────────────────────────────────────────────────────────*/
+/* ── 12. PROGRAMS LIVE ────────────────────────────────────────────────────
+   Dan, 2026-09-04: "another live card — this one will be a live programs card,
+   showing the most recent registrations by program. Admins can watch both
+   users enrolling in sections, AND section revenue increasing."
+
+   The model is LIFTED AND RUN here rather than regexed, because every way it
+   can be wrong still renders a plausible table: a sort by size instead of
+   recency, a total that folds in yesterday, or one money number standing in
+   for two that legitimately differ. */
+if (H.liveByProgram) {
+  const R = (day, time, program, section, price, paid) => ({
+    'Signed Up At': day + 'T' + time, 'Program': program, 'Section': section,
+    'Price': price, 'Paid': paid, 'Customer Name': 'x', 'Section Id': section,
+  });
+  const TODAY = '2026-09-04', YDAY = '2026-09-03';
+  const rows = [
+    R(TODAY, '18:30:00', 'Tap Dance',  'Tap Mon',    60, 60),
+    R(TODAY, '09:05:00', 'Swim Camp',  'Swim AM',   120, 30),   // a payment plan: charged 120, paid 30
+    R(TODAY, '09:04:00', 'Swim Camp',  'Swim PM',   120, 120),
+    R(TODAY, '08:00:00', 'Swim Camp',  'Swim AM',   120, 120),
+    R(YDAY,  '23:00:00', 'Tap Dance',  'Tap Mon',    60, 60),   // yesterday, must not count
+    R(TODAY, '07:00:00', 'Free Play',  'Drop In',  null, null), // no price at all
+  ];
+  const out = H.liveByProgram(rows, TODAY);
+
+  eq(out.length, 3, 'one row per programme, and yesterday is not one of them');
+
+  // MOST RECENT FIRST — the ask. Swim Camp has THREE of today's registrations
+  // against Tap Dance's one, so a sort by size would put Swim Camp on top and
+  // this is the assertion that tells the two apart.
+  eq(out[0].program, 'Tap Dance', 'most RECENT programme leads, not the biggest');
+  eq(out[1].program, 'Swim Camp', '...and the rest follow by recency');
+
+  const swim = out.find(g => g.program === 'Swim Camp');
+  eq(swim.signups, 3, "a programme's signups count only TODAY's rows");
+  eq(swim.charged, 360, 'charged is the sum of what was committed');
+  eq(swim.paid, 270, '...and paid is only what has actually arrived');
+  ok(swim.charged !== swim.paid,
+     'charged and paid DIFFER on a payment plan, which is why one "revenue" number would be a lie');
+  eq(swim.sectionCount, 2, 'sections are counted distinctly, so two signups on one section are one section');
+
+  const tap = out.find(g => g.program === 'Tap Dance');
+  eq(tap.signups, 1, "yesterday's registration is excluded from the count as well as the ordering");
+  eq(tap.charged, 60, "...and from the money");
+
+  const free = out.find(g => g.program === 'Free Play');
+  eq(free.charged, null, 'a programme whose rows carried NO price is null, never 0 — free and unreadable are different facts');
+  eq(free.signups, 1, '...but it still counts as a registration');
+
+  eq(H.liveByProgram(rows, '').length, 0,
+     'no day means no rows rather than the whole week — the feed had not answered yet');
+  eq(H.liveByProgram([], TODAY).length, 0, 'an empty feed is an empty list, not a throw');
+
+  // A programme with no name is labelled, not dropped: the registration
+  // happened and hiding it would make the totals disagree with the counter.
+  const noName = H.liveByProgram([R(TODAY, '10:00:00', null, 'S', 10, 10)], TODAY);
+  eq(noName.length, 1, 'a registration with no programme name is still counted');
+  eq(noName[0].program, '(no programme)', '...under a label rather than blank');
+
+  ok(/liveByProgram\(rows, today\)/.test(code),
+     'the widget calls the shared model rather than aggregating inline');
+  ok(/function useLiveEnrollments/.test(code) && /const feed = useLiveEnrollments/.test(code),
+     'ONE feed for both widgets — two polls would double the query and let the cards disagree about the same minute');
+  ok(!/function ProgramsLive[\s\S]{0,4000}?fetch\(/.test(code),
+     '...and the programmes card does not fetch for itself');
+  ok(/data-live-prog-charged/.test(code) && /g\.charged == null \? '\\u2014'/.test(code),
+     'no plan money renders a dash, never $0');
+}
+
 if (failures.length) {
   console.error('\n✗ live-widgets.spec.js — ' + failures.length + ' failure(s):\n');
   failures.forEach(f => console.error('  ✗ ' + f));
