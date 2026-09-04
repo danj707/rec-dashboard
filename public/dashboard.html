@@ -2439,14 +2439,20 @@ const LIVE_DAYS    = 7;
    day. The coin is two square-wave notes — B5 then E6, the second held and
    decaying — so the synth IS the sound rather than an impression of it.
 
-   FOUR TO PICK FROM, because Dan asked to hear a few. `coin` is the default
-   since he named it; choosing one in the menu plays it, so the menu is its own
-   preview and there is no second button that does nothing else. */
+   NINE TO PICK FROM, because Dan asked to hear a few and then for five more —
+   "a car horn, chicken, cow mooing, sheep baying and foghorn". `coin` is the
+   default since he named it; choosing one in the menu plays it, so the menu is
+   its own preview and there is no second button that does nothing else. */
 const LIVE_CHIMES = [
   ['coin',     'Coin'],
   ['chaching', 'Cha-ching'],
   ['arcade',   'Arcade'],
   ['bell',     'Bell'],
+  ['horn',     'Car horn'],
+  ['chicken',  'Chicken'],
+  ['cow',      'Cow'],
+  ['sheep',    'Sheep'],
+  ['foghorn',  'Foghorn'],
 ];
 const LIVE_CHIME_DEFAULT = 'coin';
 /* HOW MANY RING FOR ONE BATCH. Twelve registrations landing in one poll is ONE
@@ -2500,6 +2506,143 @@ function liveTone(ctx, { type, freq, at, dur, gain, decay }) {
   o.start(at); o.stop(at + dur + 0.02);
 }
 
+/* A VOICE WITH A PITCH CONTOUR. liveTone is a steady note and that is all the
+   four chiptune sounds need. An animal is a CONTOUR — a moo falls, a bleat
+   wobbles, a horn does neither — so the five Dan asked for next need a glide,
+   a lowpass to take the buzz off a sawtooth, and an LFO. Those go here rather
+   than into liveTone, which has no reason to grow them.
+
+   THE WOBBLE IS PITCH, NOT VOLUME. A bleat and a moo waver in FREQUENCY; an
+   LFO on the gain would give a tremolo, which reads as a stutter rather than
+   an animal. So the LFO drives `o.frequency` and its depth is in Hz. */
+function liveVoice(ctx, { type, from, to, at, dur, gain, cutoff, vibHz, vibDepth, attack, hold }) {
+  const o = ctx.createOscillator();
+  const g = ctx.createGain();
+  o.type = type;
+  o.frequency.setValueAtTime(from, at);
+  // exponentialRampToValueAtTime cannot reach or cross zero, and every pitch
+  // here is well above it — but a `to` of 0 would throw and silence the ring.
+  if (to && to > 0 && to !== from) o.frequency.exponentialRampToValueAtTime(to, at + dur);
+  let out = o;
+  if (cutoff) {
+    const f = ctx.createBiquadFilter();
+    f.type = 'lowpass';
+    f.frequency.setValueAtTime(cutoff, at);
+    o.connect(f);
+    out = f;
+  }
+  if (vibHz) {
+    const lfo = ctx.createOscillator();
+    const lg = ctx.createGain();
+    lfo.frequency.setValueAtTime(vibHz, at);
+    lg.gain.setValueAtTime(vibDepth || 12, at);
+    lfo.connect(lg);
+    lg.connect(o.frequency);
+    lfo.start(at);
+    lfo.stop(at + dur + 0.02);
+  }
+  const a = attack || 0.02;
+  g.gain.setValueAtTime(0, at);
+  g.gain.linearRampToValueAtTime(gain, at + a);
+  // `hold` is for the sounds that STOP rather than fade — a horn and a foghorn
+  // are held flat and cut off, and decaying them turns both into a sigh.
+  if (hold) { g.gain.setValueAtTime(gain, at + dur - 0.05); g.gain.linearRampToValueAtTime(0, at + dur); }
+  else g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+  out.connect(g); g.connect(ctx.destination);
+  o.start(at); o.stop(at + dur + 0.02);
+}
+
+/* A SHORT BAND OF NOISE — the consonant at the front and back of a cluck, which
+   no oscillator can make. The buffer is built ONCE and reused: allocating a
+   fresh second of random floats per ring is a garbage-collection pause, and the
+   morning this card is worth listening to is the morning it rings most. */
+let _liveNoiseBuf = null;
+function liveNoiseBuffer(ctx) {
+  if (_liveNoiseBuf) return _liveNoiseBuf;
+  const n = Math.floor(ctx.sampleRate * 0.4);
+  const buf = ctx.createBuffer(1, n, ctx.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+  _liveNoiseBuf = buf;
+  return buf;
+}
+function liveNoise(ctx, { at, dur, gain, freq, q }) {
+  const src = ctx.createBufferSource();
+  src.buffer = liveNoiseBuffer(ctx);
+  const f = ctx.createBiquadFilter();
+  f.type = 'bandpass';
+  f.frequency.setValueAtTime(freq, at);
+  f.Q.setValueAtTime(q || 6, at);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0, at);
+  g.gain.linearRampToValueAtTime(gain, at + 0.006);
+  g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+  src.connect(f); f.connect(g); g.connect(ctx.destination);
+  src.start(at); src.stop(at + dur + 0.02);
+}
+
+/* ONE VOICE PER SOUND, KEYED BY THE NAME IN LIVE_CHIMES. This was an if/else
+   chain while there were four; at nine it is a map, and the map is what makes
+   the pairing CHECKABLE — the spec requires every name in the menu to have a
+   voice here and every voice here to be in the menu. A listed sound with no
+   voice is a menu entry that rings the default and looks broken; a voice
+   nothing lists is unreachable code. */
+const LIVE_CHIME_VOICES = {
+  /* THE COIN. B5 for a beat, then E6 held and decaying — the interval is what
+     makes it recognisable, so neither note may be tuned by feel. */
+  coin(ctx, t) {
+    liveTone(ctx, { type: 'square', freq: 987.77,  at: t,         dur: 0.075, gain: 0.15 });
+    liveTone(ctx, { type: 'square', freq: 1318.51, at: t + 0.075, dur: 0.62,  gain: 0.15, decay: true });
+  },
+  // A till: two bright partials over a short, harder strike.
+  chaching(ctx, t) {
+    liveTone(ctx, { type: 'square',   freq: 1046.5, at: t,         dur: 0.09, gain: 0.16 });
+    liveTone(ctx, { type: 'triangle', freq: 1568.0, at: t + 0.05,  dur: 0.45, gain: 0.14, decay: true });
+    liveTone(ctx, { type: 'triangle', freq: 2093.0, at: t + 0.06,  dur: 0.40, gain: 0.07, decay: true });
+  },
+  arcade(ctx, t) {
+    liveTone(ctx, { type: 'triangle', freq: 1046.5, at: t,        dur: 0.08, gain: 0.15 });
+    liveTone(ctx, { type: 'triangle', freq: 1318.5, at: t + 0.08, dur: 0.08, gain: 0.15 });
+    liveTone(ctx, { type: 'triangle', freq: 1568.0, at: t + 0.16, dur: 0.30, gain: 0.15, decay: true });
+  },
+  bell(ctx, t) {
+    liveTone(ctx, { type: 'sine', freq: 1318.5, at: t, dur: 0.70, gain: 0.18, decay: true });
+    liveTone(ctx, { type: 'sine', freq: 2637.0, at: t, dur: 0.35, gain: 0.05, decay: true });
+  },
+  /* A CAR HORN IS A CHORD, not a note — the dual-tone ones are two reeds a
+     major third apart (A4 + C#5), which is why one sawtooth alone reads as a
+     buzzer. Flat and cut off rather than decaying: a horn stops. */
+  horn(ctx, t) {
+    liveVoice(ctx, { type: 'sawtooth', from: 440.00, to: 440.00, at: t, dur: 0.42, gain: 0.10, cutoff: 3000, attack: 0.012, hold: true });
+    liveVoice(ctx, { type: 'sawtooth', from: 554.37, to: 554.37, at: t, dur: 0.42, gain: 0.09, cutoff: 3000, attack: 0.012, hold: true });
+  },
+  /* A CLUCK IS THREE THINGS: a noise transient, a short rising squawk, then a
+     longer one falling away with a fast waver. Tone alone sounds like a bird
+     toy; the noise at each end is what makes it poultry. */
+  chicken(ctx, t) {
+    liveNoise(ctx, { at: t,        dur: 0.05, gain: 0.10, freq: 1800, q: 4 });
+    liveVoice(ctx, { type: 'sawtooth', from: 900,  to: 1250, at: t + 0.02, dur: 0.10, gain: 0.10, cutoff: 3500, attack: 0.008 });
+    liveVoice(ctx, { type: 'sawtooth', from: 1150, to: 620,  at: t + 0.14, dur: 0.22, gain: 0.11, cutoff: 3000, attack: 0.010, vibHz: 22, vibDepth: 40 });
+    liveNoise(ctx, { at: t + 0.34, dur: 0.05, gain: 0.06, freq: 1400, q: 5 });
+  },
+  /* A MOO RISES AND THEN FALLS — "mmm-OOO-ooo" — so it is two segments, not a
+     glide in one direction. Heavily lowpassed, because the vowel is dark. */
+  cow(ctx, t) {
+    liveVoice(ctx, { type: 'sawtooth', from: 150, to: 196, at: t,        dur: 0.28, gain: 0.13, cutoff: 900, attack: 0.06, hold: true });
+    liveVoice(ctx, { type: 'sawtooth', from: 196, to: 120, at: t + 0.28, dur: 0.62, gain: 0.14, cutoff: 760, attack: 0.02, vibHz: 7, vibDepth: 5 });
+  },
+  // The BLEAT is the fast pitch waver; without it this is just a falling note.
+  sheep(ctx, t) {
+    liveVoice(ctx, { type: 'sawtooth', from: 392, to: 330, at: t, dur: 0.62, gain: 0.12, cutoff: 2200, attack: 0.03, vibHz: 16, vibDepth: 26 });
+  },
+  /* LOW, SLOW TO SPEAK, AND LONG. The sub-octave underneath is what gives it
+     weight on a laptop speaker, which cannot reproduce the fundamental at all. */
+  foghorn(ctx, t) {
+    liveVoice(ctx, { type: 'sawtooth', from: 116, to: 104, at: t, dur: 1.30, gain: 0.15, cutoff: 520, attack: 0.16, hold: true });
+    liveVoice(ctx, { type: 'sine',     from: 58,  to: 52,  at: t, dur: 1.30, gain: 0.12, attack: 0.16, hold: true });
+  },
+};
+
 /* RING ONCE. Counted on `window.__liveChimeRings` because a browser check has
    no ears and no audio device: "a mute box rendered" passes just as happily on
    a chime wired to the wrong condition, so the render cases assert the COUNT
@@ -2510,25 +2653,21 @@ function liveChime(kind) {
   const ctx = liveAudioCtx();
   if (!ctx) return;
   liveAudioWake();
-  const t = ctx.currentTime + 0.01;
-  if (kind === 'chaching') {
-    // A till: two bright partials over a short, harder strike.
-    liveTone(ctx, { type: 'square',   freq: 1046.5, at: t,       dur: 0.09, gain: 0.16 });
-    liveTone(ctx, { type: 'triangle', freq: 1568.0, at: t + 0.05, dur: 0.45, gain: 0.14, decay: true });
-    liveTone(ctx, { type: 'triangle', freq: 2093.0, at: t + 0.06, dur: 0.40, gain: 0.07, decay: true });
-  } else if (kind === 'arcade') {
-    liveTone(ctx, { type: 'triangle', freq: 1046.5, at: t,        dur: 0.08, gain: 0.15 });
-    liveTone(ctx, { type: 'triangle', freq: 1318.5, at: t + 0.08, dur: 0.08, gain: 0.15 });
-    liveTone(ctx, { type: 'triangle', freq: 1568.0, at: t + 0.16, dur: 0.30, gain: 0.15, decay: true });
-  } else if (kind === 'bell') {
-    liveTone(ctx, { type: 'sine', freq: 1318.5, at: t, dur: 0.70, gain: 0.18, decay: true });
-    liveTone(ctx, { type: 'sine', freq: 2637.0, at: t, dur: 0.35, gain: 0.05, decay: true });
-  } else {
-    /* THE COIN. B5 for a beat, then E6 held and decaying — the interval is what
-       makes it recognisable, so neither note may be tuned by feel. */
-    liveTone(ctx, { type: 'square', freq: 987.77,  at: t,        dur: 0.075, gain: 0.15 });
-    liveTone(ctx, { type: 'square', freq: 1318.51, at: t + 0.075, dur: 0.62,  gain: 0.15, decay: true });
-  }
+  /* AN UNKNOWN NAME RINGS THE DEFAULT rather than nothing. The choice persists
+     in localStorage, so a sound removed from the menu later would otherwise
+     leave whoever had it selected with a card that silently never rings — the
+     hardest kind of broken to notice, since the whole point is that you are not
+     looking at it. */
+  const play = LIVE_CHIME_VOICES[kind] || LIVE_CHIME_VOICES[LIVE_CHIME_DEFAULT];
+  play(ctx, ctx.currentTime + 0.01);
+  /* COUNTED ONLY ONCE THE VOICE HAS RETURNED, and this second counter exists
+     because the first one cannot do this job. __liveChimeRings is bumped at the
+     TOP, before any audio, so the mute and paid-arrival cases hold on a machine
+     that can play nothing at all — but that also means a voice which THROWS
+     still counts, and a case built on it passes on a broken sound. Found by
+     mutation: a deliberately broken `cow` left the ring count at nine and the
+     case green. This one only moves when the synthesis actually ran. */
+  window.__liveChimeVoiced = (window.__liveChimeVoiced || 0) + 1;
 }
 
 /* WHAT RINGS. "enrolls AND PAYS" — so a registration whose money has not
