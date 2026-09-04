@@ -666,6 +666,49 @@ const CASES = [
       await page.select('.live-chime-pick', 'chaching');
       await page.waitForFunction(() => (window.__liveChimeRings || 0) > 0, { timeout: 10000 });
     } },
+  /* EVERY SOUND IS PLAYED FOR REAL, which the ring counter alone cannot check:
+     `liveChime` bumps it BEFORE calling the voice, so a voice that THROWS still
+     counts. That gap did not matter while the four sounds were a pair of
+     oscillators each; the five Dan asked for next build filters, buffer sources
+     and LFOs, and a bad node graph throws at the point of use.
+
+     So this walks the whole menu. A throwing voice surfaces as an uncaught
+     error, which this harness already fails on, and a voice that never ran
+     leaves the count short.
+
+     IT ALSO REQUIRES A REAL AudioContext. Without one `liveChime` returns after
+     incrementing, so the count would reach nine having synthesised nothing and
+     the case would pass while proving the opposite of what it claims. */
+  { name: 'live · every sound in the menu actually plays',
+    needs: 'body[data-chime-all="ok"]',
+    act: async page => {
+      /* THESE CASES ARE NOT INDEPENDENT — the mute box is one shared control and
+         the case before this one leaves it UNTICKED. A blind click therefore
+         re-muted it, the menu never appeared, and this case took the next one
+         down with it. So: read the state, ensure unmuted, and put it back
+         exactly as found rather than assuming either starting point. */
+      const wasMuted = await page.$eval('input[data-live-mute="1"]', el => el.checked);
+      if (wasMuted) await page.click('input[data-live-mute="1"]');
+      await page.waitForSelector('.live-chime-pick', { timeout: 10000 });
+      const names = await page.evaluate(() =>
+        Array.from(document.querySelectorAll('.live-chime-pick option')).map(o => o.value));
+      await page.evaluate(() => { window.__liveChimeRings = 0; window.__liveChimeVoiced = 0; });
+      for (const n of names) await page.select('.live-chime-pick', n);
+      await new Promise(r => setTimeout(r, 300));
+      /* __liveChimeVoiced, NOT __liveChimeRings, is what proves a voice ran:
+         the ring counter is bumped before the audio, so it stays at nine even
+         when a voice throws. Verified by mutation — a broken `cow` passed this
+         case until the second counter existed. */
+      const out = await page.evaluate(n => {
+        const rings  = window.__liveChimeRings  || 0;
+        const voiced = window.__liveChimeVoiced || 0;
+        const audio = !!(window.AudioContext || window.webkitAudioContext);
+        return (rings === n && voiced === n && audio && n >= 9)
+          ? 'ok' : ('rings=' + rings + ' voiced=' + voiced + ' of ' + n + ' audio=' + audio);
+      }, names.length);
+      await page.evaluate(v => document.body.setAttribute('data-chime-all', v), out);
+      if (wasMuted) await page.click('input[data-live-mute="1"]');
+    } },
   /* AND THE COUNT IS WHAT SEPARATES "PAID" FROM "ANY ARRIVAL". This refresh
      delivers ONE paid registration and ONE unpaid one together, so a correct
      card rings exactly once. Two rings means it does not read the payment;

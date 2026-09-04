@@ -71,6 +71,7 @@ const LIVE_CHIME_NAMES = (() => {
   const m = code.match(/const LIVE_CHIMES = \[([\s\S]*?)\];/);
   return m ? (m[1].match(/'[a-z]+',/g) || []).map(x => x.slice(1, -2)) : [];
 })();
+const LIVE_CHIME_DEFAULT_NAME = (code.match(/const LIVE_CHIME_DEFAULT = '([a-z]+)'/) || [])[1] || '';
 
 let pass = 0;
 const failures = [];
@@ -705,6 +706,67 @@ if (H.liveByProgram) {
   ok(/987\.77/.test(code) && /1318\.51/.test(code), 'the coin is B5 then E6');
   ok(LIVE_CHIME_NAMES.length >= 3, 'there are several sounds to choose between');
   ok(/LIVE_CHIME_DEFAULT = 'coin'/.test(code), "...and the default is the one Dan named");
+
+  /* THE MENU AND THE SYNTH MUST BE THE SAME SET, and this is the assertion the
+     voices map exists to make possible. Both halves are read out of the page,
+     never transcribed here — a spec carrying its own list agrees with itself
+     and nothing else.
+
+     BOTH DIRECTIONS FAIL, because they are different bugs. A name in the menu
+     with no voice falls through to the default, so picking "Cow" plays a coin —
+     which is worse than silence, since it looks like it worked. A voice nothing
+     lists is unreachable code that nobody can hear. */
+  const LIVE_CHIME_VOICE_KEYS = (() => {
+    const m = code.match(/const LIVE_CHIME_VOICES = \{([\s\S]*?)\n\};/);
+    return m ? (m[1].match(/^  ([a-z]+)\(ctx, t\) \{/gm) || []).map(x => x.trim().split('(')[0]) : [];
+  })();
+  ok(LIVE_CHIME_VOICE_KEYS.length > 0, 'the voices map was found at all — otherwise the next two are vacuous');
+  const missingVoice = LIVE_CHIME_NAMES.filter(n => !LIVE_CHIME_VOICE_KEYS.includes(n));
+  const unlistedVoice = LIVE_CHIME_VOICE_KEYS.filter(k => !LIVE_CHIME_NAMES.includes(k));
+  ok(missingVoice.length === 0,
+     'every sound in the menu has a voice — no voice for: ' + missingVoice.join(', '));
+  ok(unlistedVoice.length === 0,
+     'every voice is offered in the menu — unreachable: ' + unlistedVoice.join(', '));
+  ok(LIVE_CHIME_VOICE_KEYS.includes(LIVE_CHIME_DEFAULT_NAME),
+     'the DEFAULT has a voice — it is what an unknown stored name falls back to');
+  ok(/LIVE_CHIME_VOICES\[kind\] \|\| LIVE_CHIME_VOICES\[LIVE_CHIME_DEFAULT\]/.test(code),
+     '...and an unknown stored name rings the default rather than nothing');
+
+  /* THE FIVE DAN ASKED FOR SECOND. Named individually, because "there are nine
+     sounds" passes just as happily on nine chiptune beeps. */
+  ['horn', 'chicken', 'cow', 'sheep', 'foghorn'].forEach(n => {
+    ok(LIVE_CHIME_NAMES.includes(n), 'the menu offers ' + n);
+  });
+
+  /* AN ANIMAL IS A PITCH CONTOUR, NOT A NOTE. These three are what separate the
+     five from a row of beeps, and each one is a thing that was got wrong first:
+     without the glide a moo is a flat hum, without the LFO on FREQUENCY a bleat
+     is a stutter, and without the noise burst a cluck is a bird toy. */
+  ok(/exponentialRampToValueAtTime\(to, at \+ dur\)/.test(code),
+     'liveVoice glides between two pitches');
+  ok(/lg\.connect\(o\.frequency\)/.test(code),
+     'the wobble drives FREQUENCY, not gain — a gain LFO is a tremolo, not a bleat');
+  ok(/createBufferSource\(\)/.test(code) && /type = 'bandpass'/.test(code),
+     'there is a filtered noise burst — no oscillator can make the front of a cluck');
+  ok(/if \(_liveNoiseBuf\) return _liveNoiseBuf;/.test(code),
+     '...and its buffer is built once, not per ring');
+  ok(/from: 440\.00[\s\S]{0,200}from: 554\.37/.test(code),
+     'the car horn is a DYAD (A4 + C#5) — one reed alone is a buzzer');
+
+  /* FORMANTS ARE WHAT MAKE A VOICE A VOICE. A moo and a bleat are a buzzing
+     source played through a resonant tube, and the tube's peaks are what the
+     ear reads as an animal rather than an oscillator — the first pass at these
+     used a lowpass alone and sounded like a dull sawtooth.
+
+     PARALLEL AND SUMMED, never chained: two narrow bandpasses in series barely
+     overlap and multiply down to near silence, so the sound would all but
+     vanish. That is the mutation this pins. */
+  ok(/formants\.forEach/.test(code) && /bg\.connect\(sum\)/.test(code),
+     'the formants are summed in PARALLEL — chaining two narrow bands is silence');
+  ['cow', 'sheep', 'chicken'].forEach(n => {
+    const v = (code.match(new RegExp('\\n  ' + n + '\\(ctx, t\\) \\{[\\s\\S]*?\\n  \\},')) || [''])[0];
+    ok(/formants:/.test(v), n + ' is voiced through formants, not a bare lowpass');
+  });
 
   /* THE PICKER CANNOT OUTLIVE THE SOUND. A menu of sounds beside a ticked Mute
      box is a control that does nothing. */
