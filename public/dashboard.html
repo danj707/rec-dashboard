@@ -309,6 +309,17 @@ body { font-family: var(--font-body); background: var(--bg-page); color: var(--t
 /* +N: this row covers more sections than the one its link opens. */
 .live-more { display: inline-block; margin-left: 4px; font-size: 9px; font-weight: 700;
              color: var(--text-muted); vertical-align: 1px; }
+/* THE TREND ARROW. Down is the one that needs the reader; up and flat are
+   muted so the eye lands on what to promote rather than on a wall of green.
+   Deliberately NOT the green/orange the price column uses for payment state —
+   one card should not spend the same two colours on two unrelated meanings. */
+.live-trend { display: inline-block; margin-left: 5px; font-size: 9px; vertical-align: 1px;
+              letter-spacing: .02em; }
+.live-trend-up   { color: var(--text-muted); }
+.live-trend-flat { color: var(--text-muted); opacity: .7; }
+.live-trend-down { color: #b45309; font-weight: 700; }
+.live-trend-new  { margin-left: 3px; font-size: 8px; font-weight: 700; text-transform: uppercase;
+                   color: var(--text-muted); }
 @media (prefers-reduced-motion: no-preference) {
   /* THE POP MOVES THE FIGURE; IT DOES NOT RECOLOUR IT. It used to animate
      `color` to green, which overrode the payment-state ink for ten seconds —
@@ -2837,6 +2848,64 @@ function liveTimeline(rows, today) {
    MONEY IS null WHEN NOTHING CARRIED A PRICE, never 0 — a free program and a
    price we could not read are different facts, the same rule the counter's own
    money column follows. */
+/* MOMENTUM, BESIDE THE STATE. Laurel at Shrewsbury, on what she reads a
+   registration snapshot FOR: "volleyball is doing really well, that's expected,
+   that always fills up really quickly for us. But youth winter basketball is
+   not really catching right now. I need to promote that." A signup count says
+   how many; it does not say whether the thing is still moving, and "still
+   moving" is what decides whether she leaves a program alone or puts it in the
+   newsletter.
+
+   THREE COMPLETE DAYS AGAINST THE THREE BEFORE THEM. The feed carries
+   LIVE_DAYS (7) calendar days ending today, so excluding today leaves exactly
+   six complete ones — two equal halves, which is the only comparison that
+   means anything.
+
+   TODAY IS EXCLUDED, AND THAT IS THE WHOLE CORRECTNESS RULE. Today is a
+   partial day: at 9am it holds an hour of signups against three full days, so
+   counting it makes EVERY programme read as declining. Same trap the sparkline
+   already handles by marking today as still filling.
+
+   `today` is the feed's own newest day, never the browser's (the rule the rest
+   of this widget follows, since the card stamps rows in the ORG's timezone).
+   On a morning with no signups at all that day is yesterday, so the comparison
+   quietly slides back one day and loses a complete day of data — the
+   conservative direction, and the alternative is trusting the viewer's clock
+   about a day the feed has not confirmed. */
+const LIVE_TREND_DAYS = 3;   // each half of the comparison
+/* A FLOOR, because a direction is not a trend. One signup against zero is
+   "up 100%" and means nothing; under this the arrow is absent rather than
+   confident. Same rule as RATE_MIN_VIEWS on the campmap strip and
+   WL_CONV_MIN_OFFERS on the waitlist report. */
+const LIVE_TREND_MIN = 4;
+
+/* A DAY KEY, SHIFTED BACK — built from PARTS so month and year boundaries roll
+   over correctly and nothing is ever handed to `new Date("2026-09-01")`, which
+   is UTC midnight and lands on the previous day west of UTC. That bug is
+   recorded three times over in these two repos. */
+function liveDayShift(ymd, n) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(ymd || ''));
+  if (!m) return '';
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]) - n);
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-'
+       + String(d.getDate()).padStart(2, '0');
+}
+
+function liveProgramTrend(dayCounts, today) {
+  if (!today || !dayCounts) return null;
+  let recent = 0, prior = 0;
+  for (let i = 1; i <= LIVE_TREND_DAYS; i++) recent += dayCounts[liveDayShift(today, i)] || 0;
+  for (let i = LIVE_TREND_DAYS + 1; i <= LIVE_TREND_DAYS * 2; i++) prior += dayCounts[liveDayShift(today, i)] || 0;
+  if (recent + prior < LIVE_TREND_MIN) return null;
+  /* NULL PERCENTAGE OFF A ZERO BASE, never a number. Three signups against a
+     week of none is real news, but it is not "+300%" — it has no base to be a
+     percentage of, and printing one invents a denominator. The cell says
+     "new" there instead. */
+  const pct = prior > 0 ? Math.round((recent - prior) / prior * 100) : null;
+  return { dir: recent > prior ? 'up' : recent < prior ? 'down' : 'flat',
+           recent: recent, prior: prior, pct: pct };
+}
+
 function liveByProgram(rows, today) {
   if (!today) return [];
   const by = new Map();
@@ -2855,8 +2924,13 @@ function liveByProgram(rows, today) {
     const name = String(r['Program'] == null ? '' : r['Program']).trim() || '(no program)';
     let g = by.get(name);
     if (!g) g = { program: name, signups: 0, todaySignups: 0, charged: null, paid: null, lastAt: '',
+                  dayCounts: {}, trend: null,
                   sections: new Set(), sectionIds: new Set(), lastSectionId: '', lastSection: '' };
     g.signups += 1;
+    // Per-day tally, which is all liveProgramTrend needs — one pass over the
+    // rows the leaderboard is already walking rather than a second reduce.
+    const day = liveDay(r['Signed Up At']);
+    g.dayCounts[day] = (g.dayCounts[day] || 0) + 1;
     const pr = r['Price'], pd = r['Paid'];
     if (pr != null && Number.isFinite(Number(pr))) g.charged = (g.charged || 0) + Number(pr);
     if (pd != null && Number.isFinite(Number(pd))) g.paid    = (g.paid    || 0) + Number(pd);
@@ -2880,7 +2954,8 @@ function liveByProgram(rows, today) {
      ranked on `charged` while the header said Charged; both moved together
      (see the note on the cell) so the sort follows the figure. */
   return [...by.values()]
-    .map(g => Object.assign(g, { sectionCount: g.sections.size }))
+    .map(g => Object.assign(g, { sectionCount: g.sections.size,
+                                 trend: liveProgramTrend(g.dayCounts, today) }))
     .sort((a, b) => (b.paid == null ? -1 : b.paid) - (a.paid == null ? -1 : a.paid)
                  || b.signups - a.signups
                  || (a.lastAt < b.lastAt ? 1 : a.lastAt > b.lastAt ? -1 : 0));
@@ -3386,7 +3461,37 @@ function ProgramsLive({ feed, recOrgId }) {
                     : <React.Fragment>{g.program}{extra}</React.Fragment>;
                 })()}
               </td>
-              <td className="lp">{g.signups}</td>
+              {/* THE COUNT, AND WHETHER IT IS STILL MOVING. The number alone
+                  answers "how many"; the arrow answers "do I need to do
+                  something about it", which is the decision this card exists
+                  to support.
+
+                  DOWN IS THE EMPHASISED ONE, deliberately. A programme filling
+                  nicely needs nothing from the reader; one that has stopped
+                  catching is the one to promote, so it carries the colour and
+                  "up" stays quiet. That also keeps this column clear of the
+                  green/orange the PRICE column uses for payment state — two
+                  greens meaning two different things on one card is how a
+                  status stops being readable.
+
+                  ABSENT UNDER THE FLOOR, never a flat dash pretending to be a
+                  measurement. */}
+              <td className="lp" data-live-prog-trend={g.trend ? g.trend.dir : ''}>
+                {g.signups}
+                {g.trend ? (
+                  <span className={'live-trend live-trend-' + g.trend.dir}
+                        title={'Last ' + LIVE_TREND_DAYS + ' complete days: ' + g.trend.recent +
+                               ' signup' + (g.trend.recent === 1 ? '' : 's') + ' vs ' + g.trend.prior +
+                               ' the ' + LIVE_TREND_DAYS + ' before' +
+                               (g.trend.pct == null ? ' (no signups to compare against)'
+                                                    : ' \u00b7 ' + (g.trend.pct > 0 ? '+' : '') + g.trend.pct + '%') +
+                               ' \u00b7 today is excluded, it is still filling'}>
+                    {g.trend.dir === 'up' ? '\u25b2' : g.trend.dir === 'down' ? '\u25bc' : '\u2013'}
+                    {g.trend.pct == null && g.trend.dir === 'up'
+                      ? <span className="live-trend-new">new</span> : null}
+                  </span>
+                ) : null}
+              </td>
               {/* PROGRAM REVENUE IS MONEY RECEIVED (Dan, 2026-09-04: "Change
                   'charged' on the programs live chart to 'Program Revenue'",
                   and "it needs to match ... Programs->Revenue"). That tab

@@ -48,6 +48,21 @@
  * ==========================================================================*/
 'use strict';
 
+/* RE-EXEC UNDER A NON-UTC ZONE, and this is not decoration. `liveDayShift`
+   builds a day key from PARTS; the tempting `new Date("2026-09-03")` is UTC
+   midnight, which lands on the PREVIOUS day anywhere west of UTC. This sandbox
+   and GitHub Actions both run UTC, where the broken version returns the right
+   answer — so that mutation SURVIVED the whole spec until this existed.
+   America/Los_Angeles is chosen for the PROPERTY, not for an org: it is behind
+   UTC, so the two implementations diverge. A zone ahead of UTC would not
+   discriminate either. Same lesson as fasttrack-dates.spec.js one repo over. */
+if (process.env.TZ !== 'America/Los_Angeles') {
+  const r = require('child_process').spawnSync(process.argv[0], [__filename], {
+    stdio: 'inherit', env: Object.assign({}, process.env, { TZ: 'America/Los_Angeles' }),
+  });
+  process.exit(r.status == null ? 1 : r.status);
+}
+
 const fs = require('fs');
 const path = require('path');
 
@@ -99,8 +114,11 @@ try {
     liftFn(src, 'liveClock') + '\n' + liftFn(src, 'liveMoney') + '\n' +
     liftFn(src, 'liveKey') + '\n' + liftFn(src, 'liveByProgram') + '\n' +
     liftFn(src, 'liveMarkState') + '\n' + liftFn(src, 'liveChimeWorthy') + '\n' +
+    liftFn(src, 'liveDayShift') + '\n' + liftFn(src, 'liveProgramTrend') + '\n' +
+    'const LIVE_TREND_DAYS = ' + (code.match(/LIVE_TREND_DAYS = (\d+)/) || [0,3])[1] + ';\n' +
+    'const LIVE_TREND_MIN = '  + (code.match(/LIVE_TREND_MIN = (\d+)/)  || [0,4])[1] + ';\n' +
     'return { liveWindow, liveDay, liveClock, liveMoney, liveKey, liveByProgram, liveMarkState,' +
-    ' liveChimeWorthy };')();
+    ' liveChimeWorthy, liveDayShift, liveProgramTrend };')();
   pass++;
 } catch (e) {
   // A guard that DIES instead of failing has not told anyone what broke.
@@ -774,6 +792,92 @@ if (H.liveByProgram) {
      'the sound menu is hidden while muted');
   ok((code.match(/data-live-mute="1"/g) || []).length === 1,
      'one mute box in one shared header — two copies is how Pause and the bolt drifted');
+}
+
+/* ── the trend arrow ────────────────────────────────────────────────────────
+   Laurel's "youth winter basketball is not really catching right now" — the
+   number says how many, the arrow says whether it is still moving. RUN, never
+   regexed: a regex over a comparison passes just as happily on an inverted
+   one. */
+if (H.liveProgramTrend && H.liveDayShift) {
+  const T = H.liveProgramTrend, S = H.liveDayShift;
+
+  // Day keys are built from PARTS, so a month boundary has to roll over.
+  eq(S('2026-09-03', 1), '2026-09-02', 'a day key shifts back one day');
+  eq(S('2026-09-01', 1), '2026-08-31', '...and rolls over a month boundary');
+  eq(S('2026-01-01', 1), '2025-12-31', '...and a year boundary');
+  eq(S('', 1), '', 'a missing day key yields nothing rather than a bogus date');
+
+  const today = '2026-09-10';
+  // recent = 9th, 8th, 7th   prior = 6th, 5th, 4th
+  const rising  = { '2026-09-09': 5, '2026-09-08': 4, '2026-09-07': 3,
+                    '2026-09-06': 1, '2026-09-05': 1, '2026-09-04': 1 };
+  const falling = { '2026-09-09': 1, '2026-09-08': 0, '2026-09-07': 1,
+                    '2026-09-06': 6, '2026-09-05': 5, '2026-09-04': 4 };
+  const flat    = { '2026-09-09': 2, '2026-09-08': 2, '2026-09-07': 2,
+                    '2026-09-06': 2, '2026-09-05': 2, '2026-09-04': 2 };
+
+  /* READ THROUGH A SAFE ACCESSOR. A mutation that shifts the day keys makes
+     every fixture fall under the floor, so `T(...)` returns null and a bare
+     `.dir` THREW — the spec died on a stack trace naming nothing instead of
+     failing on the assertion that provoked it. That is the "a guard that dies
+     instead of failing has not told anyone what broke" lesson, and it has now
+     bitten both these repos several times. */
+  const at = (t, k) => (t == null ? '(no trend at all)' : t[k]);
+
+  eq(at(T(rising,  today), 'dir'), 'up',   'a programme taking more signups than last week reads UP');
+  eq(at(T(falling, today), 'dir'), 'down', "...and one that has stopped catching reads DOWN (Laurel's basketball)");
+  eq(at(T(flat,    today), 'dir'), 'flat', '...and an unchanged one is flat, not up');
+  eq(at(T(rising,  today), 'recent'), 12, 'the recent half counts the three complete days before today');
+  eq(at(T(rising,  today), 'prior'),   3, '...and the prior half the three before those');
+  eq(at(T(rising,  today), 'pct'),   300, 'the percentage is against the prior half');
+
+  /* TODAY IS EXCLUDED — the whole correctness rule. A partial day counted
+     against three full ones makes EVERY programme read as declining. This
+     fixture puts a huge count on today; if it were counted, `rising` would
+     still be up but `flat` would swing. */
+  const withToday = Object.assign({}, flat, { '2026-09-10': 99 });
+  eq(at(T(withToday, today), 'dir'), 'flat', "today's partial count is excluded from the comparison");
+  eq(at(T(withToday, today), 'recent'), 6, '...and does not inflate the recent half');
+
+  /* THE SEVENTH DAY BACK IS OUT OF RANGE. The feed carries seven calendar days
+     ending today, so only six are complete and a stray older row must not be
+     counted into the prior half. */
+  const older = Object.assign({}, flat, { '2026-09-03': 50 });
+  eq(at(T(older, today), 'prior'), 6, 'a day outside the two halves is not counted');
+
+  /* A FLOOR: a direction is not a trend. One signup against none is "up 100%"
+     and means nothing. */
+  ok(T({ '2026-09-09': 1 }, today) === null, 'under the floor there is no arrow at all');
+  ok(T({}, today) === null, 'a programme with no signups in either half has no arrow');
+  ok(T(flat, '') === null, 'without a known day there is no arrow');
+
+  /* A ZERO BASE HAS NO PERCENTAGE. Four signups against a week of none is real
+     news and is NOT "+400%" — there is no base to be a percentage of. */
+  const fresh = { '2026-09-09': 2, '2026-09-08': 2 };
+  eq(at(T(fresh, today), 'dir'), 'up', 'a programme with signups only in the recent half is up');
+  ok(T(fresh, today) != null && T(fresh, today).pct === null,
+     '...and its percentage is null, never a number off a zero base');
+}
+
+/* The cell has to READ the trend, and the arrow has to be absent when there is
+   none — a flat dash pretending to be a measurement is the confident-zero bug
+   this codebase keeps writing down. */
+{
+  /* SCOPED TO THE PROGRAMS TABLE'S CELL. `className="lp"` is also the
+     PARTICIPANT cell in the enrollments table above, and a non-greedy match
+     finds that one first — so this anchors on the attribute only this cell
+     has. The first draft matched the wrong table and failed on correct code. */
+  const cell = (code.match(/<td className="lp" data-live-prog-trend[\s\S]*?<\/td>/) || [''])[0];
+  ok(/data-live-prog-trend=/.test(cell), 'the signups cell exposes the trend for a render case');
+  ok(/g\.trend \? \(/.test(cell), '...and renders the arrow only when there IS a trend');
+  ok(/today is excluded/.test(cell), '...and the tooltip says today is excluded, since that is why it can differ from the count');
+  ok(/liveProgramTrend\(g\.dayCounts, today\)/.test(code),
+     'the grouping computes the trend from its own per-day tally');
+  /* DOWN CARRIES THE COLOUR, up and flat are muted — and neither reuses the
+     green/orange the price column spends on payment state. */
+  ok(/\.live-trend-down \{ color: #b45309/.test(code), 'down is the emphasised direction');
+  ok(/\.live-trend-up   \{ color: var\(--text-muted\)/.test(code), '...and up is muted, not a second green');
 }
 
 /* THE REPORT GOES LAST, and this was a real bug for one revision: the block
