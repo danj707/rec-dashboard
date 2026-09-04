@@ -753,6 +753,21 @@ if (H.liveByProgram) {
   ok(/from: 440\.00[\s\S]{0,200}from: 554\.37/.test(code),
      'the car horn is a DYAD (A4 + C#5) — one reed alone is a buzzer');
 
+  /* FORMANTS ARE WHAT MAKE A VOICE A VOICE. A moo and a bleat are a buzzing
+     source played through a resonant tube, and the tube's peaks are what the
+     ear reads as an animal rather than an oscillator — the first pass at these
+     used a lowpass alone and sounded like a dull sawtooth.
+
+     PARALLEL AND SUMMED, never chained: two narrow bandpasses in series barely
+     overlap and multiply down to near silence, so the sound would all but
+     vanish. That is the mutation this pins. */
+  ok(/formants\.forEach/.test(code) && /bg\.connect\(sum\)/.test(code),
+     'the formants are summed in PARALLEL — chaining two narrow bands is silence');
+  ['cow', 'sheep', 'chicken'].forEach(n => {
+    const v = (code.match(new RegExp('\\n  ' + n + '\\(ctx, t\\) \\{[\\s\\S]*?\\n  \\},')) || [''])[0];
+    ok(/formants:/.test(v), n + ' is voiced through formants, not a bare lowpass');
+  });
+
   /* THE PICKER CANNOT OUTLIVE THE SOUND. A menu of sounds beside a ticked Mute
      box is a control that does nothing. */
   ok(/\{muted \|\| !sound \? null : \(/.test(code),

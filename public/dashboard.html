@@ -2515,7 +2515,7 @@ function liveTone(ctx, { type, freq, at, dur, gain, decay }) {
    THE WOBBLE IS PITCH, NOT VOLUME. A bleat and a moo waver in FREQUENCY; an
    LFO on the gain would give a tremolo, which reads as a stutter rather than
    an animal. So the LFO drives `o.frequency` and its depth is in Hz. */
-function liveVoice(ctx, { type, from, to, at, dur, gain, cutoff, vibHz, vibDepth, attack, hold }) {
+function liveVoice(ctx, { type, from, to, at, dur, gain, cutoff, formants, vibHz, vibDepth, attack, hold }) {
   const o = ctx.createOscillator();
   const g = ctx.createGain();
   o.type = type;
@@ -2530,6 +2530,27 @@ function liveVoice(ctx, { type, from, to, at, dur, gain, cutoff, vibHz, vibDepth
     f.frequency.setValueAtTime(cutoff, at);
     o.connect(f);
     out = f;
+  }
+  /* FORMANTS — the thing that separates an animal from a buzzer. A moo and a
+     bleat are a buzzing source (the vocal folds, near enough a sawtooth) played
+     through a resonant TUBE, and it is the tube's two or three resonant peaks
+     that the ear reads as a voice rather than an oscillator. A lowpass alone
+     just makes a dull sawtooth, which is what the first pass at these sounded
+     like. Parallel bandpasses, summed — in series they would multiply down to
+     silence, since two narrow bands barely overlap. */
+  if (formants && formants.length) {
+    const sum = ctx.createGain();
+    sum.gain.setValueAtTime(1, at);
+    formants.forEach(([ff, fq, fg]) => {
+      const bp = ctx.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.frequency.setValueAtTime(ff, at);
+      bp.Q.setValueAtTime(fq, at);
+      const bg = ctx.createGain();
+      bg.gain.setValueAtTime(fg, at);
+      out.connect(bp); bp.connect(bg); bg.connect(sum);
+    });
+    out = sum;
   }
   if (vibHz) {
     const lfo = ctx.createOscillator();
@@ -2621,19 +2642,22 @@ const LIVE_CHIME_VOICES = {
      toy; the noise at each end is what makes it poultry. */
   chicken(ctx, t) {
     liveNoise(ctx, { at: t,        dur: 0.05, gain: 0.10, freq: 1800, q: 4 });
-    liveVoice(ctx, { type: 'sawtooth', from: 900,  to: 1250, at: t + 0.02, dur: 0.10, gain: 0.10, cutoff: 3500, attack: 0.008 });
-    liveVoice(ctx, { type: 'sawtooth', from: 1150, to: 620,  at: t + 0.14, dur: 0.22, gain: 0.11, cutoff: 3000, attack: 0.010, vibHz: 22, vibDepth: 40 });
+    const bawk = [[1100, 10, 1.0], [2600, 12, 0.45]];
+    liveVoice(ctx, { type: 'sawtooth', from: 900,  to: 1250, at: t + 0.02, dur: 0.10, gain: 0.24, cutoff: 4000, formants: bawk, attack: 0.008 });
+    liveVoice(ctx, { type: 'sawtooth', from: 1150, to: 620,  at: t + 0.14, dur: 0.24, gain: 0.26, cutoff: 3600, formants: bawk, attack: 0.010, vibHz: 22, vibDepth: 40 });
     liveNoise(ctx, { at: t + 0.34, dur: 0.05, gain: 0.06, freq: 1400, q: 5 });
   },
   /* A MOO RISES AND THEN FALLS — "mmm-OOO-ooo" — so it is two segments, not a
      glide in one direction. Heavily lowpassed, because the vowel is dark. */
   cow(ctx, t) {
-    liveVoice(ctx, { type: 'sawtooth', from: 150, to: 196, at: t,        dur: 0.28, gain: 0.13, cutoff: 900, attack: 0.06, hold: true });
-    liveVoice(ctx, { type: 'sawtooth', from: 196, to: 120, at: t + 0.28, dur: 0.62, gain: 0.14, cutoff: 760, attack: 0.02, vibHz: 7, vibDepth: 5 });
+    const moo = [[400, 7, 1.0], [900, 9, 0.35]];   // a dark "oo/uh"
+    liveVoice(ctx, { type: 'sawtooth', from: 150, to: 196, at: t,        dur: 0.28, gain: 0.30, cutoff: 1400, formants: moo, attack: 0.07, hold: true });
+    liveVoice(ctx, { type: 'sawtooth', from: 196, to: 120, at: t + 0.28, dur: 0.66, gain: 0.32, cutoff: 1200, formants: moo, attack: 0.02, vibHz: 6, vibDepth: 4 });
   },
   // The BLEAT is the fast pitch waver; without it this is just a falling note.
   sheep(ctx, t) {
-    liveVoice(ctx, { type: 'sawtooth', from: 392, to: 330, at: t, dur: 0.62, gain: 0.12, cutoff: 2200, attack: 0.03, vibHz: 16, vibDepth: 26 });
+    const baa = [[750, 8, 1.0], [1900, 10, 0.55]];  // an open "aa"
+    liveVoice(ctx, { type: 'sawtooth', from: 405, to: 320, at: t, dur: 0.66, gain: 0.26, cutoff: 3000, formants: baa, attack: 0.04, vibHz: 17, vibDepth: 30 });
   },
   /* LOW, SLOW TO SPEAK, AND LONG. The sub-octave underneath is what gives it
      weight on a laptop speaker, which cannot reproduce the fundamental at all. */
