@@ -152,6 +152,33 @@ const ENROLLMENTS = [
      (3) Swim Lessons is charged $480 with $240 in: the PART-PAID state, which
          nothing else in this fixture produces, and the orange dot cannot be
          proven without it. */
+  /* TWO PROGRAMMES WITH A REAL DAY SPREAD, because every other row in this
+     fixture lands today and a card with no history renders no arrow at all —
+     the trend cases would pass on a build that never computes one.
+
+     THESE ARE LAUREL'S TWO CASES, deliberately opposite. Winter Basketball has
+     stopped catching (6 signups in the older half, 1 in the recent) and
+     Fall Volleyball is climbing (1 then 6), so a build with the direction
+     inverted renders both and fails on WHICH. They are priced to rank inside
+     the ten-row cap, or they would not render to be asserted on. */
+  ...[
+    ...[[1, 1]].flatMap(([d, n]) => Array.from({ length: n }, (_, k) => ({
+      'Signed Up At': liveIso(d, '09:0' + k + ':00'), 'Customer Name': 'Hoops Parent ' + d + k,
+      'Participant': 'Hoops Kid ' + d + k, 'Section': 'Youth Winter Basketball AM',
+      'Program': 'Youth Winter Basketball', 'Price': 100, 'Paid': 100 }))),
+    ...[[4, 2], [5, 2], [6, 2]].flatMap(([d, n]) => Array.from({ length: n }, (_, k) => ({
+      'Signed Up At': liveIso(d, '09:1' + k + ':00'), 'Customer Name': 'Hoops Parent ' + d + k,
+      'Participant': 'Hoops Kid ' + d + k, 'Section': 'Youth Winter Basketball AM',
+      'Program': 'Youth Winter Basketball', 'Price': 100, 'Paid': 100 }))),
+    ...[[1, 2], [2, 2], [3, 2]].flatMap(([d, n]) => Array.from({ length: n }, (_, k) => ({
+      'Signed Up At': liveIso(d, '10:0' + k + ':00'), 'Customer Name': 'Net Parent ' + d + k,
+      'Participant': 'Net Kid ' + d + k, 'Section': 'Fall Volleyball AM',
+      'Program': 'Fall Volleyball', 'Price': 100, 'Paid': 100 }))),
+    ...[[5, 1]].flatMap(([d, n]) => Array.from({ length: n }, (_, k) => ({
+      'Signed Up At': liveIso(d, '10:1' + k + ':00'), 'Customer Name': 'Net Parent ' + d + k,
+      'Participant': 'Net Kid ' + d + k, 'Section': 'Fall Volleyball AM',
+      'Program': 'Fall Volleyball', 'Price': 100, 'Paid': 100 }))),
+  ],
   ...[
     ['Summer Camp',   900, 900, '07:05:00'],
     /* THE ONE FILLER WITH A SECTION ID, and it has to be one that RANKS: the
@@ -289,7 +316,7 @@ const CASES = [
      printing the row count, on a sparkline drawn from the wrong days, and on a
      list wired to the wrong feed. */
   { name: 'live · the section is on the page', needs: '[data-live-section]' },
-  { name: 'live · the registrations card reads its own feed', needs: '[data-live-regs="16"]' },
+  { name: 'live · the registrations card reads its own feed', needs: '[data-live-regs="30"]' },
   // 14 of the 16 rows are today. A widget printing rows.length reads 16.
   { name: 'live · and counts TODAY, not the list', needs: '[data-live-today="14"]' },
   { name: 'live · above the date-ranged sections', needs: '.dashboard-section[data-live-section] + .dashboard-section' },
@@ -462,7 +489,7 @@ const CASES = [
      is NOT the most recent registration (Oxygen Dance is, at 14:41), so this
      pair tells a revenue sort from the recency sort it replaced. */
   { name: 'live · the biggest program by revenue leads',
-    needs: 'body[data-lp-first="Summer Camp"]',
+    needs: 'body[data-lp-first="Summer Camp AM"]',
     absent: 'body[data-lp-first="Oxygen Dance Aerobics"]' },
   /* TEN ROWS, NOT EIGHT. The fixture has thirteen programs today, so the cap
      is visible; with three it was not. */
@@ -482,7 +509,7 @@ const CASES = [
   /* AND A PROGRAM WITH NO SECTION ID IS PLAIN TEXT. Most of this fixture has
      none, so the row still renders — it just does not pretend to link. */
   { name: 'live · ...and a program with no section id is not a dead link',
-    needs: '[data-live-progs] [data-live-prog="Summer Camp"]',
+    needs: '[data-live-progs] [data-live-prog="Summer Camp AM"]',
     absent: '[data-live-progs] a.live-link[href$="/sections/undefined"], [data-live-progs] a.live-link[href$="/sections/"]' },
   /* THE RIGHT CARD COVERS THE FEED'S WINDOW (Dan: "Can we get more programs to
      show up on the right side chart? Seems a little thin over there"). The
@@ -510,19 +537,19 @@ const CASES = [
      distinction — a build that kept the charged basis renders 480 in the cell
      and no sub-line at all. */
   { name: 'live · program revenue is what arrived, not what was charged',
-    needs: '[data-live-progs] [data-live-prog="Swim Lessons"] [data-live-prog-charged="240"]',
-    absent: '[data-live-progs] [data-live-prog="Swim Lessons"] [data-live-prog-charged="480"]' },
+    needs: '[data-live-progs] [data-live-prog="Swim Lessons AM"] [data-live-prog-charged="240"]',
+    absent: '[data-live-progs] [data-live-prog="Swim Lessons AM"] [data-live-prog-charged="480"]' },
   { name: 'live · ...with the charge underneath it on a payment plan',
     needs: 'body[data-lp-plan*="of $480 charged"]',
     act: async page => {
-      await page.waitForSelector('[data-live-prog="Swim Lessons"]', { timeout: 15000 });
+      await page.waitForSelector('[data-live-prog="Swim Lessons AM"]', { timeout: 15000 });
       await page.evaluate(() => {
-        const c = document.querySelector('[data-live-prog="Swim Lessons"] .lm');
+        const c = document.querySelector('[data-live-prog="Swim Lessons AM"] .lm');
         document.body.setAttribute('data-lp-plan', c ? c.innerText.replace(/\s+/g, ' ').trim() : '');
       });
     } },
-  { name: 'live · the column is called Program revenue',
-    needs: 'body[data-lp-head*="program revenue"]',
+  { name: 'live · the column is called Section revenue',
+    needs: 'body[data-lp-head*="section revenue"]',
     absent: 'body[data-lp-head*="charged"]',
     act: async page => {
       await page.evaluate(() => {
@@ -732,6 +759,28 @@ const CASES = [
       // Re-tick it, or every case after this one runs on an unmuted dashboard.
       await page.click('input[data-live-mute="1"]');
     } },
+  /* NOTE THE DESCENDANT SPACE in these selectors: the programme name is on the
+     ROW and the trend on its signups CELL, so `[data-live-prog=x][data-live-prog-trend=y]`
+     demands both on ONE element and matches nothing. All three cases failed
+     that way on the first run — the page was right, the selectors were not.
+
+     THE ARROW IS ON THE RIGHT PROGRAMME. No source assertion can tell a trend
+     wired to the wrong row from a correct one — both render an arrow — so this
+     keys on WHICH programme carries WHICH direction. The fixture makes them
+     opposite on purpose: Youth Winter Basketball has stopped catching, Fall
+     Volleyball is climbing, so an inverted implementation still renders two
+     arrows and fails here. */
+  { name: 'live · a programme that stopped catching reads DOWN',
+    needs: '[data-live-prog="Youth Winter Basketball AM"] [data-live-prog-trend="down"]' },
+  { name: 'live · ...and one that is climbing reads UP',
+    needs: '[data-live-prog="Fall Volleyball AM"] [data-live-prog-trend="up"]' },
+  /* AND A PROGRAMME WITH NO HISTORY CARRIES NO ARROW. Everything else in this
+     fixture registered today only, so it sits under the floor — a build that
+     drew a flat dash for those would be claiming a measurement it does not
+     have. Summer Camp is the check: top of the card, one signup, today. */
+  { name: 'live · a programme with no history shows no arrow at all',
+    needs: '[data-live-prog="Summer Camp AM"] [data-live-prog-trend=""]' },
+
   /* THE MONEY COLUMN HOLDS ITS OWN HEADER. Dan: "look at the alignment on the
      headers and revenue section" — `.lm` was 62px, sized for the registrations
      card's bare price, and `table-layout: fixed` honours that, so the programs

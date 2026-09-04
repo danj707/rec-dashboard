@@ -48,6 +48,21 @@
  * ==========================================================================*/
 'use strict';
 
+/* RE-EXEC UNDER A NON-UTC ZONE, and this is not decoration. `liveDayShift`
+   builds a day key from PARTS; the tempting `new Date("2026-09-03")` is UTC
+   midnight, which lands on the PREVIOUS day anywhere west of UTC. This sandbox
+   and GitHub Actions both run UTC, where the broken version returns the right
+   answer — so that mutation SURVIVED the whole spec until this existed.
+   America/Los_Angeles is chosen for the PROPERTY, not for an org: it is behind
+   UTC, so the two implementations diverge. A zone ahead of UTC would not
+   discriminate either. Same lesson as fasttrack-dates.spec.js one repo over. */
+if (process.env.TZ !== 'America/Los_Angeles') {
+  const r = require('child_process').spawnSync(process.argv[0], [__filename], {
+    stdio: 'inherit', env: Object.assign({}, process.env, { TZ: 'America/Los_Angeles' }),
+  });
+  process.exit(r.status == null ? 1 : r.status);
+}
+
 const fs = require('fs');
 const path = require('path');
 
@@ -97,10 +112,14 @@ try {
   H = new Function(
     liftFn(src, 'liveWindow') + '\n' + liftFn(src, 'liveDay') + '\n' +
     liftFn(src, 'liveClock') + '\n' + liftFn(src, 'liveMoney') + '\n' +
-    liftFn(src, 'liveKey') + '\n' + liftFn(src, 'liveByProgram') + '\n' +
+    liftFn(src, 'liveKey') + '\n' + liftFn(src, 'liveSectionKey') + '\n' +
+    liftFn(src, 'liveBySection') + '\n' +
     liftFn(src, 'liveMarkState') + '\n' + liftFn(src, 'liveChimeWorthy') + '\n' +
-    'return { liveWindow, liveDay, liveClock, liveMoney, liveKey, liveByProgram, liveMarkState,' +
-    ' liveChimeWorthy };')();
+    liftFn(src, 'liveDayShift') + '\n' + liftFn(src, 'liveProgramTrend') + '\n' +
+    'const LIVE_TREND_DAYS = ' + (code.match(/LIVE_TREND_DAYS = (\d+)/) || [0,3])[1] + ';\n' +
+    'const LIVE_TREND_MIN = '  + (code.match(/LIVE_TREND_MIN = (\d+)/)  || [0,4])[1] + ';\n' +
+    'return { liveWindow, liveDay, liveClock, liveMoney, liveKey, liveSectionKey, liveBySection, liveMarkState,' +
+    ' liveChimeWorthy, liveDayShift, liveProgramTrend };')();
   pass++;
 } catch (e) {
   // A guard that DIES instead of failing has not told anyone what broke.
@@ -472,7 +491,7 @@ if (H.liveWindow) {
    can be wrong still renders a plausible table: a sort by size instead of
    recency, a total that folds in yesterday, or one money number standing in
    for two that legitimately differ. */
-if (H.liveByProgram) {
+if (H.liveBySection) {
   const R = (day, time, program, section, price, paid) => ({
     'Signed Up At': day + 'T' + time, 'Program': program, 'Section': section,
     'Price': price, 'Paid': paid, 'Customer Name': 'x', 'Section Id': section,
@@ -486,56 +505,69 @@ if (H.liveByProgram) {
     R(YDAY,  '23:00:00', 'Tap Dance',  'Tap Mon',    60, 60),   // yesterday, must not count
     R(TODAY, '07:00:00', 'Free Play',  'Drop In',  null, null), // no price at all
   ];
-  const out = H.liveByProgram(rows, TODAY);
+  const out = H.liveBySection(rows, TODAY);
 
-  eq(out.length, 3, 'one row per programme, and yesterday is not one of them');
+  /* ONE ROW PER SECTION since 2026-09-04, not per programme. Swim Camp's two
+     sections are two rows now, which is the whole point of the change: a
+     programme row summed sections its link could not open. */
+  eq(out.length, 4, 'one row per SECTION, and yesterday is not one of them');
 
   /* BIGGEST BY REVENUE FIRST, since 2026-09-04 — Dan asked for a leaderboard:
      "I'd expect to see the top, say 10 or so programs". Swim Camp holds $240 of
      today's money against Tap Dance's $60 while Tap Dance is the MORE RECENT,
      so this fixture tells a revenue sort from a recency sort — which is exactly
      what it was written to do when the rule ran the other way. */
-  eq(out[0].program, 'Swim Camp', 'the biggest by revenue leads');
-  eq(out[1].program, 'Tap Dance', '...then the next, by money and not by clock');
-  eq((out[2] || {}).program, 'Free Play',
-     'and a program with NO readable price sorts LAST — null is "we cannot tell", not "nothing"');
+  eq(out[0].section, 'Swim AM', 'the biggest section by revenue leads');
+  /* THE TIE IS BROKEN BY SIGNUPS. Tap Mon and Swim PM both hold $120, so the
+     busier one leads — pinned because a fixture that happens to tie is exactly
+     where an unstable sort would make two runs disagree. */
+  eq(out[1].section, 'Tap Mon', '...then the next, by money and not by clock');
+  eq(out[2].section, 'Swim PM', '...with a money tie broken by the busier section');
+  eq((out[3] || {}).section, 'Drop In',
+     'and a section with NO readable price sorts LAST — null is "we cannot tell", not "nothing"');
 
-  const swim = out.find(g => g.program === 'Swim Camp');
-  eq(swim.signups, 3, "a program's signups count every row the feed carries");
-  eq(swim.charged, 360, 'charged is the sum of what was committed');
-  eq(swim.paid, 270, '...and paid is only what has actually arrived');
+  const swim = out.find(g => g.section === 'Swim AM');
+  eq(swim.signups, 2, "a section's signups count every row the feed carries for THAT section");
+  eq(swim.charged, 240, 'charged is the sum of what was committed to this section');
+  eq(swim.paid, 150, '...and paid is only what has actually arrived');
   ok(swim.charged !== swim.paid,
      'charged and paid DIFFER on a payment plan, which is why one "revenue" number would be a lie');
-  eq(swim.sectionCount, 2, 'sections are counted distinctly, so two signups on one section are one section');
+  eq(swim.program, 'Swim Camp', 'the programme rides along as CONTEXT on the row');
+  /* THE SISTER SECTION IS ITS OWN ROW AND ITS OWN MONEY. This is the assertion
+     that fails if the grain ever slides back to programmes: under the old
+     shape both of these were one row holding $360. */
+  const swimPm = out.find(g => g.section === 'Swim PM');
+  eq(swimPm.signups, 1, 'the sister section is counted separately');
+  eq(swimPm.paid, 120, '...with only its own money, never the programme total');
 
   /* EVERY DAY THE FEED CARRIES, since 2026-09-04. Dan: "Can we get more
      programs to show up on the right side chart? Seems a little thin over
      there." It was scoped to today, so a quiet morning was a three-row card
      while the feed already held a week for the list beside it. Tap Dance's
      yesterday row is the one that proves the widening — it used to be dropped. */
-  const tap = out.find(g => g.program === 'Tap Dance');
+  const tap = out.find(g => g.section === 'Tap Mon');
   eq(tap.signups, 2, "yesterday's registration COUNTS now — the card covers the feed's window");
   eq(tap.charged, 120, '...and its money with it');
   eq(tap.todaySignups, 1,
      '...while `todaySignups` still separates what arrived today, which is what the headline reads');
 
-  const free = out.find(g => g.program === 'Free Play');
-  eq(free.charged, null, 'a programme whose rows carried NO price is null, never 0 — free and unreadable are different facts');
+  const free = out.find(g => g.section === 'Drop In');
+  eq(free.charged, null, 'a section whose rows carried NO price is null, never 0 — free and unreadable are different facts');
   eq(free.signups, 1, '...but it still counts as a registration');
 
-  eq(H.liveByProgram(rows, '').length, 0,
+  eq(H.liveBySection(rows, '').length, 0,
      'no day means no rows rather than the whole week — the feed had not answered yet');
-  eq(H.liveByProgram([], TODAY).length, 0, 'an empty feed is an empty list, not a throw');
+  eq(H.liveBySection([], TODAY).length, 0, 'an empty feed is an empty list, not a throw');
 
   // A programme with no name is labelled, not dropped: the registration
   // happened and hiding it would make the totals disagree with the counter.
-  const noName = H.liveByProgram([R(TODAY, '10:00:00', null, 'S', 10, 10)], TODAY);
-  eq(noName.length, 1, 'a registration with no programme name is still counted');
-  eq(noName[0].program, '(no program)', '...under a label rather than blank');
+  const noName = H.liveBySection([R(TODAY, '10:00:00', null, null, 10, 10)], TODAY);
+  eq(noName.length, 1, 'a registration with no section name is still counted');
+  eq(noName[0].section, '(no section)', '...under a label rather than blank');
   ok(!/no programme/.test(code),
      'and it is spelled Program, on screen and in the fallback (Dan: "not \'programmes\', \'Programs\'")');
 
-  ok(/liveByProgram\(rows, today\)/.test(code),
+  ok(/liveBySection\(rows, today\)/.test(code),
      'the widget calls the shared model rather than aggregating inline');
   ok(/function useLiveEnrollments/.test(code) && /const feed = useLiveEnrollments/.test(code),
      'ONE feed for both widgets — two polls would double the query and let the cards disagree about the same minute');
@@ -547,8 +579,10 @@ if (H.liveByProgram) {
      `paid`; `charged` survives as the sub-line on a payment plan. */
   ok(/data-live-prog-charged/.test(code) && /g\.paid == null \? '\\u2014'/.test(code),
      'no readable money renders a dash, never $0');
-  ok(/<th className="lm">Program revenue<\/th>/.test(code),
-     'the column is called Program revenue');
+  ok(/<th className="lm">Section revenue<\/th>/.test(code),
+     'the column is called Section revenue — the row is a section, so its money is too');
+  ok(/<th className="ls">Section<\/th>/.test(code),
+     '...and the identity column is the SECTION, not the programme');
   ok(/of \{liveMoney\(g\.charged\)\} charged/.test(code),
      '...with what was CHARGED underneath it, and only when the two differ — that is a payment plan, not a discrepancy');
   ok(/\(b\.paid == null \? -1 : b\.paid\) - \(a\.paid == null \? -1 : a\.paid\)/.test(code),
@@ -603,33 +637,51 @@ if (H.liveByProgram) {
      the two cards would disagree about what just landed. */
   ok(/freshBy/.test(code) && /flash\.has\(liveKey\(r\)\)/.test(code.slice(code.indexOf('const freshBy'))),
      'the per-program delta is built from the shared flash set');
-  ok(/className=\{freshBy\.has\(g\.program\) \? 'live-new' : ''\}/.test(code),
+  ok(/className=\{freshBy\.has\(g\.key\) \? 'live-new' : ''\}/.test(code),
      '...and the row lights up from the same map rather than a second scan');
+  /* THE MAP IS KEYED THE SAME WAY THE ROWS ARE. Keyed by programme while the
+     rows are sections, one signup would light up every section of its
+     programme and add its whole bump to each of their money cells. */
+  ok(/const key = liveSectionKey\(r\);[\s\S]{0,200}freshBy\.set\(key, g\)/.test(code),
+     '...and the arrival map keys on the SAME section key the rows do');
+  ok(/freshBy\.get\(g\.key\)/.test(code),
+     '...so the money bump lands on the section that took the signup');
   ok(/data-live-bump=/.test(code), '...with the increment on screen, so a render case can read it');
 
-  /* THE PROGRAM NAME OPENS REC. Dan: "I should also be able to click the
-     section name on the right side and open a new tab directly to the rec
-     admin section page." A program row is not a section, so what it opens is
-     the section its most recent registration went into. */
-  ok(/data-live-prog-section=\{g\.lastSectionId\}/.test(code),
-     'the program name links to a section');
-  ok(/liveSectionUrl\(recOrgId, g\.lastSectionId\)/.test(code),
+  /* THE ROW OPENS EXACTLY ITSELF. Dan, after clicking a $20,390 programme row
+     and landing on a section page reading $1,970.29: "I don't care how much the
+     program has made, I want to know which section it's associated with." The
+     row IS the section now, so the name, the count, the money and the link are
+     one scope and cannot disagree. */
+  ok(/data-live-prog-section=\{g\.sectionId\}/.test(code),
+     'the section name links to its OWN section, not to a sibling');
+  ok(/liveSectionUrl\(recOrgId, g\.sectionId\)/.test(code),
      '...built with the same helper the registrations list uses, so one id shape governs both');
-  if (H.liveByProgram) {
+  ok(!/lastSectionId/.test(code),
+     '...and nothing still reaches for a "most recent of several" section — that was the 10x mismatch');
+  if (H.liveBySection) {
     const D = '2026-09-04';   // fixed, like the block above: a literal day, never the clock
     const R2 = (day, clock, program, section, secId) => ({
       'Signed Up At': day + 'T' + clock, 'Program': program, 'Section': section,
       'Section Id': secId, 'Price': 10, 'Paid': 10, 'Customer Name': 'C',
     });
-    const multi = H.liveByProgram([
+    const multi = H.liveBySection([
       R2(D, '09:00:00', 'Camp', 'Camp AM', 'sec-am'),
       R2(D, '11:00:00', 'Camp', 'Camp PM', 'sec-pm'),
-    ], D)[0];
-    eq(multi.lastSectionId, 'sec-pm',
-       'a program spanning two sections opens the MOST RECENT one, not whichever arrived first');
-    eq(multi.sectionCount, 2, '...and still counts both, so the +N can say the link is a primary');
-    const none = H.liveByProgram([R2(D, '09:00:00', 'Camp', 'Camp AM', null)], D)[0];
-    eq(none.lastSectionId, '', 'no id means no link rather than a link to nowhere');
+    ], D);
+    eq(multi.length, 2, 'a programme spanning two sections is TWO rows, each opening itself');
+    eq(multi.find(g => g.section === 'Camp PM').sectionId, 'sec-pm', '...each carrying its own id');
+    eq(multi.find(g => g.section === 'Camp AM').sectionId, 'sec-am', '...and not its sibling\'s');
+    const none = H.liveBySection([R2(D, '09:00:00', 'Camp', 'Camp AM', null)], D)[0];
+    eq(none.sectionId, '', 'no id means no link rather than a link to nowhere');
+    /* TWO PROGRAMMES CAN RUN THE SAME SECTION NAME — already recorded for this
+       feed ("two programs run Girls Grades 3-4"). Without an id they must stay
+       apart, or one row would hold both their money. */
+    const clash = H.liveBySection([
+      R2(D, '09:00:00', 'Rec Basketball', 'Girls Grades 3-4', null),
+      R2(D, '10:00:00', 'Travel Basketball', 'Girls Grades 3-4', null),
+    ], D);
+    eq(clash.length, 2, 'two programmes running the same section NAME stay two rows');
   }
 
   /* THE WARM TINT, in BOTH themes. A colour defined once is a card that reads
@@ -774,6 +826,92 @@ if (H.liveByProgram) {
      'the sound menu is hidden while muted');
   ok((code.match(/data-live-mute="1"/g) || []).length === 1,
      'one mute box in one shared header — two copies is how Pause and the bolt drifted');
+}
+
+/* ── the trend arrow ────────────────────────────────────────────────────────
+   Laurel's "youth winter basketball is not really catching right now" — the
+   number says how many, the arrow says whether it is still moving. RUN, never
+   regexed: a regex over a comparison passes just as happily on an inverted
+   one. */
+if (H.liveProgramTrend && H.liveDayShift) {
+  const T = H.liveProgramTrend, S = H.liveDayShift;
+
+  // Day keys are built from PARTS, so a month boundary has to roll over.
+  eq(S('2026-09-03', 1), '2026-09-02', 'a day key shifts back one day');
+  eq(S('2026-09-01', 1), '2026-08-31', '...and rolls over a month boundary');
+  eq(S('2026-01-01', 1), '2025-12-31', '...and a year boundary');
+  eq(S('', 1), '', 'a missing day key yields nothing rather than a bogus date');
+
+  const today = '2026-09-10';
+  // recent = 9th, 8th, 7th   prior = 6th, 5th, 4th
+  const rising  = { '2026-09-09': 5, '2026-09-08': 4, '2026-09-07': 3,
+                    '2026-09-06': 1, '2026-09-05': 1, '2026-09-04': 1 };
+  const falling = { '2026-09-09': 1, '2026-09-08': 0, '2026-09-07': 1,
+                    '2026-09-06': 6, '2026-09-05': 5, '2026-09-04': 4 };
+  const flat    = { '2026-09-09': 2, '2026-09-08': 2, '2026-09-07': 2,
+                    '2026-09-06': 2, '2026-09-05': 2, '2026-09-04': 2 };
+
+  /* READ THROUGH A SAFE ACCESSOR. A mutation that shifts the day keys makes
+     every fixture fall under the floor, so `T(...)` returns null and a bare
+     `.dir` THREW — the spec died on a stack trace naming nothing instead of
+     failing on the assertion that provoked it. That is the "a guard that dies
+     instead of failing has not told anyone what broke" lesson, and it has now
+     bitten both these repos several times. */
+  const at = (t, k) => (t == null ? '(no trend at all)' : t[k]);
+
+  eq(at(T(rising,  today), 'dir'), 'up',   'a programme taking more signups than last week reads UP');
+  eq(at(T(falling, today), 'dir'), 'down', "...and one that has stopped catching reads DOWN (Laurel's basketball)");
+  eq(at(T(flat,    today), 'dir'), 'flat', '...and an unchanged one is flat, not up');
+  eq(at(T(rising,  today), 'recent'), 12, 'the recent half counts the three complete days before today');
+  eq(at(T(rising,  today), 'prior'),   3, '...and the prior half the three before those');
+  eq(at(T(rising,  today), 'pct'),   300, 'the percentage is against the prior half');
+
+  /* TODAY IS EXCLUDED — the whole correctness rule. A partial day counted
+     against three full ones makes EVERY programme read as declining. This
+     fixture puts a huge count on today; if it were counted, `rising` would
+     still be up but `flat` would swing. */
+  const withToday = Object.assign({}, flat, { '2026-09-10': 99 });
+  eq(at(T(withToday, today), 'dir'), 'flat', "today's partial count is excluded from the comparison");
+  eq(at(T(withToday, today), 'recent'), 6, '...and does not inflate the recent half');
+
+  /* THE SEVENTH DAY BACK IS OUT OF RANGE. The feed carries seven calendar days
+     ending today, so only six are complete and a stray older row must not be
+     counted into the prior half. */
+  const older = Object.assign({}, flat, { '2026-09-03': 50 });
+  eq(at(T(older, today), 'prior'), 6, 'a day outside the two halves is not counted');
+
+  /* A FLOOR: a direction is not a trend. One signup against none is "up 100%"
+     and means nothing. */
+  ok(T({ '2026-09-09': 1 }, today) === null, 'under the floor there is no arrow at all');
+  ok(T({}, today) === null, 'a programme with no signups in either half has no arrow');
+  ok(T(flat, '') === null, 'without a known day there is no arrow');
+
+  /* A ZERO BASE HAS NO PERCENTAGE. Four signups against a week of none is real
+     news and is NOT "+400%" — there is no base to be a percentage of. */
+  const fresh = { '2026-09-09': 2, '2026-09-08': 2 };
+  eq(at(T(fresh, today), 'dir'), 'up', 'a programme with signups only in the recent half is up');
+  ok(T(fresh, today) != null && T(fresh, today).pct === null,
+     '...and its percentage is null, never a number off a zero base');
+}
+
+/* The cell has to READ the trend, and the arrow has to be absent when there is
+   none — a flat dash pretending to be a measurement is the confident-zero bug
+   this codebase keeps writing down. */
+{
+  /* SCOPED TO THE PROGRAMS TABLE'S CELL. `className="lp"` is also the
+     PARTICIPANT cell in the enrollments table above, and a non-greedy match
+     finds that one first — so this anchors on the attribute only this cell
+     has. The first draft matched the wrong table and failed on correct code. */
+  const cell = (code.match(/<td className="lp" data-live-prog-trend[\s\S]*?<\/td>/) || [''])[0];
+  ok(/data-live-prog-trend=/.test(cell), 'the signups cell exposes the trend for a render case');
+  ok(/g\.trend \? \(/.test(cell), '...and renders the arrow only when there IS a trend');
+  ok(/today is excluded/.test(cell), '...and the tooltip says today is excluded, since that is why it can differ from the count');
+  ok(/liveProgramTrend\(g\.dayCounts, today\)/.test(code),
+     'the grouping computes the trend from its own per-day tally');
+  /* DOWN CARRIES THE COLOUR, up and flat are muted — and neither reuses the
+     green/orange the price column spends on payment state. */
+  ok(/\.live-trend-down \{ color: #b45309/.test(code), 'down is the emphasised direction');
+  ok(/\.live-trend-up   \{ color: var\(--text-muted\)/.test(code), '...and up is muted, not a second green');
 }
 
 /* THE REPORT GOES LAST, and this was a real bug for one revision: the block
