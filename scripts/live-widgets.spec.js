@@ -234,18 +234,30 @@ if (H.liveWindow) {
    say better in words; a timeline says WHEN, which is what somebody watching a
    registration day is watching for. */
 {
-  ok(/function liveTimeline\(rows, days\)/.test(code), 'the timeline is a module-scope model, so a spec can run it');
+  ok(/function liveTimeline\(rows, today\)/.test(code),
+     'the timeline is a module-scope model taking the FEED\'s day, so a spec can run it');
   ok(/paid: Number\(r\['Paid'\]\) > 0/.test(code),
      'a mark is PAID by what has actually arrived, not by what was charged — registered and paid for are different facts');
   ok(/\{m\.paid \? '\$' : ''\}/.test(code), "...and a paid one carries the dollar sign");
-  ok(/lane: seen\[day\] % 3/.test(code),
+  ok(/lane: n\+\+ % 3/.test(code),
      'marks stagger across three rows, so a cluster reads as a cluster rather than as one dot');
-  ok(/if \(t == null \|\| t < t0 \|\| t > t1\) return;/.test(code),
-     'a row outside the window is dropped rather than clamped onto the edge, which would invent a signup at midnight');
-  ok(/nowLeft: Math\.min\(100, Math\.max\(0,/.test(code),
-     'NOW is drawn, and clamped into the lane — without it the last day reads as empty rather than as not-yet-happened');
-  ok(/'Today' : \['Sun','Mon','Tue','Wed','Thu','Fri','Sat'\]/.test(code),
-     'the last day is labelled Today');
+
+  /* ONE DAY, NOT SEVEN. Dan, 2026-09-04: "would prefer this card show the
+     current day, so it's not so smooshed... in terms of the dollar signs and
+     the chart at the top." Over a week every signup fell inside a one-seventh
+     slice and a busy afternoon rendered as an unreadable clump. These four
+     assertions previously pinned the seven-day design; they pin the reason for
+     the one-day one now, so a revert fails rather than passing quietly. */
+  ok(/if \(liveDay\(r\['Signed Up At'\]\) !== today\) return;/.test(code),
+     'a row from another day is DROPPED, not squeezed in — the lane is one day wide');
+  ok(!/liveTimeline\(rows, LIVE_DAYS\)/.test(code),
+     'the timeline is no longer handed the seven-day window');
+  ok(/const tl = liveTimeline\(rows, today\)/.test(code),
+     "...it is handed the feed's own day, so a viewer in another timezone sees the rec centre's day");
+  ok(/for \(let h = 0; h < 24; h \+= 4\)/.test(code),
+     'the axis is a FIXED 24 hours with 4-hourly ticks — an axis fitted to the marks would slide every signup sideways each minute as the day fills');
+  ok(/const nowLeft = now >= t0 && now <= t1 \?/.test(code),
+     'NOW is drawn only while the viewer\'s clock is inside the day being shown, rather than pinned to the right edge implying the day is still running');
   ok(/function liveAt\(ts\)/.test(code) && /new Date\(Number\(m\[1\]\), Number\(m\[2\]\) - 1/.test(code),
      'an instant is rebuilt from PARTS — new Date(str) would read the org-local stamp as UTC and slide an evening signup onto the wrong day');
 }

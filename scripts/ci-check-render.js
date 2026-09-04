@@ -304,11 +304,27 @@ const CASES = [
      there... how about a moving timeline of the days/time... and when people
      pay, it gets a dollar sign"). Keyed on the MARKS, because a lane with no
      marks in it renders as a perfectly good empty timeline. */
-  { name: 'live · the timeline plots every registration', needs: '.live-timeline[data-live-marks="6"]' },
+  /* THE LANE IS ONE DAY WIDE (Dan: "would prefer this card show the current
+     day, so it's not so smooshed"). The fixture carries six registrations, of
+     which THREE are today — so 3 is the discriminating number here and 6 is
+     exactly what a revert to the seven-day lane would render. */
+  { name: 'live · the timeline plots today, not the week',
+    needs: '.live-timeline[data-live-marks="4"]',
+    absent: '.live-timeline[data-live-marks="6"]' },
   { name: 'live · a paid registration carries a dollar sign', needs: '.lt-mark.paid[data-live-mark="paid"]' },
   { name: 'live · an unpaid one does not', needs: '.lt-mark[data-live-mark="unpaid"]',
     absent: '.lt-mark.paid[data-live-mark="unpaid"]' },
-  { name: 'live · the last day is labelled Today', needs: '.lt-day.today' },
+  /* Hour ticks, not weekday ones — and keyed on a LATE hour, because an axis
+     that quietly reverted to days would still render some `.lt-day` spans. */
+  { name: 'live · the axis is hours across one day', needs: '.lt-day',
+    act: async page => {
+      await page.waitForSelector('.live-timeline', { timeout: 15000 });
+      await page.evaluate(() => {
+        const t = [...document.querySelectorAll('.lt-day')].map(x => x.textContent.trim()).join('|');
+        document.body.setAttribute('data-lt-ticks', t);
+      });
+    } },
+  { name: 'live · ...labelled 12a through 8p', needs: 'body[data-lt-ticks="12a|4a|8a|12p|4p|8p"]' },
   /* ROWS FROM ANOTHER DAY SAY SO. The list is sorted newest-first and always
      was; a column showing only a clock made it look shuffled, because 8:15p
      yesterday sorts below 2:41p today. */
