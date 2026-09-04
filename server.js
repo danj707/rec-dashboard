@@ -332,8 +332,33 @@ const SHARED_UUIDS = {
   // (programs / facility / memberships / passes / products / events /
   // deposits / fees_tax / other) — reconciles exactly with the GL rollup.
   // Metabase card #19141 "Org Dashboard — Revenue by Stream (payment-dated)".
-  revstreams: '4c75c2e7-b4c0-44f3-b5bc-f8aac598730b'
+  revstreams: '4c75c2e7-b4c0-44f3-b5bc-f8aac598730b',
+  /* ── LIVE WIDGETS ──────────────────────────────────────────────────────
+     Card 21286 "Enrollments Live" — one row per confirmed section booking,
+     newest first, behind the Coffee Counter. Mirrored at
+     sql/enrollments-live.sql; the live card is the source of truth.
+
+     A LITERAL, like every other card here. This was an env var for about an
+     hour (Dan: "what is MB_ENROLLMENTS_UUID lol"), which put a deploy-time
+     step between a card being published and the widget appearing — for no
+     benefit, because the absence rule is enforced where it belongs: the widget
+     renders NOTHING when the feed cannot answer, and the section hides itself
+     when its widgets do. A confident "0 signups today" on a registration
+     morning is the reading that had to be impossible; an env var was never
+     what made it so.
+
+     Verified live before wiring: shrewsbury, 7-day window, 126 rows in 20.7s
+     through the public endpoint with the app's own date/single parameters. */
+  enrollments: 'e663ecfb-71b4-4de1-b984-13c69beab005'
 };
+
+/* A LIVE WIDGET NEEDS ITS OWN CLOCK. Everything else here is a dashboard of a
+   window somebody chose and caches 15 minutes by org config; a counter whose
+   whole claim is "right now" cannot be a quarter of an hour behind. 60s is
+   also what the page polls at, so most ticks are served from this cache and
+   the card is queried about once a minute per org rather than once per
+   viewer. */
+const LIVE_REPORT_TTL_MS = { enrollments: 60 * 1000 };
 
 // Reports that don't accept date parameters
 const NO_DATE_REPORTS = new Set([
@@ -497,14 +522,27 @@ async function fetchMetabaseData(orgSlug, reportType, query) {
   
   // Check org-specific cache TTL
   const orgConfig = dashboardConfigs[orgSlug];
-  const ttl = (orgConfig?.cacheTTL || 15) * 60 * 1000;
+  // A live feed's TTL is a property of the FEED, not of the org's preference:
+  // an org that set a 30-minute cache did not ask for a stale "right now".
+  const ttl = LIVE_REPORT_TTL_MS[reportType] || (orgConfig?.cacheTTL || 15) * 60 * 1000;
   
   const doFetch = async () => {
     const paramStr = params.length ? `?parameters=${encodeURIComponent(JSON.stringify(params))}` : '';
     const url = `${METABASE_URL}/api/public/card/${uuid}/query/json${paramStr}`;
     console.log(`[FETCH] ${orgSlug}/${reportType} → ${uuid} (shared=${isShared})`);
     const resp = await fetch(url);
-    if (!resp.ok) throw new Error(`Metabase ${resp.status}: ${resp.statusText}`);
+    if (!resp.ok) {
+      /* SAY WHAT METABASE SAID. "Metabase 400: Bad Request" is what this threw
+         for a Watertown programs prewarm that had actually spent 3m45s and hit
+         a statement timeout — a slow card and a broken one are opposite
+         problems with opposite fixes, and the status alone cannot tell them
+         apart. The body carries the reason; 200 characters of it is plenty.
+         Same lesson the sibling repo learned when its health check spent an
+         afternoon reporting healthy-but-slow cards as down. */
+      let why = '';
+      try { why = (await resp.text()).slice(0, 200).replace(/\s+/g, ' ').trim(); } catch (e) {}
+      throw new Error(`Metabase ${resp.status}: ${resp.statusText}${why ? ' — ' + why : ''}`);
+    }
     const rows = await resp.json();
     console.log(`[DATA] ${orgSlug}/${reportType}: ${rows.length} rows${rows.length > 0 ? ', cols: ' + Object.keys(rows[0]).join(', ') : ''}`);
     return rows;
@@ -1462,6 +1500,11 @@ app.get('/:org/api/config', authMiddleware, async (req, res) => {
   }
 
   res.json({ config, availableReports, orgName: org.name, logoUrl: org.logoUrl, city: org.city, state: org.state,
+    // The rec.us organisation uuid, which is what an admin link is addressed
+    // by: https://www.rec.us/admin/o/<recOrgId>/users/<id>. Ours to send —
+    // this page is already token-authenticated for exactly this org, and the
+    // same id is in every report URL it renders.
+    recOrgId: org.orgId,
     toggles: config?.toggles || { ai: true, reportLinks: false, aiBriefing: false, emailDigest: false },
     reportingBaseUrl: REPORTING_BASE_URL,
     // The slug and token rental-report actually serves this org under. The page

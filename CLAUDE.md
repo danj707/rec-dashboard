@@ -1,5 +1,258 @@
 # Project notes for Claude
 
+## Live Widgets — a new section, and the Coffee Counter (2026-09-03)
+
+Dan, after the first one was built on the reporting side and taken back off the
+same afternoon: *"I ruminated on the live reports/widgets, and decided they
+don't belong on the reporting project side... The new live coffee counter
+widget, and all other live widgets, need to live on the org-dashboard project.
+A dashboard is the spot for live data, not static reports."*
+
+**THE LINE IS BETWEEN A REPORT AND A DASHBOARD, not between two features.** A
+report answers a question about a window somebody chose; a panel refreshing
+itself under that answer is a second, contradictory clock on the same screen.
+So `SECTIONS.live` is `_special` — it renders its own component instead of
+going through the date-ranged `reportData` pipeline that every other section
+uses, because that pipeline is keyed on the range these widgets ignore. The
+section header says *"not date-filtered"* where the numbers are, since a reader
+cannot otherwise tell which clock a figure is on.
+
+### The Coffee Counter
+
+Named for Laurel Rossiter at Shrewsbury, whose feedback on the reporting
+project produced it: *"registration day opens and I can literally watch people
+register for stuff and keep track... I don't have that umbrella viewpoint that
+I'm used to having, and I miss it."* What she already had was a Metabase card
+with four columns, newest first, no filters — and it beat a seven-tab report
+for the one question she asks daily.
+
+**THE DESIGN IS THE RESTRAINT.** Today's count, a seven-day sparkline, the last
+eight signups, and a Pause. Every instinct to add a filter here should be
+resisted: the reports exist for analysis, this is the thing you leave open.
+
+- **A SKELETON WHILE IT LOADS; ABSENT ONLY IF IT FAILS.** Rendering nothing
+  during the first fetch left a "Live Widgets" heading over blank space for the
+  several seconds the query takes — Dan: *"now the widget is gone lol"*, which
+  was the load, not a failure. Not-yet-answered and could-not-answer are
+  different states and only one of them is absence.
+- **ABSENT, NEVER A ZERO.** A failed feed renders **nothing** —
+  not a zero — and **the section hides with its widgets**, because a "Live
+  Widgets" heading over a blank grid reads as broken rather than as absent. On
+  a registration morning *"0 signups today"* when the truth is "nothing
+  answered" is the most damaging thing this dashboard could show.
+  **This was an env gate (`MB_ENROLLMENTS_UUID`) for about an hour** — Dan:
+  *"what is MB_ENROLLMENTS_UUID lol"* — which put a deploy step between
+  publishing a card and seeing the widget, for no benefit: the rule that had to
+  hold lives in the component, not in a variable. The card is a literal now,
+  like every other entry in `SHARED_UUIDS`.
+- **IT HAS ITS OWN CLOCK.** `LIVE_REPORT_TTL_MS` caches this feed for **60
+  seconds** and **beats the org's own `cacheTTL`** — an org that set a
+  30-minute cache did not ask for a stale "right now". The page polls at the
+  same 60s, so most ticks are served from that cache and the card is queried
+  about once a minute per org rather than once per viewer.
+- **"TODAY" COMES FROM THE FEED, NOT THE BROWSER.** The card stamps each signup
+  in the ORG's timezone, so the day being counted is the newest ROW's own day.
+  A viewer in another zone — or with a wrong clock — must not be told a
+  different number from the person sitting in the rec centre.
+- **Nothing parses a feed timestamp through `new Date()`.** It is a bare local
+  wall-clock string already converted to the org's zone; parsing and
+  reformatting re-applies the VIEWER's zone and moves an evening signup onto
+  the wrong day. The window is built from date PARTS for the same reason — a
+  `toISOString()` window asks for tomorrow from late afternoon onwards in the
+  US, on the one feed whose entire value is today.
+- **The sparkline is built from the WINDOW, not from the rows' own days**, so a
+  day with no signups is a real empty bar rather than silently missing. Today
+  is the last bar and the panel says it is still filling — otherwise a
+  half-finished day reads as a decline.
+- **Money is blank, never `$0`.** A free registration and a price we could not
+  read are different facts.
+- **Pause stops the timer**, because a list that reorders under the cursor
+  while you are reading a name is worse than a stale one.
+- **It renders ABOVE the stored sections and is NOT in `config.sections`.** Live
+  data is what you want on arrival, and gating it on a per-org config would
+  mean nobody sees it until they go looking in the editor for a widget they do
+  not know exists. **Never in print:** a printed "right now" is a lie the moment
+  the paper leaves the printer.
+
+### Card 21286, and the four defects it fixes
+
+`sql/enrollments-live.sql` mirrors it; **the live card is the source of truth —
+read it before writing to it.** Ported from Laurel's own card 3571, and each
+difference is a bug in the original:
+
+1. **`Signed Up At` reads `created_at`, not `updated_at`.** 3571 selects and
+   sorts on `updated_at` while its own date filter is bound to `created_at`, so
+   the column and the filter describe different events and "newest first" is
+   really "most recently TOUCHED first" — a transfer or a staff note re-dates a
+   months-old signup to today and floats it to the top.
+2. **The org is a parameter.** 3571 hardcodes Shrewsbury's uuid while its
+   description says Madison — it was copied.
+3. **The timezone comes from the org's majority location**, not a hardcoded
+   `America/New_York`, which renders a 9pm signup on the wrong DAY for the
+   non-Eastern half of the platform.
+4. **No `updated_at > '2025-04-15'` floor** silently truncating history.
+
+Plus `Participant` (a parent registering a child is the common case, and one
+"name" column has to pick a side). **It is not a revenue report:** `Price` is
+`applied_pricing` finalCents, never `order_item.price` — the rate card, which
+reads non-zero for a comped booking.
+
+**Public UUID `e663ecfb-71b4-4de1-b984-13c69beab005`**, wired 2026-09-03 and
+signed off cache-independently through the public endpoint with the app's own
+`date/single` parameters: **shrewsbury, 7-day window, 126 rows in 20.7s.**
+
+### v2 — THE WINDOW IS APPLIED BEFORE THE MONEY (2026-09-03, same day)
+
+The first version was slow in a way that only showed up on a second org.
+Measured through the public endpoint: **Shrewsbury 20.7s, then 42.2s;
+Watertown 46s.** The cause is not the feed's size — it returns 126 rows — it is
+that the `money` CTE aggregated the org's **whole `order_item` ledger** and was
+then joined to a handful of windowed bookings. A widget asking for seven days
+was paying for every registration the org had ever taken.
+
+`bk` resolves the windowed bookings first and `money` joins to it, so the
+per-item work runs over a week instead of a history: **Shrewsbury 1.05s.**
+
+**PROVEN IDENTICAL, not assumed.** Same org, same window, fingerprinted over
+(signed-up-at, customer, section, price, paid): **126 rows, $11,123 charged /
+$11,123 paid, md5 `173198a77f96255c22982d9fa9c067a5`** — byte-identical to the
+deployed v1. `oi.organization_id = bk.org_id` is **kept** even though the
+booking join makes it redundant, so the claim being made is "same query,
+smaller input" rather than "a different query that looks right".
+
+**THE DATE TAGS MOVED INTO `bk`,** which is the whole point — a window applied
+after the aggregate is the bug being fixed, and `live-widgets.spec.js` asserts
+their POSITION (between `bk AS (` and `money AS (`), not merely their presence.
+
+The 60-second cache stays: an open dashboard costs about one query a minute for
+its org, not one per viewer. Nothing waits on it — the widget renders when it
+answers.
+
+After any API push to the card, re-set the Start/End Date variables to type
+**Date** and re-save until it registers three parameters rather than six.
+Flip link: https://rec.metabaseapp.com/question/21286
+
+### Three things the first look found (2026-09-03, same evening)
+
+- **HALF WIDTH.** It shipped `widget-lg`, which spans all four columns — right
+  for a chart, wrong for eight short rows, and full-bleed it dwarfed the board.
+- **THE EDITOR OFFERED TO ADD IT WHILE IT WAS ALREADY ON SCREEN.** Dan: *"if
+  it's already loaded, shouldn't it be highlighted, and at the top with a
+  widget counter of 1?"* Adding it would have produced a **second, empty copy**,
+  because the section renders outside `config.sections`. It is shown the way
+  Support is now — pinned first, labelled *"Always on · not date-filtered"*,
+  1 widget, and removed from the addable list. A control that offers to add
+  what is already there is the dead end this file keeps recording.
+- **"SPINNING FOREVER, TOP BAR NEVER STOPS."** It had already stopped, and
+  that was the problem: `.loading-bar-inner` carried a background and a 30%
+  width unconditionally while only the ANIMATION was gated on `.active`, so a
+  finished load left a static amber stub under the header that reads exactly
+  like a progress bar wedged at 30%. Pre-existing, on every dashboard. The
+  inner bar is `display: none` unless the bar is active.
+
+**AND THE RENDER HARNESS SILENTLY IGNORED `act`.** Four cases for the above
+failed against perfectly good code because this repo's `ci-check-render.js` had
+no per-case interaction hook — it accepted the field and dropped it. Ported
+from the sibling repo, and a throwing hook now fails by name rather than
+vanishing. *A harness that accepts an unknown field and drops it is worse than
+one that rejects it.*
+
+### The list, reworked after the second look
+
+Dan: *"set fixed column widths here, it's a bit of a jumbled mess. time of
+registration, then household owner, then participant name, then section or
+program name, then price. Add column headers. And animate the lightning bolt or
+something make it seem more 'alive'. Doesn't feel like it's doing anything."*
+And: *"when a new registration happens, the bottom one drops off, the new
+one(s) pop on the top, highlighted, then the highlighting fades after 10
+seconds or so."*
+
+- **FIXED COLUMN TRACKS.** The rows change under the reader every minute, so
+  natural widths meant every poll re-measured the table and the columns jumped.
+  Only the section flexes. Headers name the five columns.
+- **A ROW HAS AN IDENTITY.** The feed carries no booking id, so `liveKey()` is
+  the four things that cannot collide for two different registrations: the
+  second, the buyer, the participant, the section. **Rows are keyed by it, never
+  by array index** — otherwise React reuses a `<tr>` for a different
+  registration and the highlight lands on the wrong person.
+- **AN ARRIVAL IS A DIFF AGAINST THE PREVIOUS POLL**, not a timestamp
+  comparison: a row can arrive with an older stamp than one already on screen
+  (a staff-entered registration backdated by minutes).
+- **THE FIRST LOAD HIGHLIGHTS NOTHING.** Every row is new to an empty set, and
+  a card that lights up entirely on arrival has a highlight that means nothing —
+  the point is to catch the eye when ONE thing lands.
+- **The fade is the animation's job; the class comes off on a timer** (10s), so
+  a later re-render cannot replay it on a row that is no longer news. Reduced
+  motion still gets the highlight, without the movement.
+- **UNPAUSING REFRESHES IMMEDIATELY.** Otherwise the reader unticks the box and
+  waits up to a minute staring at the list they paused — the opposite of what
+  un-pausing a live feed should mean. It is also what makes the arrival
+  behaviour testable in a browser without waiting 60 seconds.
+- **The bolt pulses.** It is the only thing on the card that moves between
+  registrations, so it is what says the widget is still watching. Slow and
+  low-contrast on purpose: this sits on a dashboard somebody leaves open, and a
+  hard blink is an irritation rather than a signal.
+
+### A timeline instead of a bar chart, and links into Rec
+
+Dan: *"what is the odd bar chart there....how about a moving timeline of the
+days/time...and when people pay, it gets a dollar sign."* And: *"the HH owner
+and the section should be clickable directly to Rec, can we do that?"*
+
+- **THE BAR CHART SAID ALMOST NOTHING** this card does not say better in words.
+  A timeline says **WHEN** — the rush when registration opens, the long quiet
+  evening, the burst that just landed — which is the thing somebody watching a
+  registration day is watching for. One mark per registration at its own
+  minute, staggered across three rows so a cluster reads as a cluster.
+- **A PAID REGISTRATION CARRIES A `$`; an unpaid one is a plain dot.**
+  Registered and paid-for are different facts and the gap between them is worth
+  seeing on a card about money arriving.
+- **NOW is drawn.** Without it the last day reads as empty rather than as
+  not-yet-happened.
+- **A row outside the window is dropped, never clamped** onto the edge, which
+  would invent a signup at midnight.
+
+**THE LIST WAS ALWAYS SORTED; THE CLOCK HID IT.** Dan: *"shouldn't this be
+sorted by time? look at the times there"* — 11:23a, then 4:04p, then 2:12p.
+Newest first, and those are three different **days**, which a column showing
+only a clock cannot say. Today keeps the bare time (that is the day being
+watched); every other row is prefixed with its weekday, and a rule is drawn
+where the day changes — a list scanned in two seconds is read by its shape, not
+only by its text.
+
+**THE REC LINKS ARE COPIED, NOT GUESSED.** Both shapes already exist in the
+reporting project: `/admin/o/<org>/users/<id>` and
+`/admin/o/<org>/programming/sections/<id>`. A link built from the wrong id
+renders identically and 404s — the `rec_id` vs `users.id` mistake already
+recorded there. So **card v3 carries `User ID`** (`b.customer_user_id`, the
+uuid), the org uuid is sent as `recOrgId`, and either missing renders **plain
+text**: a link to nowhere is worse than no link.
+
+**`orgMeta` IS A WHITELIST**, so a field the server sends and that map forgets
+is silently absent — `recOrgId` has to be copied into it explicitly, and the
+spec pins that.
+
+### Guards
+
+`scripts/live-widgets.spec.js` (**96 assertions, in CI**), which LIFTS AND RUNS
+the four date helpers rather than regexing them. Mutation-tested four ways, all
+failing by name: a "0 signups today" rendered on a dead feed, the live TTL
+override removed so the org's 15 minutes wins, "today" taken from the browser's
+clock instead of the newest row, and the print exclusion dropped.
+
+**One assertion failed on correct code first time**, and the lesson is the
+familiar one: `!/new Date\(r\[/` file-wide fails because other tiles
+legitimately build Dates for their own charts. Scope an assertion to the
+surface it is about — it slices the widget now.
+
+Plus **eighteen** `ci-check-render.js` cases keyed on **computed values**: the row count,
+today's count (three of the five fixture rows share the newest day, so a widget
+printing `rows.length` reads 5 and fails), exactly seven bars, the last bar
+marked today and carrying its own count, and the section sitting above the
+date-ranged ones. **The fixture's dates are built relative to today** — with
+hardcoded dates the sparkline draws seven empty bars and every bar assertion is
+vacuous.
+
 ## Metabase public-card fetches — keep in lockstep with rental-report (IMPORTANT)
 
 This app and `danj707/rental-report` both fetch Metabase public cards with

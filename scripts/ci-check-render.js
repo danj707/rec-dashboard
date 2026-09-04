@@ -103,8 +103,48 @@ const MEMBERSHIPS = [
     'Group / Plan': 'League Tournament Gate Adult', 'Net Collected': '5', 'Paid': '5' })),
 ];
 
+/* THE SIGNUP FEED behind the Coffee Counter. Dates are built RELATIVE TO TODAY
+   on purpose: the widget's sparkline is one bar per day across the last seven,
+   so a fixture with hardcoded dates draws seven empty bars and every bar
+   assertion becomes vacuous.
+   THREE ROWS SHARE THE NEWEST DAY and two do not, so "signups today" is 3 and
+   not the row count — a widget printing the total passes on a single-day
+   fixture. */
+function liveIso(daysAgo, clock) {
+  const t = new Date();
+  const d = new Date(t.getFullYear(), t.getMonth(), t.getDate() - daysAgo);
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-'
+       + String(d.getDate()).padStart(2, '0') + 'T' + clock;
+}
+const ENROLLMENTS = [
+  { 'Signed Up At': liveIso(0, '14:41:48'), 'Customer Name': 'Rita Perri', 'Participant': null,
+    'User ID': 'user-rita', 'Section Id': 'sec-oxygen',
+    'Section': 'Play on 60+ Beginner Oxygen Dance', 'Program': 'Oxygen Dance Aerobics', 'Price': 25, 'Paid': 25 },
+  { 'Signed Up At': liveIso(0, '13:06:40'), 'Customer Name': 'Ryan Little', 'Participant': 'Brayden Little',
+    'Section': 'Boys (Grades 4-5) Tryouts', 'Program': 'SBA Travel Teams', 'Price': 25 },
+  { 'Signed Up At': liveIso(0, '11:35:00'), 'Customer Name': 'Nicole Baldarelli', 'Participant': 'Cameron Baldarelli',
+    'Section': 'Music, Movement & Sensory Play', 'Program': 'Music, Movement & Sensory Play', 'Price': 60 },
+  /* YESTERDAY, and LATER IN THE DAY than the row above it — which is exactly
+     what made the list look unsorted: a column showing only a clock cannot say
+     that 8:15p was yesterday. This row is what proves the weekday prefix. */
+  { 'Signed Up At': liveIso(1, '20:15:37'), 'Customer Name': 'Kaitlin Gentile', 'Participant': 'Cecelia Gentile',
+    'User ID': 'user-kaitlin', 'Section Id': 'sec-girls78',
+    'Section': 'Girls Grades 7-8', 'Program': 'Shrewsbury Rec Youth Basketball', 'Price': 170, 'Paid': 0 },
+  { 'Signed Up At': liveIso(3, '09:02:00'), 'Customer Name': 'Zaid Syed', 'Participant': null,
+    'Section': 'Apple Picking', 'Program': 'Rec Connect Fall', 'Price': 30 },
+];
+
+/* THE SECOND POLL BRINGS ONE MORE. A widget that highlights arrivals can only
+   be tested against a feed that CHANGES — with a constant payload the
+   highlight is indistinguishable from no highlight at all. This row is newest,
+   so it lands at the top, and it is the ONLY one that may light up. */
+const ENROLL_ARRIVAL = { 'Signed Up At': liveIso(0, '23:59:01'), 'Customer Name': 'Newly Arrived',
+  'Participant': 'Kid Arrived', 'Section': 'Just Registered', 'Program': 'Just Registered', 'Price': 42 };
+let enrollCalls = 0;
+
 const FIXTURES = {
   memberships: MEMBERSHIPS,
+  enrollments: ENROLLMENTS,
   gl: [], facility: [], programs: [], 'court-utilization': [], fasttrack: [],
   users: [], products: [], 'instructor-payout': [],
 };
@@ -122,7 +162,13 @@ const CONFIG = {
                                               'mem-type-donut','tbl-mem-autorenew'] }],
     toggles: { ai: false, reportLinks: true, aiBriefing: false, emailDigest: false },
   },
-  availableReports: { memberships: true },
+  // enrollments present = the card has a public link, which is the ONLY
+  // thing that puts the Live Widgets section on the page.
+  availableReports: { memberships: true, enrollments: true },
+  // The rec.us org uuid the admin links are addressed by. Deliberately NOT the
+  // dashboard's own slug or token — a link built from those is the drift that
+  // broke every report link for five weeks.
+  recOrgId: 'rec-org-uuid',
   orgName: 'Render Check Parks',
   toggles: { ai: false, reportLinks: true, aiBriefing: false, emailDigest: false },
   // THE LINK IDENTITY. Deliberately DIFFERENT from this dashboard's own slug and
@@ -171,6 +217,128 @@ const CASES = [
     needs: 'a.widget-report-link[href*="token=reporting-token"]' },
   { name: 'memberships · never our own slug',
     needs: 'a.widget-report-link', absent: `a.widget-report-link[href*="/${ORG}/"]` },
+
+  /* ── LIVE WIDGETS ────────────────────────────────────────────────────────
+     Keyed on COMPUTED VALUES. "A live section rendered" passes on a counter
+     printing the row count, on a sparkline drawn from the wrong days, and on a
+     list wired to the wrong feed. */
+  { name: 'live · the section is on the page', needs: '[data-live-section]' },
+  { name: 'live · the coffee counter reads its own feed', needs: '[data-live-coffee="5"]' },
+  // THREE of the five rows are today. A widget printing rows.length reads 5.
+  { name: 'live · and counts TODAY, not the list', needs: '[data-live-today="3"]' },
+  { name: 'live · above the date-ranged sections', needs: '.dashboard-section[data-live-section] + .dashboard-section' },
+  // HALF WIDTH (Dan). widget-lg spans all four columns; this is a list of
+  // eight short rows, not a chart, and full-bleed it dwarfed the dashboard.
+  { name: 'live · the counter is half width', needs: '.live-card.widget-md', absent: '.live-card.widget-lg' },
+  /* THE LOADING BAR STOPS. Its inner bar carried a background and a 30% width
+     unconditionally — only the ANIMATION was gated — so a finished load left a
+     static amber stub under the header that reads as a progress bar stuck at
+     30%. Dan: "spinning forever, top bar never stops." Computed style, because
+     that stub renders identically to a real one in the DOM. */
+  { name: 'dashboard · the loading bar stops when loading does',
+    needs: 'body[data-loadbar="none"]',
+    act: async page => {
+      await page.waitForSelector('.widget-card', { timeout: 30000 });
+      await page.evaluate(() => {
+        const bar = document.querySelector('.loading-bar');
+        const inner = document.querySelector('.loading-bar-inner');
+        // Only meaningful once loading has finished; `.active` is the class the
+        // bar carries while it has not.
+        if (bar && !bar.classList.contains('active') && inner)
+          document.body.setAttribute('data-loadbar', getComputedStyle(inner).display);
+      });
+    } },
+  /* THE EDITOR SHOWS IT AS A STATE, NOT A CHOICE. It was in "Add a Section"
+     while already rendering above — and adding it would have produced a second,
+     empty copy, because the section is rendered outside config.sections. */
+  { name: 'live · the editor lists it as always-on, first', needs: '[data-edit-live]',
+    act: async page => {
+      await page.waitForSelector('.widget-card', { timeout: 30000 });
+      const clicked = await page.evaluate(() => {
+        const b = [...document.querySelectorAll('button')].find(x => /Edit Dashboard/.test(x.textContent || ''));
+        if (!b) { document.body.setAttribute('data-noedit', String(document.querySelectorAll('button').length)); return false; }
+        b.click(); return true;
+      });
+      if (clicked) await page.waitForSelector('.modal-body', { timeout: 15000 }).catch(() => {});
+    } },
+  { name: 'live · ...and never offers to add it again',
+    needs: '.modal-body', absent: '.add-section-btn[data-add-live]' },
+  { name: 'live · it is the FIRST row in the editor',
+    needs: '.modal-body > [data-edit-live]:first-child' },
+
+  /* COLUMN HEADERS, in the order Dan named them, and FIXED tracks — the rows
+     change under the reader every minute, so natural widths re-measured the
+     table on every poll and the columns jumped. */
+  { name: 'live · the list has column headers', needs: 'body[data-livehead="Time|Household owner|Participant|Section|Price"]',
+    act: async page => {
+      // Close the editor first: it is a modal left open by the cases above.
+      await page.evaluate(() => {
+        const b = [...document.querySelectorAll('button')].find(x => (x.textContent || '').trim() === 'Cancel');
+        if (b) b.click();
+      });
+      await page.waitForSelector('.live-table thead th', { timeout: 15000 });
+      await page.evaluate(() => {
+        const hs = [...document.querySelectorAll('.live-table thead th')].map(h => h.textContent.trim());
+        document.body.setAttribute('data-livehead', hs.join('|'));
+        document.body.setAttribute('data-livefixed', getComputedStyle(document.querySelector('.live-table')).tableLayout);
+      });
+    } },
+  { name: 'live · ...and fixed column tracks', needs: 'body[data-livefixed="fixed"]' },
+
+  /* A NEW REGISTRATION HIGHLIGHTS, AND ONLY THE NEW ONE. Dan: "the new one(s)
+     pop on the top, highlighted, then the highlighting fades." Unpausing
+     forces the refresh, and the stub serves one extra row from the second call
+     — so a widget that highlights everything, or nothing, fails. */
+  { name: 'live · a new registration lands highlighted, at the top',
+    needs: '.live-table tbody tr:first-child[data-live-new="1"] td.ln',
+    act: async page => {
+      await page.waitForSelector('.live-pause input', { timeout: 15000 });
+      await page.click('.live-pause input');          // pause
+      await page.click('.live-pause input');          // unpause -> immediate refetch
+      await page.waitForSelector('[data-live-new="1"]', { timeout: 15000 });
+    } },
+  { name: 'live · ...and it is the only one highlighted',
+    needs: '.live-table tbody tr:first-child[data-live-new="1"]',
+    absent: '.live-table tbody tr:nth-child(2)[data-live-new="1"]' },
+  /* THE TIMELINE replaced a per-day bar chart (Dan: "what is the odd bar chart
+     there... how about a moving timeline of the days/time... and when people
+     pay, it gets a dollar sign"). Keyed on the MARKS, because a lane with no
+     marks in it renders as a perfectly good empty timeline. */
+  { name: 'live · the timeline plots every registration', needs: '.live-timeline[data-live-marks="6"]' },
+  { name: 'live · a paid registration carries a dollar sign', needs: '.lt-mark.paid[data-live-mark="paid"]' },
+  { name: 'live · an unpaid one does not', needs: '.lt-mark[data-live-mark="unpaid"]',
+    absent: '.lt-mark.paid[data-live-mark="unpaid"]' },
+  { name: 'live · the last day is labelled Today', needs: '.lt-day.today' },
+  /* ROWS FROM ANOTHER DAY SAY SO. The list is sorted newest-first and always
+     was; a column showing only a clock made it look shuffled, because 8:15p
+     yesterday sorts below 2:41p today. */
+  { name: 'live · a row from another day carries its weekday',
+    needs: 'body[data-liveday="1"]',
+    act: async page => {
+      await page.waitForSelector('.live-table tbody tr', { timeout: 15000 });
+      await page.evaluate(() => {
+        const cells = [...document.querySelectorAll('.live-table td.lt')].map(c => c.textContent.trim());
+        const today = cells.filter(t => /^\d{1,2}:\d{2}[ap]$/.test(t)).length;
+        const dated = cells.filter(t => /^(Sun|Mon|Tue|Wed|Thu|Fri|Sat) \d{1,2}:\d{2}[ap]$/.test(t)).length;
+        if (today > 0 && dated > 0) document.body.setAttribute('data-liveday', '1');
+      });
+    } },
+  /* LINKS INTO REC, built from the ids rather than the names — a link built
+     from rec_id or from a section NAME renders identically and 404s. */
+  { name: 'live · the household owner links into Rec',
+    needs: 'a.live-link[data-live-user="user-rita"][href="https://www.rec.us/admin/o/rec-org-uuid/users/user-rita"]' },
+  { name: 'live · the section links into Rec',
+    needs: 'a.live-link[data-live-section="sec-oxygen"][href="https://www.rec.us/admin/o/rec-org-uuid/programming/sections/sec-oxygen"]' },
+  { name: 'live · a row with no id is plain text, not a dead link',
+    needs: '.live-table tbody tr', absent: 'a.live-link[href$="/users/undefined"]' },
+  { name: 'live · the bolt is animated', needs: 'body[data-livebolt="1"]',
+    act: async page => {
+      await page.evaluate(() => {
+        const el = document.querySelector('.live-bolt');
+        const running = el && el.getAnimations && el.getAnimations().length > 0;
+        if (running) document.body.setAttribute('data-livebolt', '1');
+      });
+    } },
 ];
 
 (async () => {
@@ -200,6 +368,10 @@ const CASES = [
       // fetchReportData reads json.rows off /:org/api/data/:reportType.
       const m = /\/api\/data\/([a-z-]+)/.exec(u);
       const rt = m ? m[1] : null;
+      if (rt === 'enrollments') {
+        enrollCalls++;
+        return json({ rows: enrollCalls > 1 ? [ENROLL_ARRIVAL, ...ENROLLMENTS] : ENROLLMENTS });
+      }
       return json({ rows: (rt && FIXTURES[rt]) || [] });
     }
     req.continue();
@@ -218,7 +390,18 @@ const CASES = [
 
   for (const c of CASES) {
     let bad = null;
-    if (c.needs) {
+    /* A per-case `act` hook, ported from the sibling repo's render check. Some
+       states only exist after an interaction — the widget editor is behind a
+       button, and a computed style has to be READ and stamped before a
+       selector can assert it. Without this the hook was silently ignored and
+       four cases failed against perfectly good code, which is its own lesson:
+       a harness that accepts an unknown field and drops it is worse than one
+       that rejects it. */
+    if (c.act) {
+      try { await c.act(page); }
+      catch (e) { bad = 'act() threw: ' + String(e.message).split('\n')[0].slice(0, 160); }
+    }
+    if (!bad && c.needs) {
       const found = await page.$(c.needs);
       if (!found) bad = 'rendered no "' + c.needs + '"';
     }
