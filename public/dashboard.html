@@ -249,6 +249,16 @@ body { font-family: var(--font-body); background: var(--bg-page); color: var(--t
 .live-table .lm.live-paid { color: #16a34a; }
 .live-table .lm.live-part { color: #f59e0b; }
 .live-table th.lm { text-align: right; }
+/* THE PROGRAMS CARD REUSES THIS TABLE WITH A MUCH LONGER MONEY COLUMN, and 62px
+   was sized for the registrations card's bare price. Dan: "look at the
+   alignment on the headers and revenue section" — with `table-layout: fixed`
+   the declared width is honoured, so a 15-character nowrap header ("PROGRAM
+   REVENUE") simply overflowed the card's right edge, and the "of $X charged"
+   sub-line was clipped at 62px. Widening it here rather than on `.live-table`
+   leaves the registrations card, whose column really is that narrow, alone. */
+.live-table-progs .lm { width: 116px; }
+.live-table-progs .lm .lm-sub { font-size: 9px; color: #f59e0b; font-weight: 400;
+                                white-space: nowrap; line-height: 1.35; margin-top: 1px; }
 
 /* A NEW REGISTRATION ANNOUNCES ITSELF, then stops. Dan: "the new one(s) pop on
    the top, highlighted, then the highlighting fades after 10 seconds or so."
@@ -3176,7 +3186,7 @@ function ProgramsLive({ feed, recOrgId }) {
           {todaySignups > 0 ? ' \u00b7 ' + todaySignups + ' today' : ''}</span>
       </div>
 
-      <table className="live-table">
+      <table className="live-table live-table-progs">
         <thead>
           <tr>
             <th className="lt">Last</th>
@@ -3248,7 +3258,7 @@ function ProgramsLive({ feed, recOrgId }) {
                     : null;
                 })()}
                 {g.charged != null && g.paid != null && g.paid !== g.charged
-                  ? <div style={{fontSize:9,color:'#f59e0b',fontWeight:400}}
+                  ? <div className="lm-sub"
                          title="Charged in full at enrollment; the rest arrives on the payment plan.">
                       of {liveMoney(g.charged)} charged
                     </div>
