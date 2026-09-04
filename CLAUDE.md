@@ -1,5 +1,178 @@
 # Project notes for Claude
 
+## The live cards, polished (2026-09-04)
+
+Dan's list, in his words, after watching the pair on production for a morning:
+*"change the coffee counter name to 'Live Program Registrations', much sexier.
+Sorry coffee."*, the dollar signs to payment dots, a manual refresh on both, the
+programs bolt, *"not 'programmes', 'Programs'"*, ten programs ranked by revenue,
+and a warmer background because *"they look a bit washed out and don't stand out
+from the current cards."*
+
+### The Coffee Counter is now Live Program Registrations
+
+Name only — the card is the same one-day lane and list. Nothing in the repo says
+Coffee Counter any more, comments included, and `data-live-coffee` became
+`data-live-regs` so the DOM handle does not outlive the name.
+
+### THREE PAYMENT STATES, AS DOTS
+
+*"change the dollar signs (yeah I loved it too) to a green dot for paid, and an
+orange dot for a partial payment/payment plan (you had a grey dot right now)."*
+
+`liveMarkState(r)` reads the two figures the feed already carries — `Price`
+(charged) and `Paid` (arrived) — which is all three states without a new column:
+**green** paid in full, **orange** part-paid, **grey** nothing in. A payment plan
+IS the middle state by construction: charged in full at registration with only
+the first installment taken.
+
+- **Money with no readable charge still reads PAID.** A row we cannot price is
+  not evidence the payment did not land.
+- **A half-cent epsilon**, or two independently rounded figures make a
+  fully-paid registration render as a plan.
+- **Colour is the only difference between the three** — same size, same shape. A
+  dot that also changed shape would read as a different KIND of thing.
+- **A three-colour code is named on screen.** The legend is the only thing that
+  says which is which; the per-dot titles only say it on hover.
+
+### One header, both cards — which is how the bolt got fixed
+
+*"The lightning bolt on the programs card isn't pulsing/no animation."*
+
+**Both bolts were running** — proven in a browser: two `.live-bolt` elements,
+one animation each, `animationName: liveBolt`. What the guard could not tell us
+is *which* one, because it read `querySelector('.live-bolt')` — the
+registrations card's — so the programs bolt had never been checked at all.
+
+Two things changed. The keyframes no longer sit flat at `opacity: .55` for two
+of every three seconds, which is what made a still frame (or a glance) read as a
+dead icon; the baseline drifts now and the flicker is stronger. And the header
+is **one shared component** (`LiveCardHeader`) instead of two copies, because
+two copies is how the pair would eventually differ for real. The render case
+counts **every** bolt (`data-livebolt="2of2"`).
+
+The shared header is also what put the refresh button on both cards at once, and
+**Pause is now on both** — there is one feed behind them, so a Pause on the left
+card that silently stopped the right one was a confusing half-measure.
+
+### Refresh now
+
+*"add a manual refresh button on both these live cards in case I don't want to
+wait every minute."* The hook hands out its own fetch (`refresh: load`), so both
+cards move together — a button that refreshed half a shared feed is the
+two-cards-disagree bug this section was built to avoid.
+
+- **Disabled while a fetch is in flight**, and `loading` starts **true**,
+  because the first fetch is already running when the cards mount.
+- **REFRESHING DOES NOT UNPAUSE.** Pause says "stop moving while I read";
+  refresh says "move once, now". Conflating them makes the button a second,
+  hidden un-pause.
+- The render case clicks it and counts the browser's own enrollments requests
+  either side — a button that renders and does nothing looks identical.
+
+### Ten programs, ranked by REVENUE
+
+*"We need to show more programs on the program revenue card, I'd expect to see
+the top, say 10 or so programs, which pulse or move as users enroll in them.
+User pays, they show up on the left card as a new registration, AND the card on
+the right pulses with more revenue for that program."*
+
+It shipped most-recent-first, which answers "what just happened". This is a
+leaderboard instead: **money ranks the table and arrival animates it.**
+
+- `LIVE_PROG_ROWS = 10`, its **own** constant — each row there is a whole
+  program, while ten registrations would be a wall, so one constant governing
+  both kinds of row would be wrong for one of them.
+- **Recency did not leave the card**, which is why the sort could move: the Last
+  column still shows it, and ties break on signups then on the raw timestamp
+  string.
+- **A program with no readable price sorts LAST**, not first — `null` is "we
+  cannot tell", not "nothing".
+- **The pulse carries the increment.** `freshBy` is built in one pass from the
+  same `flash` set the registrations list highlights, so the row lights up AND
+  prints `+$215` — a total that grew by $215 is a different thing to read than a
+  total that is $215. Two cards cannot disagree about what arrived, because
+  there is one arrival diff.
+
+### Programs, not programmes — and the spacing was TWO bugs
+
+The headline read *"9across 5 programmes"*. The spelling was one fix; the
+squash was two:
+
+- **`.live-big` had no CSS rule at all**, so the number and its caption were two
+  inline boxes with nothing between them. It is a flex `gap` now, not a literal
+  space in the markup.
+- **A gap does not fix the TEXT.** `textContent` is still `"15across"` with the
+  elements merely spaced apart — what a screen reader says and what a
+  copy-paste carries — so `{' '}` goes in as well.
+
+**My first render case for this could not tell them apart**, and that is the
+lesson: it read `textContent`, which is blind to layout, so it "caught" a squash
+the flex gap had already fixed and would have passed on a page with no gap at
+all. It measures the two bounding rects now AND checks the text, because the
+symptom is one and the faults are two.
+
+### The program name opens Rec
+
+*"I should also be able to click the section name on the right side and open a
+new tab directly to the rec admin section page."*
+
+A program row is **not** a section — it can span several — so what it opens is
+the section the **most recent** registration went into, and where the row covers
+more than that, a muted `+N` says so (the same "+N is a primary, not the whole
+truth" shape the reporting project uses for instructors). No section id on the
+row means plain text, not a link to nowhere. It goes through the same
+`liveSectionUrl` the registrations list uses, so one id shape governs both.
+
+**The render case for it failed first time, and not because the link was
+broken:** it keyed on Oxygen Dance, whose $25 sorts it thirteenth of fourteen —
+below the ten-row cap, so it never rendered. The fixture's Swim Lessons row
+carries the id now, because it ranks second. *A case has to key on something the
+page actually draws.*
+
+### The warm tint, and a cascade collision
+
+`--live-bg` / `--live-border` are tokens defined in **both** theme blocks — a
+colour defined once is a card that reads correctly in one theme and disappears
+in the other.
+
+**AND IT NEEDED THE COMPOUND SELECTOR.** `.widget-card` sets
+`background: var(--bg-card)` a hundred lines BELOW the live block, and at equal
+specificity the later rule wins — so a bare `.live-card { background }` is
+silently overridden and the cards render exactly as washed-out as before.
+`.widget-card.live-card` (0,2,0) outranks it whatever the order. **Caught by the
+render check comparing the live card's computed background against a normal
+card's**; no source assertion would have noticed, and neither did I until it
+ran.
+
+### Guards
+
+`live-widgets.spec.js` 112 → **146 assertions**, lifting and RUNNING
+`liveMarkState` over all three states plus the two edge rules (paid with no
+charge, the half-cent epsilon). Six old assertions had to be corrected rather
+than deleted — they pinned the dollar sign, the recency sort and the British
+spelling, all of which Dan changed.
+
+`ci-check-render.js`: the fixture gained **ten more programs today**, and each
+one is load-bearing — the 10-row cap is invisible with three programs, **Summer
+Camp holds the most money while Oxygen Dance is the most recent** (so a revenue
+sort and a recency sort put different rows on top), and **Swim Lessons is $480
+charged with $240 in**, the part-paid state nothing else in the fixture produces.
+
+Mutation-tested eight ways, all failing by name: the tint reverted to a bare
+`.live-card` (the cascade bug), the text space removed, the flex gap removed,
+part-paid folded into paid, the cap back to eight, the sort back to recency, the
+refresh button removed, and the programs bolt's animation killed.
+
+**AND THE SPEC'S FAILURE REPORT WAS IN THE WRONG PLACE**, which is the worst of
+these to leave behind. `if (failures.length) { … process.exit(1) }` sat ABOVE
+the section I added, so all seventeen new assertions ran, incremented `pass`,
+and could never be REPORTED — one of them was in fact failing (a comment still
+naming the old card, which SHIPS: these comments are served to the browser
+inside the babel block) and the spec printed a clean 146. The report goes last
+now. Same family as the guards in the sibling repo that died instead of failing:
+a check whose result cannot reach the report is not a check.
+
 ## Live Widgets — a new section, and the Coffee Counter (2026-09-03)
 
 Dan, after the first one was built on the reporting side and taken back off the

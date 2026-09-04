@@ -91,7 +91,8 @@ try {
     liftFn(src, 'liveWindow') + '\n' + liftFn(src, 'liveDay') + '\n' +
     liftFn(src, 'liveClock') + '\n' + liftFn(src, 'liveMoney') + '\n' +
     liftFn(src, 'liveKey') + '\n' + liftFn(src, 'liveByProgram') + '\n' +
-    'return { liveWindow, liveDay, liveClock, liveMoney, liveKey, liveByProgram };')();
+    liftFn(src, 'liveMarkState') + '\n' +
+    'return { liveWindow, liveDay, liveClock, liveMoney, liveKey, liveByProgram, liveMarkState };')();
   pass++;
 } catch (e) {
   // A guard that DIES instead of failing has not told anyone what broke.
@@ -168,7 +169,7 @@ if (H.liveWindow) {
      'the Live Widgets section hides itself when its widgets have nothing — a heading over a blank space reads as broken, not as absent');
   ok(/const \[alive, setAlive\] = useState\(true\);/.test(code),
      '...optimistically, so a slow first fetch does not flash the section out and back in');
-  ok(/\.catch\(\(\) => \{ setErr\(true\); if \(onAvailable\) onAvailable\(false\); \}\)/.test(code),
+  ok(/\.catch\(\(\) => \{ setErr\(true\);[^}]*onAvailable\(false\); \}\)/.test(code),
      'and it is a FAILED fetch that hides it, never a pending one');
   ok(/enrollments: 'e663ecfb-71b4-4de1-b984-13c69beab005'/.test(srv),
      'the card is wired as a literal, like every other shared card in this file');
@@ -198,7 +199,7 @@ if (H.liveWindow) {
      '...and its description says so, because a reader cannot otherwise tell which clock a number is on');
   ok(/not date-filtered/.test(code),
      'and the badge on the section header repeats it where the numbers are');
-  ok(!/dateRange/.test(code.slice(code.indexOf('function CoffeeCounter'), code.indexOf('function LiveSection'))),
+  ok(!/dateRange/.test(code.slice(code.indexOf('function LiveRegistrations'), code.indexOf('function LiveSection'))),
      'the widget itself never reads dateRange');
 }
 
@@ -221,7 +222,7 @@ if (H.liveWindow) {
   /* SCOPED TO THE WIDGET. A file-wide test fails on correct code — other tiles
      legitimately build Dates for their own charts — and an assertion that
      cannot pass is not a guard, it is noise that gets deleted. */
-  const widget = code.slice(code.indexOf('function CoffeeCounter'), code.indexOf('function LiveSection'));
+  const widget = code.slice(code.indexOf('function LiveRegistrations'), code.indexOf('function LiveSection'));
   ok(!/new Date\(r\[/.test(widget) && !/new Date\(ts/.test(widget) && !/new Date\(String\(/.test(widget),
      'nothing in the widget parses a feed timestamp through new Date() — that is UTC midnight and lands on the previous day west of UTC');
   ok(/liveAt\(r\['Signed Up At'\]\)/.test(code),
@@ -237,9 +238,32 @@ if (H.liveWindow) {
 {
   ok(/function liveTimeline\(rows, today\)/.test(code),
      'the timeline is a module-scope model taking the FEED\'s day, so a spec can run it');
-  ok(/paid: Number\(r\['Paid'\]\) > 0/.test(code),
-     'a mark is PAID by what has actually arrived, not by what was charged — registered and paid for are different facts');
-  ok(/\{m\.paid \? '\$' : ''\}/.test(code), "...and a paid one carries the dollar sign");
+  /* THREE PAYMENT STATES, NOT TWO (Dan, 2026-09-04): "change the dollar signs
+     to a green dot for paid, and an orange dot for a partial payment/payment
+     plan (you had a grey dot right now)". Lifted and RUN, because a regex over
+     a three-branch comparison passes on an inverted one. */
+  ok(/state: liveMarkState\(r\)/.test(code),
+     'a mark carries its payment STATE, not a boolean');
+  if (H.liveMarkState) {
+    eq(H.liveMarkState({ Price: 65, Paid: 65 }), 'paid', 'paid in full is paid');
+    eq(H.liveMarkState({ Price: 65, Paid: 25 }), 'part',
+       'part of the charge arrived — a payment plan is charged in full and pays its first installment, so this is the state it lives in');
+    eq(H.liveMarkState({ Price: 65, Paid: 0 }),  'unpaid', 'nothing in is unpaid');
+    eq(H.liveMarkState({ Price: 65, Paid: null }), 'unpaid', '...and so is a missing figure');
+    eq(H.liveMarkState({ Price: null, Paid: 40 }), 'paid',
+       'MONEY ARRIVED WITH NO READABLE CHARGE IS STILL PAID — a row we cannot price is not evidence the payment did not land');
+    eq(H.liveMarkState({ Price: 0, Paid: 0 }), 'unpaid', 'a $0 row has nothing to arrive');
+    eq(H.liveMarkState({ Price: 65, Paid: 64.999 }), 'paid',
+       'a half-cent epsilon, or two independently rounded figures make a fully-paid registration read as a plan');
+  } else {
+    ok(false, 'liveMarkState should be liftable — it is the whole payment-dot rule');
+  }
+  ok(/data-live-mark=\{m\.state\}/.test(code),
+     '...and the mark renders that state, so a render case can read it');
+  ok(!/\{m\.paid \? '\$' : ''\}/.test(code),
+     'the dollar-sign glyph is gone from the lane — the dots carry it now');
+  ok(/live-legend/.test(code),
+     'and a three-colour code is NAMED on screen, because nothing else explains it');
   ok(/lane: n\+\+ % 3/.test(code),
      'marks stagger across three rows, so a cluster reads as a cluster rather than as one dot');
 
@@ -445,11 +469,15 @@ if (H.liveByProgram) {
 
   eq(out.length, 3, 'one row per programme, and yesterday is not one of them');
 
-  // MOST RECENT FIRST — the ask. Swim Camp has THREE of today's registrations
-  // against Tap Dance's one, so a sort by size would put Swim Camp on top and
-  // this is the assertion that tells the two apart.
-  eq(out[0].program, 'Tap Dance', 'most RECENT programme leads, not the biggest');
-  eq(out[1].program, 'Swim Camp', '...and the rest follow by recency');
+  /* BIGGEST BY REVENUE FIRST, since 2026-09-04 — Dan asked for a leaderboard:
+     "I'd expect to see the top, say 10 or so programs". Swim Camp holds $240 of
+     today's money against Tap Dance's $60 while Tap Dance is the MORE RECENT,
+     so this fixture tells a revenue sort from a recency sort — which is exactly
+     what it was written to do when the rule ran the other way. */
+  eq(out[0].program, 'Swim Camp', 'the biggest by revenue leads');
+  eq(out[1].program, 'Tap Dance', '...then the next, by money and not by clock');
+  eq((out[2] || {}).program, 'Free Play',
+     'and a program with NO readable price sorts LAST — null is "we cannot tell", not "nothing"');
 
   const swim = out.find(g => g.program === 'Swim Camp');
   eq(swim.signups, 3, "a programme's signups count only TODAY's rows");
@@ -475,7 +503,9 @@ if (H.liveByProgram) {
   // happened and hiding it would make the totals disagree with the counter.
   const noName = H.liveByProgram([R(TODAY, '10:00:00', null, 'S', 10, 10)], TODAY);
   eq(noName.length, 1, 'a registration with no programme name is still counted');
-  eq(noName[0].program, '(no programme)', '...under a label rather than blank');
+  eq(noName[0].program, '(no program)', '...under a label rather than blank');
+  ok(!/no programme/.test(code),
+     'and it is spelled Program, on screen and in the fallback (Dan: "not \'programmes\', \'Programs\'")');
 
   ok(/liveByProgram\(rows, today\)/.test(code),
      'the widget calls the shared model rather than aggregating inline');
@@ -487,10 +517,94 @@ if (H.liveByProgram) {
      'no plan money renders a dash, never $0');
 }
 
+/* ── 13. Dan's 2026-09-04 polish pass ────────────────────────────────────── */
+{
+  // The rename. "Coffee Counter" must not survive anywhere a person can read.
+  ok(/Live Program Registrations/.test(code), 'the card is called Live Program Registrations');
+  ok(!/Coffee Counter/.test(src), '...and nothing still says Coffee Counter, comments included');
+
+  /* ONE HEADER, BOTH CARDS. The bolt lived in two copies and Dan reported the
+     second as dead; a shared header is what stops the pair drifting, and it is
+     also what puts the refresh button on both at once. */
+  ok(/function LiveCardHeader\(\{ icon, title, sub, feed \}\)/.test(code),
+     'the live cards share ONE header component');
+  ok((code.match(/<LiveCardHeader/g) || []).length >= 4,
+     '...used by every state of both cards — a loading branch with its own header is how one bolt ends up different');
+  ok(!/widget-icon live-bolt/.test(code.slice(code.indexOf('function LiveRegistrations'))),
+     '...and neither card hand-rolls its own bolt below that point');
+
+  /* THE MANUAL REFRESH. Dan: "add a manual refresh button on both these live
+     cards in case I don't want to wait every minute." */
+  ok(/refresh: load/.test(code), 'the hook hands out its own fetch as refresh');
+  ok(/onClick=\{refresh\} disabled=\{loading\}/.test(code),
+     '...the button runs it and is disabled while a fetch is in flight, so a double-click cannot queue two');
+  ok(/const \[loading, setLoading\] = useState\(true\);/.test(code),
+     '...starting true, because the first fetch is already running when the cards mount');
+  ok(/setLoading\(true\);\s*\n\s*fetch\(url\)/.test(code), '...set before the request');
+  {
+    const hdr = code.slice(code.indexOf('function LiveCardHeader'), code.indexOf('function LiveRegistrations'));
+    ok(!/setPaused\(false\)/.test(hdr),
+       'REFRESHING DOES NOT UNPAUSE — pause says "stop moving while I read", refresh says "move once, now"');
+  }
+
+  /* TEN PROGRAMS, not eight rows. */
+  ok(/const LIVE_PROG_ROWS = 10;/.test(code), 'the programs card shows ten');
+  ok(/progs\.slice\(0, LIVE_PROG_ROWS\)/.test(code), '...and slices on its own constant');
+  ok(/rows\.slice\(0, LIVE_ROWS\)/.test(code),
+     '...while the registration list keeps its own, or one constant would govern two different kinds of row');
+
+  /* THE MONEY PULSE comes from the SAME arrival diff as the row highlight, or
+     the two cards would disagree about what just landed. */
+  ok(/freshBy/.test(code) && /flash\.has\(liveKey\(r\)\)/.test(code.slice(code.indexOf('const freshBy'))),
+     'the per-program delta is built from the shared flash set');
+  ok(/className=\{freshBy\.has\(g\.program\) \? 'live-new' : ''\}/.test(code),
+     '...and the row lights up from the same map rather than a second scan');
+  ok(/data-live-bump=/.test(code), '...with the increment on screen, so a render case can read it');
+
+  /* THE PROGRAM NAME OPENS REC. Dan: "I should also be able to click the
+     section name on the right side and open a new tab directly to the rec
+     admin section page." A program row is not a section, so what it opens is
+     the section its most recent registration went into. */
+  ok(/data-live-prog-section=\{g\.lastSectionId\}/.test(code),
+     'the program name links to a section');
+  ok(/liveSectionUrl\(recOrgId, g\.lastSectionId\)/.test(code),
+     '...built with the same helper the registrations list uses, so one id shape governs both');
+  if (H.liveByProgram) {
+    const D = '2026-09-04';   // fixed, like the block above: a literal day, never the clock
+    const R2 = (day, clock, program, section, secId) => ({
+      'Signed Up At': day + 'T' + clock, 'Program': program, 'Section': section,
+      'Section Id': secId, 'Price': 10, 'Paid': 10, 'Customer Name': 'C',
+    });
+    const multi = H.liveByProgram([
+      R2(D, '09:00:00', 'Camp', 'Camp AM', 'sec-am'),
+      R2(D, '11:00:00', 'Camp', 'Camp PM', 'sec-pm'),
+    ], D)[0];
+    eq(multi.lastSectionId, 'sec-pm',
+       'a program spanning two sections opens the MOST RECENT one, not whichever arrived first');
+    eq(multi.sectionCount, 2, '...and still counts both, so the +N can say the link is a primary');
+    const none = H.liveByProgram([R2(D, '09:00:00', 'Camp', 'Camp AM', null)], D)[0];
+    eq(none.lastSectionId, '', 'no id means no link rather than a link to nowhere');
+  }
+
+  /* THE WARM TINT, in BOTH themes. A colour defined once is a card that reads
+     correctly in one theme and disappears in the other. */
+  ok((code.match(/--live-bg:/g) || []).length === 2,
+     'the live tint is a token defined in both the dark and light blocks');
+  ok(/background: var\(--live-bg\); border-color: var\(--live-border\)/.test(code),
+     '...and the card reads it rather than a literal');
+}
+
+/* THE REPORT GOES LAST, and this was a real bug for one revision: the block
+   below used to sit ABOVE section 13, so every assertion added after it ran,
+   incremented `pass`, and could never be REPORTED — a failing one exited
+   nowhere and the spec printed a clean 146. One of them was in fact failing.
+   Same family as the guards in the sibling repo that died instead of failing:
+   a check whose result cannot reach the report is not a check. */
 if (failures.length) {
   console.error('\n✗ live-widgets.spec.js — ' + failures.length + ' failure(s):\n');
   failures.forEach(f => console.error('  ✗ ' + f));
   console.error('\n' + pass + ' passed, ' + failures.length + ' failed.\n');
   process.exit(1);
 }
+
 console.log('✓ live-widgets.spec.js — ' + pass + ' assertions passed.');
