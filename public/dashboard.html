@@ -179,7 +179,7 @@ body { font-family: var(--font-body); background: var(--bg-page); color: var(--t
 /* THE TIMELINE. One lane across the last seven days; every mark is one
    registration at its own minute, and a paid one carries a $. Marks are
    absolutely placed, so adding one costs no layout anywhere else on the card. */
-.live-timeline { position: relative; height: 42px; margin: 10px 0 12px;
+.live-timeline { position: relative; height: 42px; margin: 10px 0 22px;
                  border-bottom: 1px solid var(--border); }
 .live-timeline .lt-day { position: absolute; top: 0; bottom: 0; }
 .live-timeline .lt-day i { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--border-subtle); }
@@ -200,8 +200,14 @@ body { font-family: var(--font-body); background: var(--bg-page); color: var(--t
                           border-radius: 50%; background: var(--border); }
 .live-timeline .lt-mark.paid { background: #16a34a; box-shadow: 0 0 0 2px rgba(22,163,74,.18); }
 .live-timeline .lt-mark.part { background: #f59e0b; box-shadow: 0 0 0 2px rgba(245,158,11,.20); }
-.live-legend { display: flex; gap: 10px; align-items: center; font-size: 9px;
-               color: var(--text-muted); margin: -4px 0 8px; }
+/* THE LEGEND SITS BELOW THE HOUR LABELS, not on top of them. The tick labels
+   are absolutely placed at `bottom: -14px` — OUTSIDE the timeline's own box —
+   so a legend pulled up under it lands in the same 14 pixels and the two read
+   as one cramped row (Dan: "Some spacing issues on the chat legend"). The
+   timeline reserves that space in its margin now and the legend starts after
+   it. */
+.live-legend { display: flex; gap: 14px; align-items: center; font-size: 9.5px;
+               color: var(--text-muted); margin: 0 0 12px; }
 .live-legend i { display: inline-block; width: 7px; height: 7px; border-radius: 50%;
                  margin-right: 4px; vertical-align: middle; background: var(--border); }
 .live-legend .lg-paid i { background: #16a34a; }
@@ -230,6 +236,10 @@ body { font-family: var(--font-body); background: var(--bg-page); color: var(--t
 .live-table .ls { color: var(--text-secondary); }
 .live-table .lm { width: 62px; padding-right: 0; text-align: right;
                   font-variant-numeric: tabular-nums; font-weight: 600; color: var(--text-primary); }
+/* Paid green, part-paid orange — the same two colours as the dots in the lane,
+   because they are saying the same thing about the same registration. */
+.live-table .lm.live-paid { color: #16a34a; }
+.live-table .lm.live-part { color: #f59e0b; }
 .live-table th.lm { text-align: right; }
 
 /* A NEW REGISTRATION ANNOUNCES ITSELF, then stops. Dan: "the new one(s) pop on
@@ -282,10 +292,15 @@ body { font-family: var(--font-body); background: var(--bg-page); color: var(--t
 .live-more { display: inline-block; margin-left: 4px; font-size: 9px; font-weight: 700;
              color: var(--text-muted); vertical-align: 1px; }
 @media (prefers-reduced-motion: no-preference) {
+  /* THE POP MOVES THE FIGURE; IT DOES NOT RECOLOUR IT. It used to animate
+     `color` to green, which overrode the payment-state ink for ten seconds —
+     so a brand-new UNPAID price rendered green, saying the money had arrived
+     when it had not. Caught by the render case that reads the computed colour
+     of each state. Scale only now. */
   .live-table tr.live-new .lm { animation: liveMoneyPop 10s ease-out both; }
   @keyframes liveMoneyPop {
-    0%  { transform: scale(1.28); color: #16a34a; }
-    7%  { transform: scale(1);    color: #16a34a; }
+    0%  { transform: scale(1.28); }
+    7%  { transform: scale(1); }
     100%{ transform: scale(1); }
   }
 }
@@ -2534,15 +2549,26 @@ function liveByProgram(rows, today) {
   if (!today) return [];
   const by = new Map();
   (rows || []).forEach(r => {
-    if (liveDay(r['Signed Up At']) !== today) return;
+    /* EVERY DAY THE FEED CARRIES, not just today. Dan: "Can we get more
+       programs to show up on the right side chart? Seems a little thin over
+       there." It was thin because it was scoped to TODAY — Watertown had 13
+       enrollments across 5 programs that morning, so five rows was every row
+       there was, and the ten-row cap had nothing to do with it. The feed
+       already holds LIVE_DAYS of enrollments for the list on the left, so the
+       leaderboard reads the same rows: one query, one window, two views.
+       `today` is still passed and still used — for the freshness diff and to
+       label a row that arrived today — so nothing here needs the caller to
+       fetch anything more. */
+    if (!liveDay(r['Signed Up At'])) return;
     const name = String(r['Program'] == null ? '' : r['Program']).trim() || '(no program)';
     let g = by.get(name);
-    if (!g) g = { program: name, signups: 0, charged: null, paid: null, lastAt: '',
+    if (!g) g = { program: name, signups: 0, todaySignups: 0, charged: null, paid: null, lastAt: '',
                   sections: new Set(), sectionIds: new Set(), lastSectionId: '', lastSection: '' };
     g.signups += 1;
     const pr = r['Price'], pd = r['Paid'];
     if (pr != null && Number.isFinite(Number(pr))) g.charged = (g.charged || 0) + Number(pr);
     if (pd != null && Number.isFinite(Number(pd))) g.paid    = (g.paid    || 0) + Number(pd);
+    if (liveDay(r['Signed Up At']) === today) g.todaySignups = (g.todaySignups || 0) + 1;
     const ts = String(r['Signed Up At'] || '');
     /* THE LATEST REGISTRATION'S SECTION, so the program row can link somewhere
        real. Dan: "I should also be able to click the section name on the right
@@ -2558,9 +2584,12 @@ function liveByProgram(rows, today) {
     if (r['Section Id']) g.sectionIds.add(String(r['Section Id']));
     by.set(name, g);
   });
+  /* RANKED ON WHAT THE COLUMN SHOWS — money RECEIVED, not money charged. It
+     ranked on `charged` while the header said Charged; both moved together
+     (see the note on the cell) so the sort follows the figure. */
   return [...by.values()]
     .map(g => Object.assign(g, { sectionCount: g.sections.size }))
-    .sort((a, b) => (b.charged == null ? -1 : b.charged) - (a.charged == null ? -1 : a.charged)
+    .sort((a, b) => (b.paid == null ? -1 : b.paid) - (a.paid == null ? -1 : a.paid)
                  || b.signups - a.signups
                  || (a.lastAt < b.lastAt ? 1 : a.lastAt > b.lastAt ? -1 : 0));
 }
@@ -2748,12 +2777,11 @@ function LiveCardHeader({ icon, title, sub, feed }) {
   );
 }
 
-/* LIVE PROGRAM REGISTRATIONS. Renamed 2026-09-04 from the cup-of-coffee name it
-   shipped with — Dan: "much sexier. Sorry coffee." The name is the only thing
-   that changed here; the card is the same one-day lane and list. The old name
-   is deliberately not spelled out anywhere in this file: these comments are
-   served to the browser inside the babel block, so a comment naming it still
-   ships it. */
+/* LIVE ENROLLMENTS. Renamed twice on 2026-09-04 — off the cup-of-coffee name it
+   shipped with, then to this. Neither older name is spelled out anywhere in
+   this file: these comments are served to the browser inside the babel block,
+   so a comment naming one still ships it. The card itself is unchanged — one
+   day's lane, and the list. */
 function LiveRegistrations({ feed, recOrgId }) {
   const { rows, err, at, paused, flash } = feed;
 
@@ -2771,7 +2799,7 @@ function LiveRegistrations({ feed, recOrgId }) {
   if (!rows) {
     return (
       <div className="widget-card widget-md live-card" data-live-loading="1">
-        <LiveCardHeader icon={'\u{1F4DD}'} title="Live Program Registrations" feed={feed}
+        <LiveCardHeader icon={'\u{1F4DD}'} title="Live Enrollments" feed={feed}
                         sub={'Loading the last ' + LIVE_DAYS + ' days\u2026'} />
         <div className="skeleton skeleton-chart" />
       </div>
@@ -2786,8 +2814,8 @@ function LiveRegistrations({ feed, recOrgId }) {
 
   return (
     <div className="widget-card widget-md live-card" data-live-regs={String(rows.length)}>
-      <LiveCardHeader icon={'\u{1F4DD}'} title="Live Program Registrations" feed={feed}
-                      sub={'Registrations as they happen \u00b7 last ' + LIVE_DAYS + ' days'} />
+      <LiveCardHeader icon={'\u{1F4DD}'} title="Live Enrollments" feed={feed}
+                      sub={'Enrollments as they happen \u00b7 last ' + LIVE_DAYS + ' days'} />
 
       <div className="live-count">
         <span className="live-n" data-live-today={String(todayRows.length)}>{todayRows.length}</span>
@@ -2859,7 +2887,15 @@ function LiveRegistrations({ feed, recOrgId }) {
                                data-live-section={String(r['Section Id'])}>{r['Section']}</a>
                            : r['Section'];
                 })()}</td>
-                <td className="lm">{liveMoney(r['Price']) || '\u2014'}</td>
+                {/* THE PRICE IS COLOURED BY WHAT ITS MONEY IS DOING, matching
+                    the dots above it (Dan: "Full payment the price is in
+                    green, partial or installment plan, price is in orange to
+                    match the legend"). Unpaid keeps the default ink rather
+                    than a third colour: the grey dot already says it, and a
+                    grey PRICE reads as disabled. */}
+                <td className={'lm live-' + liveMarkState(r)} data-live-price={liveMarkState(r)}>
+                  {liveMoney(r['Price']) || '\u2014'}
+                </td>
               </tr>
             );
           })}
@@ -2887,7 +2923,7 @@ function ProgramsLive({ feed, recOrgId }) {
   if (!rows) {
     return (
       <div className="widget-card widget-md live-card" data-live-progloading="1">
-        <LiveCardHeader icon={'\u{1F3AF}'} title="Programs Live" feed={feed} sub={'Loading today\u2026'} />
+        <LiveCardHeader icon={'\u{1F3AF}'} title="Programs Live" feed={feed} sub={'Loading the last ' + LIVE_DAYS + ' days\u2026'} />
         <div className="skeleton skeleton-chart" />
       </div>
     );
@@ -2913,7 +2949,8 @@ function ProgramsLive({ feed, recOrgId }) {
     if (Number.isFinite(pr)) g.charged += pr;
     freshBy.set(name, g);
   });
-  const totalCharged = progs.reduce((n, g) => n + (g.charged || 0), 0);
+  const totalPaid    = progs.reduce((n, g) => n + (g.paid || 0), 0);
+  const todaySignups = progs.reduce((n, g) => n + (g.todaySignups || 0), 0);
   const totalSignups = progs.reduce((n, g) => n + g.signups, 0);
 
   /* NOTHING TODAY IS A REAL ANSWER, and it is not the same as a broken feed.
@@ -2923,9 +2960,9 @@ function ProgramsLive({ feed, recOrgId }) {
     return (
       <div className="widget-card widget-md live-card" data-live-progs="0">
         <LiveCardHeader icon={'\u{1F3AF}'} title="Programs Live" feed={feed}
-                        sub={'Top programs by revenue \u00b7 today'} />
+                        sub={'Top programs by money received \u00b7 last ' + LIVE_DAYS + ' days'} />
         <div style={{padding:'18px 4px',fontSize:12,color:'var(--text-muted)'}}>
-          No registrations yet today.
+          No enrollments in the last {LIVE_DAYS} days.
         </div>
       </div>
     );
@@ -2934,7 +2971,7 @@ function ProgramsLive({ feed, recOrgId }) {
   return (
     <div className="widget-card widget-md live-card" data-live-progs={String(progs.length)}>
       <LiveCardHeader icon={'\u{1F3AF}'} title="Programs Live" feed={feed}
-                      sub={'Top programs by revenue \u00b7 today'} />
+                      sub={'Top programs by money received \u00b7 last ' + LIVE_DAYS + ' days'} />
 
       {/* A SPACE IN THE TEXT AS WELL AS A GAP IN THE LAYOUT. The flex gap fixes
           what it looks like; `textContent` is still "15across" without the
@@ -2943,7 +2980,8 @@ function ProgramsLive({ feed, recOrgId }) {
       <div className="live-big" data-live-progtotal={String(totalSignups)}>
         <strong>{totalSignups}</strong>{' '}
         <span>across {progs.length} program{progs.length > 1 ? 's' : ''}
-          {totalCharged > 0 ? ' \u00b7 ' + liveMoney(totalCharged) + ' charged' : ''}</span>
+          {totalPaid > 0 ? ' \u00b7 ' + liveMoney(totalPaid) + ' received' : ''}
+          {todaySignups > 0 ? ' \u00b7 ' + todaySignups + ' today' : ''}</span>
       </div>
 
       <table className="live-table">
@@ -2952,7 +2990,7 @@ function ProgramsLive({ feed, recOrgId }) {
             <th className="lt">Last</th>
             <th className="ls">Program</th>
             <th className="lp">Signups</th>
-            <th className="lm">Charged</th>
+            <th className="lm">Program revenue</th>
           </tr>
         </thead>
         <tbody>
@@ -2984,13 +3022,29 @@ function ProgramsLive({ feed, recOrgId }) {
                 })()}
               </td>
               <td className="lp">{g.signups}</td>
-              {/* CHARGED leads because it is the money the registration
-                  committed; PAID is shown underneath only when it differs, so a
-                  payment plan reads as "charged now, arriving later" rather
-                  than as a discrepancy. A program whose rows carried no price
-                  at all gets a dash, never $0. */}
-              <td className="lm" data-live-prog-charged={g.charged == null ? '' : String(g.charged)}>
-                {g.charged == null ? '\u2014' : liveMoney(g.charged)}
+              {/* PROGRAM REVENUE IS MONEY RECEIVED (Dan, 2026-09-04: "Change
+                  'charged' on the programs live chart to 'Program Revenue'",
+                  and "it needs to match ... Programs->Revenue"). That tab
+                  counts payments RECEIVED, so this column counts the same
+                  thing — `Paid`, what has actually succeeded — and the amount
+                  charged is shown underneath only when the two differ, which
+                  is a payment plan.
+
+                  IT STILL WILL NOT EQUAL THAT TAB'S TOTAL, and no code here
+                  can make it: card 17295 windows on SESSION dates, this feed
+                  windows on the SIGNUP date. Measured at Watertown on
+                  2026-09-04 — of 13 enrollments taking $1,082, NONE were for a
+                  section running that day and only 4 ($270) for a section
+                  running in September at all; the other 9 are fall and winter
+                  programming, which lands in those months' windows over there.
+                  Same money, filed by when the programme RUNS rather than when
+                  it SOLD. The sub-line says which basis this is, and the two
+                  agree on the INCREMENT — which is the thing you get from
+                  watching it live.
+
+                  No readable money on any row is a dash, never $0. */}
+              <td className="lm" data-live-prog-charged={g.paid == null ? '' : String(g.paid)}>
+                {g.paid == null ? '\u2014' : liveMoney(g.paid)}
                 {/* THE INCREMENT, only while it is news. A total that grew by
                     $215 is a different thing to read than a total that is
                     $215, so the delta is signed and sits beside the figure
@@ -3002,7 +3056,10 @@ function ProgramsLive({ feed, recOrgId }) {
                     : null;
                 })()}
                 {g.charged != null && g.paid != null && g.paid !== g.charged
-                  ? <div style={{fontSize:9,color:'var(--text-muted)',fontWeight:400}}>{liveMoney(g.paid)} paid</div>
+                  ? <div style={{fontSize:9,color:'#f59e0b',fontWeight:400}}
+                         title="Charged in full at enrollment; the rest arrives on the payment plan.">
+                      of {liveMoney(g.charged)} charged
+                    </div>
                   : null}
               </td>
             </tr>

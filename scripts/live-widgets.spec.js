@@ -480,16 +480,23 @@ if (H.liveByProgram) {
      'and a program with NO readable price sorts LAST — null is "we cannot tell", not "nothing"');
 
   const swim = out.find(g => g.program === 'Swim Camp');
-  eq(swim.signups, 3, "a programme's signups count only TODAY's rows");
+  eq(swim.signups, 3, "a program's signups count every row the feed carries");
   eq(swim.charged, 360, 'charged is the sum of what was committed');
   eq(swim.paid, 270, '...and paid is only what has actually arrived');
   ok(swim.charged !== swim.paid,
      'charged and paid DIFFER on a payment plan, which is why one "revenue" number would be a lie');
   eq(swim.sectionCount, 2, 'sections are counted distinctly, so two signups on one section are one section');
 
+  /* EVERY DAY THE FEED CARRIES, since 2026-09-04. Dan: "Can we get more
+     programs to show up on the right side chart? Seems a little thin over
+     there." It was scoped to today, so a quiet morning was a three-row card
+     while the feed already held a week for the list beside it. Tap Dance's
+     yesterday row is the one that proves the widening — it used to be dropped. */
   const tap = out.find(g => g.program === 'Tap Dance');
-  eq(tap.signups, 1, "yesterday's registration is excluded from the count as well as the ordering");
-  eq(tap.charged, 60, "...and from the money");
+  eq(tap.signups, 2, "yesterday's registration COUNTS now — the card covers the feed's window");
+  eq(tap.charged, 120, '...and its money with it');
+  eq(tap.todaySignups, 1,
+     '...while `todaySignups` still separates what arrived today, which is what the headline reads');
 
   const free = out.find(g => g.program === 'Free Play');
   eq(free.charged, null, 'a programme whose rows carried NO price is null, never 0 — free and unreadable are different facts');
@@ -513,14 +520,26 @@ if (H.liveByProgram) {
      'ONE feed for both widgets — two polls would double the query and let the cards disagree about the same minute');
   ok(!/function ProgramsLive[\s\S]{0,4000}?fetch\(/.test(code),
      '...and the programmes card does not fetch for itself');
-  ok(/data-live-prog-charged/.test(code) && /g\.charged == null \? '\\u2014'/.test(code),
-     'no plan money renders a dash, never $0');
+  /* PROGRAM REVENUE IS MONEY RECEIVED (Dan: "Change 'charged' on the programs
+     live chart to 'Program Revenue'" / "It needs to match" the reporting
+     project's Revenue tab, which counts payments received). The cell reads
+     `paid`; `charged` survives as the sub-line on a payment plan. */
+  ok(/data-live-prog-charged/.test(code) && /g\.paid == null \? '\\u2014'/.test(code),
+     'no readable money renders a dash, never $0');
+  ok(/<th className="lm">Program revenue<\/th>/.test(code),
+     'the column is called Program revenue');
+  ok(/of \{liveMoney\(g\.charged\)\} charged/.test(code),
+     '...with what was CHARGED underneath it, and only when the two differ — that is a payment plan, not a discrepancy');
+  ok(/\(b\.paid == null \? -1 : b\.paid\) - \(a\.paid == null \? -1 : a\.paid\)/.test(code),
+     'and the table ranks on the figure it shows, or the leaderboard disagrees with its own column');
 }
 
 /* ── 13. Dan's 2026-09-04 polish pass ────────────────────────────────────── */
 {
   // The rename. "Coffee Counter" must not survive anywhere a person can read.
-  ok(/Live Program Registrations/.test(code), 'the card is called Live Program Registrations');
+  ok(/Live Enrollments/.test(code), 'the card is called Live Enrollments');
+  ok(!/Live Program Registrations/.test(src),
+     '...and no older name survives anywhere a person can read — these comments ship to the browser');
   ok(!/Coffee Counter/.test(src), '...and nothing still says Coffee Counter, comments included');
 
   /* ONE HEADER, BOTH CARDS. The bolt lived in two copies and Dan reported the

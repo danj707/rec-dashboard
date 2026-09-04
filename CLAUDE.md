@@ -1,5 +1,111 @@
 # Project notes for Claude
 
+## Live Enrollments, and the revenue figure that cannot match (2026-09-04, second pass)
+
+Dan's tonight list. Five were mechanical; the sixth is a measurement.
+
+### Live Enrollments
+
+Second rename in a day, and neither older name is spelled out anywhere in
+`dashboard.html` — the comments in the babel block are served to the browser, so
+a comment naming a retired card still ships it. That was a real leftover the
+first time: a comment kept the old name in the served HTML while the spec's
+own assertion read a comment-STRIPPED copy and passed.
+
+### The legend was landing on the hour labels
+
+`.lt-day em` is absolutely placed at `bottom: -14px` — OUTSIDE the timeline's
+box — so a legend pulled up under the lane sits in the same fourteen pixels.
+The timeline reserves that space in its margin now. **The render case is
+geometry** (the legend's top against the tick's bottom), because the DOM is
+identical either way.
+
+### The price carries its payment state's colour
+
+Green paid, orange part-paid, default ink for unpaid — the same two colours as
+the dots in the lane, because they say the same thing about the same
+enrollment. **Unpaid deliberately keeps the default colour**: the grey dot
+already says it, and a grey price reads as disabled.
+
+**AND THE ARRIVAL POP WAS STEALING THAT COLOUR.** `liveMoneyPop` animated
+`color` to green for ten seconds, so a brand-new UNPAID price rendered green —
+saying the money had arrived when it had not. It animates scale only now. Found
+by the case that reads the computed colour of each state, not by review.
+
+### The right card covers the FEED's window now
+
+*"Can we get more programs to show up on the right side chart? Seems a little
+thin over there. where is this list coming from?"*
+
+It comes from card 21286 — the same rows as the list on the left — and it was
+**scoped to today**, so a quiet morning was a five-row card. Watertown had 13
+enrollments across 5 programs that morning: five rows was every row there was,
+and the ten-row cap had nothing to do with it. It reads the whole feed window
+(`LIVE_DAYS` = 7) now: one query, one window, two views. `todaySignups` still
+separates what arrived today for the headline.
+
+### PROGRAM REVENUE IS MONEY RECEIVED — and it cannot equal the Revenue tab
+
+*"The program revenue doesn't seem to be matching what we're showing on the
+Programs->Revenue tab for programs. It needs to."*
+
+Half of that is fixable and half is not, so both halves are here.
+
+**Fixed:** the column counted `Price` (what was charged) under the header
+`Charged`. The reporting project's Revenue tab counts payments **received**, so
+this column now counts `Paid` — what has actually succeeded — and ranks on it.
+The amount charged appears underneath only when the two differ, which is a
+payment plan.
+
+**NOT fixable, and this is the part to keep.** Card 17295 windows on **SESSION
+dates**; this feed windows on the **SIGNUP date**. Measured at Watertown on
+2026-09-04 — 13 enrollments taking $1,082:
+
+| of that day's enrollments | count | money |
+|---|---|---|
+| for a section running THAT DAY | **0** | $0 |
+| for a section running anywhere in September | 4 | $270 |
+| for a section starting after September | **9** | $812 |
+
+So a Revenue tab set to that day shows **$0** of it, and September shows $270 —
+the other $812 is fall and winter programming that lands in those months'
+windows over there. Same money, filed by when the programme RUNS rather than
+when it SOLD. It is the same gap already recorded in the sibling repo for
+`period_received` ("August money paid for sections that do NOT run in
+August", ~$514K at apex).
+
+**The two agree on the INCREMENT, which is what watching it live is for**: a
+$65 enrollment moves both by $65, in whichever window that section belongs to.
+The card's sub-line names its basis so nobody reconciles a total.
+
+### What the widgets cost
+
+Asked and measured, because "live" invites the question:
+
+- The page polls every **60s per open dashboard**, and `LIVE_REPORT_TTL_MS` is
+  60s for `enrollments`, so a poll is served from cache **instantly** and
+  triggers a background refresh when the entry is older than that. The cache key
+  is org + params, so it is **one card run per minute per ORG**, not per viewer.
+- Card time through the public endpoint, 7-day window, two passes each:
+  **Watertown 2.6s → 1.0s (61 rows), Niagara Falls 2.9s → 0.6s (37), Torrance
+  15.4s → 9.0s (198)**.
+- **Torrance is the one to watch**: a 9-second query once a minute is a ~15%
+  duty cycle on a Metabase connection for as long as a dashboard is open there.
+  Row count drives it. If that becomes a problem the lever is a longer TTL for
+  big orgs (the poll can stay at 60s — it would just serve stale more often),
+  not a cheaper card.
+
+### Guards
+
+`live-widgets.spec.js` 152 → **157 assertions**. Four old ones had to be
+corrected rather than deleted: they pinned the today-only window and the
+charged basis. Nine new `ci-check-render.js` cases, and three of them found real
+faults in my own work before the run reported clean — the pop animation
+recolouring an unpaid price, a `thead` compared case-sensitively when
+`innerText` honours `text-transform`, and a leaderboard assertion keyed on a
+program that ranks below the ten-row cap (relational now: the card knows more
+than 14 programs, where today-only knew 14).
+
 ## The live cards, polished (2026-09-04)
 
 Dan's list, in his words, after watching the pair on production for a morning:

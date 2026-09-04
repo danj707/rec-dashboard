@@ -122,8 +122,13 @@ const ENROLLMENTS = [
     'Section': 'Play on 60+ Beginner Oxygen Dance', 'Program': 'Oxygen Dance Aerobics', 'Price': 25, 'Paid': 25 },
   { 'Signed Up At': liveIso(0, '13:06:40'), 'Customer Name': 'Ryan Little', 'Participant': 'Brayden Little',
     'Section': 'Boys (Grades 4-5) Tryouts', 'Program': 'SBA Travel Teams', 'Price': 25 },
+  /* PART-PAID, and it has to be HIGH IN THE LIST: only the newest eight rows
+     render, and the other part-paid row (Swim Lessons) sits ninth — so the
+     orange-price assertion had nothing to read. A payment plan among the first
+     three rows is what makes that case discriminating. */
   { 'Signed Up At': liveIso(0, '11:35:00'), 'Customer Name': 'Nicole Baldarelli', 'Participant': 'Cameron Baldarelli',
-    'Section': 'Music, Movement & Sensory Play', 'Program': 'Music, Movement & Sensory Play', 'Price': 60 },
+    'Section': 'Music, Movement & Sensory Play', 'Program': 'Music, Movement & Sensory Play',
+    'Price': 60, 'Paid': 25 },
   /* YESTERDAY, and LATER IN THE DAY than the row above it — which is exactly
      what made the list look unsorted: a column showing only a clock cannot say
      that 8:15p was yesterday. This row is what proves the weekday prefix. */
@@ -454,6 +459,92 @@ const CASES = [
   { name: 'live · ...and a program with no section id is not a dead link',
     needs: '[data-live-progs] [data-live-prog="Summer Camp"]',
     absent: '[data-live-progs] a.live-link[href$="/sections/undefined"], [data-live-progs] a.live-link[href$="/sections/"]' },
+  /* THE RIGHT CARD COVERS THE FEED'S WINDOW (Dan: "Can we get more programs to
+     show up on the right side chart? Seems a little thin over there"). The
+     fixture's other-day rows — Shrewsbury Rec Youth Basketball (yesterday) and
+     Rec Connect Fall (three days ago) — are the ones that prove it: under the
+     old today-only rule neither appeared. */
+  /* RELATIONAL, not a magic number: the other-day programs carry little or no
+     money, so they rank below the ten-row cap and cannot be asserted by name.
+     What the widening changes is how many programs the card KNOWS about — 14
+     under the old today-only rule, more now. */
+  { name: 'live · the leaderboard covers the whole feed, not just today',
+    needs: 'body[data-lp-widened="1"]',
+    act: async page => {
+      await page.waitForSelector('[data-live-progs]', { timeout: 15000 });
+      await page.evaluate(() => {
+        const n = Number(document.querySelector('[data-live-progs]').getAttribute('data-live-progs') || 0);
+        document.body.setAttribute('data-lp-known', String(n));
+        if (n > 14) document.body.setAttribute('data-lp-widened', '1');
+      });
+    } },
+  { name: 'live · ...and the headline still separates what arrived today',
+    needs: 'body[data-lp-big*="today"]' },
+  /* PROGRAM REVENUE IS MONEY RECEIVED. Swim Lessons is charged $480 with $240
+     in, so the cell reading 240 and the sub-line reading 480 is the whole
+     distinction — a build that kept the charged basis renders 480 in the cell
+     and no sub-line at all. */
+  { name: 'live · program revenue is what arrived, not what was charged',
+    needs: '[data-live-progs] [data-live-prog="Swim Lessons"] [data-live-prog-charged="240"]',
+    absent: '[data-live-progs] [data-live-prog="Swim Lessons"] [data-live-prog-charged="480"]' },
+  { name: 'live · ...with the charge underneath it on a payment plan',
+    needs: 'body[data-lp-plan*="of $480 charged"]',
+    act: async page => {
+      await page.waitForSelector('[data-live-prog="Swim Lessons"]', { timeout: 15000 });
+      await page.evaluate(() => {
+        const c = document.querySelector('[data-live-prog="Swim Lessons"] .lm');
+        document.body.setAttribute('data-lp-plan', c ? c.innerText.replace(/\s+/g, ' ').trim() : '');
+      });
+    } },
+  { name: 'live · the column is called Program revenue',
+    needs: 'body[data-lp-head*="program revenue"]',
+    absent: 'body[data-lp-head*="charged"]',
+    act: async page => {
+      await page.evaluate(() => {
+        const h = document.querySelector('[data-live-progs] .live-table thead');
+        // innerText honours text-transform, and these headers are uppercased
+        // in CSS — so compare in one case rather than pinning the rendering.
+        document.body.setAttribute('data-lp-head',
+          h ? h.innerText.replace(/\s+/g, ' ').trim().toLowerCase() : '');
+      });
+    } },
+  /* THE PRICE CARRIES ITS PAYMENT STATE'S COLOUR (Dan: "Full payment the price
+     is in green, partial or installment plan, price is in orange to match the
+     legend"). Computed, because a class name proves nothing about the ink. */
+  { name: 'live · a paid price is green and a part-paid one orange',
+    needs: 'body[data-lc-paid="rgb(22, 163, 74)"][data-lc-part="rgb(245, 158, 11)"]',
+    act: async page => {
+      await page.waitForSelector('[data-live-regs] td[data-live-price]', { timeout: 15000 });
+      await page.evaluate(() => {
+        const pick = st => document.querySelector('[data-live-regs] td[data-live-price="' + st + '"]');
+        for (const st of ['paid', 'part', 'unpaid']) {
+          const el = pick(st);
+          if (el) document.body.setAttribute('data-lc-' + st, getComputedStyle(el).color);
+        }
+      });
+    } },
+  /* AN UNPAID PRICE KEEPS THE DEFAULT INK — a third colour, or a grey price,
+     reads as disabled. Asserted as "not either of the two". */
+  { name: 'live · ...and an unpaid one is neither',
+    needs: 'body[data-lc-unpaid]',
+    absent: 'body[data-lc-unpaid="rgb(22, 163, 74)"], body[data-lc-unpaid="rgb(245, 158, 11)"]' },
+  /* THE LEGEND CLEARS THE HOUR LABELS. They are absolutely placed BELOW the
+     timeline's own box, so a legend pulled up under it lands in the same 14
+     pixels — which is what Dan saw. Geometry, because the DOM is identical
+     either way. */
+  { name: 'live · the legend clears the hour labels',
+    needs: 'body[data-lg-clear="1"]',
+    act: async page => {
+      await page.waitForSelector('[data-live-legend]', { timeout: 15000 });
+      await page.evaluate(() => {
+        const tick = document.querySelector('[data-live-regs] .lt-day em');
+        const leg  = document.querySelector('[data-live-regs] [data-live-legend]');
+        if (!tick || !leg) return;
+        const gap = leg.getBoundingClientRect().top - tick.getBoundingClientRect().bottom;
+        document.body.setAttribute('data-lg-gap', String(Math.round(gap)));
+        if (gap >= 0) document.body.setAttribute('data-lg-clear', '1');
+      });
+    } },
   { name: 'live · two widgets in the section',
     needs: '[data-live-section] [data-live-regs] ~ [data-live-progs]' },
 
