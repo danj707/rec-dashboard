@@ -181,7 +181,32 @@ const ENROLLMENTS = [
    so it lands at the top, and it is the ONLY one that may light up. */
 const ENROLL_ARRIVAL = { 'Signed Up At': liveIso(0, '23:59:01'), 'Customer Name': 'Newly Arrived',
   'Participant': 'Kid Arrived', 'Section': 'Just Registered', 'Program': 'Just Registered', 'Price': 42 };
+/* EVERY REFRESH DELIVERS ONE PAID AND ONE UNPAID ARRIVAL, so the chime can be
+   OBSERVED rather than assumed. A browser has no ears and this container has no
+   audio device, so the only way to tell a chime wired to "a paid arrival" from
+   one wired to "any arrival" is to hand it one of each in the SAME diff and
+   require exactly one ring.
+
+   A PAIR PER CALL, not a fixed script: the first draft prepended the pair on
+   one specific call number, and the muted case — which refreshes twice —
+   consumed it, so by the time the sound was on there was nothing new left to
+   ring for and a passing-looking 0 meant nothing. Accumulating means the case
+   order cannot starve the case that matters. */
 let enrollCalls = 0;
+const enrollExtra = [];
+function enrollArrivals() {
+  if (enrollCalls <= 1) return [];
+  if (enrollCalls === 2) { enrollExtra.unshift(ENROLL_ARRIVAL); return enrollExtra.slice(); }
+  const n = enrollCalls;
+  enrollExtra.unshift(
+    { 'Signed Up At': liveIso(0, '23:5' + (n % 10) + ':4' + (n % 10)), 'Customer Name': 'Unpaid ' + n,
+      'Participant': 'Kid U' + n, 'Section': 'Unpaid Section ' + n, 'Program': 'Unpaid Program',
+      'Price': 60, 'Paid': 0 },
+    { 'Signed Up At': liveIso(0, '23:5' + (n % 10) + ':5' + (n % 10)), 'Customer Name': 'Paid ' + n,
+      'Participant': 'Kid P' + n, 'Section': 'Paid Section ' + n, 'Program': 'Paid Program',
+      'Price': 60, 'Paid': 60 });
+  return enrollExtra.slice();
+}
 
 const FIXTURES = {
   memberships: MEMBERSHIPS,
@@ -588,6 +613,82 @@ const CASES = [
         .filter(e => /api\/data\/enrollments/.test(e.name)).length > b, { timeout: 15000 }, before);
       await page.evaluate(() => document.body.setAttribute('data-lr-refetched', '1'));
     } },
+  /* ── THE CHA-CHING ────────────────────────────────────────────────────────
+     Dan: "every time a person enrolls and pays, play a 'cha-ching' sound. mute
+     by default, but add a 'mute' checkbox on the card".
+
+     THESE FOUR CASES SHARE ONE PAGE AND MUST RUN IN ORDER — the mute box is
+     real state, and unticking it persists. The last of them re-ticks it, or
+     every later case runs on an unmuted dashboard.
+
+     They read `window.__liveChimeRings`, a counter `liveChime` bumps before it
+     touches audio at all. That is the only observable: this container has no
+     audio device, and "a Mute box rendered" passes just as happily on a chime
+     wired to every arrival, to the first load, or to an unpaid hold. */
+  { name: 'live · muted by default, with no sound menu',
+    needs: '[data-live-regs] input[data-live-mute="1"]',
+    absent: '.live-chime-pick',
+    act: async page => {
+      const checked = await page.$eval('input[data-live-mute="1"]', el => el.checked);
+      if (!checked) throw new Error('the Mute box is NOT ticked on arrival');
+    } },
+  /* MUTED, A PAID ARRIVAL IS SILENT. Refresh twice: the second call brings a
+     paid registration that the card highlights, and the counter must not move.
+     A chime that ignored the box would look identical on screen. */
+  { name: 'live · muted, a paid arrival makes no sound', needs: 'body[data-chime-muted="0"]',
+    act: async page => {
+      await page.evaluate(() => { window.__liveChimeRings = 0; });
+      for (let i = 0; i < 2; i++) {
+        await page.waitForSelector('[data-live-regs] [data-live-refresh]:not([disabled])', { timeout: 20000 });
+        const b = await page.evaluate(() => performance.getEntriesByType('resource')
+          .filter(e => /api\/data\/enrollments/.test(e.name)).length);
+        await page.click('[data-live-regs] [data-live-refresh]');
+        await page.waitForFunction((n) => performance.getEntriesByType('resource')
+          .filter(e => /api\/data\/enrollments/.test(e.name)).length > n, { timeout: 15000 }, b);
+      }
+      // The paid arrival really did land — otherwise a zero count proves nothing.
+      await page.waitForFunction(() => /\bPaid \d/.test(document.body.innerText), { timeout: 10000 });
+      const rings = await page.evaluate(() => window.__liveChimeRings || 0);
+      await page.evaluate(n => document.body.setAttribute('data-chime-muted', String(n)), rings);
+    } },
+  /* UNTICKING IT REVEALS THE MENU, and choosing a sound plays it — the menu is
+     its own preview, which is why there is no second button. */
+  { name: 'live · unmuting offers the sounds, and picking one plays it',
+    needs: '.live-chime-pick[data-live-chime="chaching"]',
+    act: async page => {
+      /* A REAL CLICK, never `el.checked = false` plus a synthetic event:
+         React tracks a controlled input's value internally and ignores a
+         direct assignment, so the first draft of this case toggled the DOM,
+         left the state ticked, and timed out on a menu that never appeared. */
+      await page.click('input[data-live-mute="1"]');
+      await page.waitForSelector('.live-chime-pick', { timeout: 10000 });
+      await page.evaluate(() => { window.__liveChimeRings = 0; });
+      await page.select('.live-chime-pick', 'chaching');
+      await page.waitForFunction(() => (window.__liveChimeRings || 0) > 0, { timeout: 10000 });
+    } },
+  /* AND THE COUNT IS WHAT SEPARATES "PAID" FROM "ANY ARRIVAL". This refresh
+     delivers ONE paid registration and ONE unpaid one together, so a correct
+     card rings exactly once. Two rings means it does not read the payment;
+     zero means unmuting did nothing. */
+  { name: 'live · unmuted, one paid + one unpaid arrival rings ONCE',
+    needs: 'body[data-chime-rings="1"]',
+    act: async page => {
+      await page.evaluate(() => { window.__liveChimeRings = 0; });
+      await page.waitForSelector('[data-live-regs] [data-live-refresh]:not([disabled])', { timeout: 20000 });
+      const b = await page.evaluate(() => performance.getEntriesByType('resource')
+        .filter(e => /api\/data\/enrollments/.test(e.name)).length);
+      await page.click('[data-live-regs] [data-live-refresh]');
+      const seenBefore = await page.evaluate(() => document.body.innerText.match(/Unpaid \d+/g) || []);
+      await page.waitForFunction((prev) => (document.body.innerText.match(/Unpaid \d+/g) || [])
+        .some(x => prev.indexOf(x) < 0), { timeout: 15000 }, seenBefore);
+      // The burst is staggered, so give the later handles time to have fired
+      // had they been queued — a count read too early would hide a second ring.
+      await new Promise(r => setTimeout(r, 600));
+      const rings = await page.evaluate(() => window.__liveChimeRings || 0);
+      await page.evaluate(n => document.body.setAttribute('data-chime-rings', String(n)), rings);
+      // Re-tick it, or every case after this one runs on an unmuted dashboard.
+      await page.click('input[data-live-mute="1"]');
+    } },
   /* THE BIG LINE READS AS WORDS. "9across 5 programmes" was the bug (Dan: "fix
      the spacing"), and it took two assertions because it is two faults wearing
      one symptom:
@@ -660,7 +761,7 @@ const CASES = [
       const rt = m ? m[1] : null;
       if (rt === 'enrollments') {
         enrollCalls++;
-        return json({ rows: enrollCalls > 1 ? [ENROLL_ARRIVAL, ...ENROLLMENTS] : ENROLLMENTS });
+        return json({ rows: [...enrollArrivals(), ...ENROLLMENTS] });
       }
       return json({ rows: (rt && FIXTURES[rt]) || [] });
     }

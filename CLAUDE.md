@@ -1,5 +1,114 @@
 # Project notes for Claude
 
+## The cha-ching (2026-09-04)
+
+Dan: *"every time a person enrolls and pays, play a 'cha-ching' sound. mute by
+default, but add a 'mute' checkbox on the card, that can be unchecked... Give me
+a few sample sounds and I'll pick one. Maybe the super mario bros coin sound"* —
+then, with a link to it: *"this is it"*.
+
+### IT IS SYNTHESISED, NOT SAMPLED — and that is a decision
+
+An audio FILE here would be a redistributed copy of Nintendo's recording sitting
+in a public repo, and one more asset that can 404 on a dashboard people leave
+open all day. The coin is **two square-wave notes — B5 (987.77 Hz) then E6
+(1318.51 Hz)**, the second held and decaying, so the synth IS the sound rather
+than an impression of it. Both frequencies are pinned by the spec: the interval
+is what makes it recognisable, so neither note may be tuned by feel.
+
+Four to choose from (`coin`, `chaching`, `arcade`, `bell`), because Dan asked to
+hear a few. **Choosing one in the menu plays it**, so the menu is its own preview
+and there is no second button that does nothing else.
+
+### THE FIRST LOAD IS SILENT, and that is the load-bearing half
+
+The chime rides the **same `fresh` diff the row highlight uses**, which is empty
+on the first poll by construction. So opening the dashboard on a week holding 61
+paid registrations plays **nothing** instead of 61 coins — and the card can never
+ring for a row it does not also light up.
+
+**A mutation to exactly that survived the spec's first draft.**
+`seenRef.current || new Set()` leaves the `if (seen)` branch standing and passing
+while making every row on the first load an arrival. The spec now pins the ref
+being read **with no fallback**, which is the only form that discriminates.
+
+### "ENROLLS AND PAYS" — so an unpaid hold is silent
+
+`liveChimeWorthy()` is `liveMarkState(r) !== 'unpaid'`, i.e. **the same predicate
+the price colour and the revenue figure already read**, so the three cannot
+disagree about one row. A cha-ching for a hold with no money behind it announces
+revenue that has not arrived, out loud.
+
+### A BURST IS CAPPED AT THREE, staggered 130ms
+
+Twelve registrations landing in one poll is **one event** to somebody listening
+from across the room; twelve overlapping coins is a reason to mute the card for
+good. Two or three still read as two or three.
+
+### The mute box, and the gesture problem
+
+- **Ticked by default**, remembered per browser like the theme and the column
+  toggles. The stored form is `!== '0'`, so an absent key, an unreadable store
+  and a private window all land on **muted** — reading `=== '1'` is equivalent
+  today and would flip the default the first time the written value changed.
+- **UNTICKING IT IS THE BROWSER GESTURE.** Browsers keep an `AudioContext`
+  suspended until the user has interacted, so without a `resume()` there the
+  first arrival after unticking is silent and the checkbox reads as broken. A
+  *persisted* unmute arrives with no gesture behind it, so the context is woken
+  again on the first pointer or key event — `{ once: true }`, not a listener
+  left on the window for the session.
+- **Mute is read through a REF inside `load`.** As a dependency it would rebuild
+  the callback, and the poll interval is keyed on that callback — so muting the
+  card would silently restart its 60-second clock.
+- **The AudioContext is built on first use**, never at module scope: otherwise
+  every dashboard load including every muted one starts a suspended context.
+
+### The mute box is on BOTH cards, the sound menu on one
+
+Mute is an operating control like Pause — one feed behind two cards, so it has to
+read the same on either. But WHICH sound is a setting you touch once, and two
+menus side by side both reading *"Coin"* look like a duplication bug rather than
+a choice. The menu also **cannot outlive the sound**: beside a ticked Mute box it
+would be a control that does nothing.
+
+### THE GUARDS NEEDED A COUNTER, because a browser has no ears
+
+`liveChime()` bumps `window.__liveChimeRings` **before it touches audio at all**,
+and this container has no audio device. That counter is the only observable:
+*"a Mute box rendered"* passes just as happily on a chime wired to every arrival,
+to the first load, or to an unpaid hold.
+
+So the render fixture now delivers **one paid AND one unpaid arrival on every
+refresh**, and the case requires **exactly one ring** — two means it does not
+read the payment, zero means unmuting did nothing. **A pair per call, not a fixed
+script:** the first draft prepended the pair on one specific call number and the
+muted case, which refreshes twice, *consumed it* — so by the time the sound was
+on there was nothing new left to ring for, and a passing-looking `0` meant
+nothing. Accumulating means the case order cannot starve the case that matters.
+
+The four cases share one page and **must run in order** (the mute box is real
+state, and unticking it persists); the last of them re-ticks it.
+
+**And the unmute had to be a REAL click.** React tracks a controlled input's
+value internally and ignores a direct assignment, so the first draft toggled the
+DOM, left the state ticked, and timed out on a menu that never appeared — the
+same lesson already recorded for the reporting project's cache dial.
+
+### Guards
+
+`scripts/live-widgets.spec.js` 157 → **182 assertions**, lifting and RUNNING
+`liveChimeWorthy`. Mutation-tested six ways, all failing by name: the chime not
+gated on the box, the paid filter dropped, the default flipped to unmuted, the
+picker shown while muted, the burst cap removed, and the first load treated as
+arrivals. Plus **four `ci-check-render.js` cases**, all four verified against a
+real regression in a browser.
+
+**Two pre-existing assertions had to have their intent restored**, both instances
+of a shape this file and its sibling keep recording: one pinned
+`clearTimeout(timerRef.current), [])` and broke the day a second timer joined the
+same unmount effect, and one pinned `LiveCardHeader`'s exact parameter list and
+broke when a fourth prop was added. Both test membership now.
+
 ## Live Enrollments, and the revenue figure that cannot match (2026-09-04, second pass)
 
 Dan's tonight list. Five were mechanical; the sixth is a measurement.

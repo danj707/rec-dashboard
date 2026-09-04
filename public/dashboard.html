@@ -160,6 +160,14 @@ body { font-family: var(--font-body); background: var(--bg-page); color: var(--t
                 justify-content: center; transition: color .15s, border-color .15s; }
 .live-refresh:hover:not(:disabled) { color: var(--green); border-color: var(--green); }
 .live-refresh:disabled { opacity: .45; cursor: default; }
+/* THE SOUND MENU. Styled explicitly rather than left as a native select,
+   because a default control renders with the OS chrome and the OS's own light
+   background — which on the dark theme is a white box in a tinted card, the
+   same collision the season menu in the reporting project shipped with. */
+.live-chime-pick { background: var(--bg); border: 1px solid var(--border); color: var(--text-muted);
+                   border-radius: 5px; height: 20px; font-size: 10px; font-family: inherit;
+                   padding: 0 4px; cursor: pointer; max-width: 96px; }
+.live-chime-pick:hover { color: var(--green); border-color: var(--green); }
 @media (prefers-reduced-motion: no-preference) {
   .live-refresh:disabled { animation: liveSpin 0.9s linear infinite; }
   @keyframes liveSpin { to { transform: rotate(360deg); } }
@@ -2410,6 +2418,117 @@ const LIVE_ROWS = 8;
 const LIVE_PROG_ROWS = 10;
 const LIVE_DAYS    = 7;
 
+/* THE CHA-CHING. Dan: "every time a person enrolls and pays, play a 'cha-ching'
+   sound. mute by default, but add a 'mute' checkbox on the card... Maybe the
+   super mario bros coin sound" — then, with a link to it: "this is it".
+
+   IT IS SYNTHESISED, NOT SAMPLED, and that is a decision rather than a
+   shortcut. The Artifact/CSP rules aside, an audio FILE here would be a
+   redistributed copy of Nintendo's recording sitting in a public repo, and it
+   would be one more asset that can 404 on a dashboard people leave open all
+   day. The coin is two square-wave notes — B5 then E6, the second held and
+   decaying — so the synth IS the sound rather than an impression of it.
+
+   FOUR TO PICK FROM, because Dan asked to hear a few. `coin` is the default
+   since he named it; choosing one in the menu plays it, so the menu is its own
+   preview and there is no second button that does nothing else. */
+const LIVE_CHIMES = [
+  ['coin',     'Coin'],
+  ['chaching', 'Cha-ching'],
+  ['arcade',   'Arcade'],
+  ['bell',     'Bell'],
+];
+const LIVE_CHIME_DEFAULT = 'coin';
+/* HOW MANY RING FOR ONE BATCH. Twelve registrations landing in one poll is ONE
+   event to somebody listening from across the room; twelve overlapping coins is
+   noise, and on a registration morning it would be a reason to mute the card
+   for good. Staggered so two or three read as two or three. */
+const LIVE_CHIME_MAX = 3;
+const LIVE_CHIME_GAP_MS = 130;
+const LIVE_MUTE_KEY  = 'rec-dash-live-muted';
+const LIVE_CHIME_KEY = 'rec-dash-live-chime';
+
+/* ONE AudioContext, built on first use and never before. Constructing one at
+   module scope starts a suspended context on every dashboard load including
+   every muted one, and some browsers log about it. */
+let _liveAudio = null;
+function liveAudioCtx() {
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return null;
+  if (!_liveAudio) { try { _liveAudio = new AC(); } catch (e) { return null; } }
+  return _liveAudio;
+}
+/* THE UNMUTE IS THE GESTURE. Browsers keep a context suspended until the user
+   has interacted, so without this the first arrival after unmuting is silent
+   and the checkbox reads as broken. Called again on the first pointer or key
+   event, because the mute choice persists and a reload arrives with no gesture
+   behind it. */
+function liveAudioWake() {
+  const ctx = liveAudioCtx();
+  if (ctx && ctx.state === 'suspended') { try { ctx.resume(); } catch (e) {} }
+}
+let _liveWokeOnce = false;
+function liveAudioWakeOnFirstGesture() {
+  if (_liveWokeOnce) return;
+  _liveWokeOnce = true;
+  const go = () => { liveAudioWake(); };
+  window.addEventListener('pointerdown', go, { once: true, passive: true });
+  window.addEventListener('keydown', go, { once: true });
+}
+
+// A note. Square for the chiptune voices, sine for the bell partials.
+function liveTone(ctx, { type, freq, at, dur, gain, decay }) {
+  const o = ctx.createOscillator();
+  const g = ctx.createGain();
+  o.type = type;
+  o.frequency.setValueAtTime(freq, at);
+  g.gain.setValueAtTime(0, at);
+  g.gain.linearRampToValueAtTime(gain, at + 0.006);
+  if (decay) g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+  else { g.gain.setValueAtTime(gain, at + dur - 0.01); g.gain.linearRampToValueAtTime(0, at + dur); }
+  o.connect(g); g.connect(ctx.destination);
+  o.start(at); o.stop(at + dur + 0.02);
+}
+
+/* RING ONCE. Counted on `window.__liveChimeRings` because a browser check has
+   no ears and no audio device: "a mute box rendered" passes just as happily on
+   a chime wired to the wrong condition, so the render cases assert the COUNT
+   moves on a paid arrival and does not move on an unpaid one or under a ticked
+   box. */
+function liveChime(kind) {
+  window.__liveChimeRings = (window.__liveChimeRings || 0) + 1;
+  const ctx = liveAudioCtx();
+  if (!ctx) return;
+  liveAudioWake();
+  const t = ctx.currentTime + 0.01;
+  if (kind === 'chaching') {
+    // A till: two bright partials over a short, harder strike.
+    liveTone(ctx, { type: 'square',   freq: 1046.5, at: t,       dur: 0.09, gain: 0.16 });
+    liveTone(ctx, { type: 'triangle', freq: 1568.0, at: t + 0.05, dur: 0.45, gain: 0.14, decay: true });
+    liveTone(ctx, { type: 'triangle', freq: 2093.0, at: t + 0.06, dur: 0.40, gain: 0.07, decay: true });
+  } else if (kind === 'arcade') {
+    liveTone(ctx, { type: 'triangle', freq: 1046.5, at: t,        dur: 0.08, gain: 0.15 });
+    liveTone(ctx, { type: 'triangle', freq: 1318.5, at: t + 0.08, dur: 0.08, gain: 0.15 });
+    liveTone(ctx, { type: 'triangle', freq: 1568.0, at: t + 0.16, dur: 0.30, gain: 0.15, decay: true });
+  } else if (kind === 'bell') {
+    liveTone(ctx, { type: 'sine', freq: 1318.5, at: t, dur: 0.70, gain: 0.18, decay: true });
+    liveTone(ctx, { type: 'sine', freq: 2637.0, at: t, dur: 0.35, gain: 0.05, decay: true });
+  } else {
+    /* THE COIN. B5 for a beat, then E6 held and decaying — the interval is what
+       makes it recognisable, so neither note may be tuned by feel. */
+    liveTone(ctx, { type: 'square', freq: 987.77,  at: t,        dur: 0.075, gain: 0.15 });
+    liveTone(ctx, { type: 'square', freq: 1318.51, at: t + 0.075, dur: 0.62,  gain: 0.15, decay: true });
+  }
+}
+
+/* WHAT RINGS. "enrolls AND PAYS" — so a registration whose money has not
+   arrived is silent, which is the same predicate the price colour and the
+   revenue figure already read. A cha-ching for an unpaid hold would claim money
+   that is not there, out loud. */
+function liveChimeWorthy(r) {
+  return liveMarkState(r) !== 'unpaid';
+}
+
 // Local calendar dates, built from PARTS. `new Date("2026-09-03")` is UTC
 // midnight and lands on the previous day west of UTC — the bug this codebase
 // and its sibling have both been bitten by.
@@ -2688,6 +2807,38 @@ function useLiveEnrollments(onAvailable) {
   const [flash, setFlash] = React.useState(() => new Set());
   const seenRef  = React.useRef(null);
   const timerRef = React.useRef(null);
+  const chimeTimersRef = React.useRef([]);
+
+  /* MUTED BY DEFAULT, per Dan, and remembered per browser like the theme and
+     the column toggles — an unmute is a preference about this screen, not a
+     question about this minute. A ticked box is the safe default for a
+     dashboard somebody may open in a meeting. */
+  const [muted, setMuted] = useState(() => {
+    try { return localStorage.getItem(LIVE_MUTE_KEY) !== '0'; } catch (e) { return true; }
+  });
+  const [chime, setChime] = useState(() => {
+    try {
+      const v = localStorage.getItem(LIVE_CHIME_KEY);
+      return LIVE_CHIMES.some(c => c[0] === v) ? v : LIVE_CHIME_DEFAULT;
+    } catch (e) { return LIVE_CHIME_DEFAULT; }
+  });
+  /* READ THROUGH REFS INSIDE `load`. Putting `muted` in load's dependency list
+     would rebuild the callback on every tick of the checkbox, and the poll
+     interval is keyed on that callback — so muting the card would silently
+     restart its 60-second clock. */
+  const mutedRef = React.useRef(muted);
+  const chimeRef = React.useRef(chime);
+  useEffect(() => {
+    mutedRef.current = muted;
+    try { localStorage.setItem(LIVE_MUTE_KEY, muted ? '1' : '0'); } catch (e) {}
+    if (!muted) liveAudioWake();
+    else { chimeTimersRef.current.forEach(clearTimeout); chimeTimersRef.current = []; }
+  }, [muted]);
+  useEffect(() => {
+    chimeRef.current = chime;
+    try { localStorage.setItem(LIVE_CHIME_KEY, chime); } catch (e) {}
+  }, [chime]);
+  useEffect(() => { liveAudioWakeOnFirstGesture(); }, []);
 
   const load = React.useCallback(() => {
     const w = liveWindow(LIVE_DAYS);
@@ -2706,6 +2857,22 @@ function useLiveEnrollments(onAvailable) {
           const fresh = keys.filter(k => !seen.has(k));
           if (fresh.length) {
             setFlash(new Set(fresh));
+            /* IT RINGS OFF THE SAME `fresh` DIFF THE HIGHLIGHT USES, which is
+               what keeps the sound honest: the card cannot ring for a row it
+               does not light up, and — the load-bearing half — the FIRST load
+               produces no diff at all, so opening the dashboard on a week with
+               61 paid registrations plays nothing instead of 61 coins. */
+            if (!mutedRef.current) {
+              const paid = fresh
+                .map(k => j.rows[keys.indexOf(k)])
+                .filter(r => r && liveChimeWorthy(r));
+              const kind = chimeRef.current;
+              paid.slice(0, LIVE_CHIME_MAX).forEach((r, i) => {
+                if (i === 0) { liveChime(kind); return; }
+                const h = setTimeout(() => liveChime(kind), i * LIVE_CHIME_GAP_MS);
+                chimeTimersRef.current.push(h);
+              });
+            }
             // The class comes off after the highlight has faded, so a later
             // re-render cannot replay the animation on a row that is no longer
             // news. Cleared on unmount as well, or a closed tab still fires it.
@@ -2737,12 +2904,15 @@ function useLiveEnrollments(onAvailable) {
     const t = setInterval(load, LIVE_POLL_MS);
     return () => clearInterval(t);
   }, [load, paused]);
-  useEffect(() => () => clearTimeout(timerRef.current), []);
+  useEffect(() => () => {
+    clearTimeout(timerRef.current);
+    chimeTimersRef.current.forEach(clearTimeout);
+  }, []);
 
   /* REFRESHING DOES NOT UNPAUSE. Pausing says "stop moving while I read"; a
      manual refresh says "move once, now". Conflating them would make the
      button a second, hidden un-pause. */
-  return { rows, err, at, paused, setPaused, flash, loading, refresh: load };
+  return { rows, err, at, paused, setPaused, flash, loading, refresh: load, muted, setMuted, chime, setChime };
 }
 
 /* ONE HEADER, BOTH CARDS. It carries the live dot, the Pause box, the manual
@@ -2754,8 +2924,8 @@ function useLiveEnrollments(onAvailable) {
    button cannot land on one card and not the other.
    PAUSE IS ON BOTH because there is one feed behind them: a Pause on the left
    card that silently stopped the right one was the confusing half-measure. */
-function LiveCardHeader({ icon, title, sub, feed }) {
-  const { paused, setPaused, refresh, loading } = feed;
+function LiveCardHeader({ icon, title, sub, feed, sound }) {
+  const { paused, setPaused, refresh, loading, muted, setMuted, chime, setChime } = feed;
   return (
     <div className="widget-header">
       <div>
@@ -2766,6 +2936,28 @@ function LiveCardHeader({ icon, title, sub, feed }) {
         <label className="live-pause" title="Stops the 60-second refresh, so a row cannot move while you are reading it.">
           <input type="checkbox" checked={paused} onChange={e => setPaused(e.target.checked)} /> Pause
         </label>
+        {/* MUTE, TICKED. Unticking it is also the browser gesture that lets the
+            sound play at all, so there is nothing else to press. The picker
+            only exists while the sound can be heard — a menu of sounds beside a
+            ticked Mute box is a control that cannot do anything. */}
+        <label className="live-pause" data-live-mute-box="1"
+               title="Ticked, the cards are silent. Unticked, a short sound plays when a paid enrollment lands.">
+          <input type="checkbox" data-live-mute="1" checked={muted}
+                 onChange={e => setMuted(e.target.checked)} /> Mute
+        </label>
+        {/* THE PICKER IS ON ONE CARD, THE MUTE BOX ON BOTH. Mute is an
+            operating control like Pause — one feed behind two cards, so it has
+            to read the same on either — but WHICH sound is a setting you touch
+            once, and two menus side by side both reading "Coin" look like a
+            duplication bug rather than a choice. */}
+        {muted || !sound ? null : (
+          <select className="live-chime-pick" data-live-chime={chime} value={chime}
+                  aria-label="Which sound"
+                  title="Pick a sound. Choosing one plays it."
+                  onChange={e => { setChime(e.target.value); liveChime(e.target.value); }}>
+            {LIVE_CHIMES.map(c => <option key={c[0]} value={c[0]}>{c[1]}</option>)}
+          </select>
+        )}
         <button type="button" className="live-refresh" data-live-refresh="1"
                 onClick={refresh} disabled={loading} aria-label="Refresh now"
                 title="Refresh both live cards now, without waiting for the next minute.">
@@ -2799,7 +2991,7 @@ function LiveRegistrations({ feed, recOrgId }) {
   if (!rows) {
     return (
       <div className="widget-card widget-md live-card" data-live-loading="1">
-        <LiveCardHeader icon={'\u{1F4DD}'} title="Live Enrollments" feed={feed}
+        <LiveCardHeader icon={'\u{1F4DD}'} title="Live Enrollments" feed={feed} sound
                         sub={'Loading the last ' + LIVE_DAYS + ' days\u2026'} />
         <div className="skeleton skeleton-chart" />
       </div>
@@ -2814,7 +3006,7 @@ function LiveRegistrations({ feed, recOrgId }) {
 
   return (
     <div className="widget-card widget-md live-card" data-live-regs={String(rows.length)}>
-      <LiveCardHeader icon={'\u{1F4DD}'} title="Live Enrollments" feed={feed}
+      <LiveCardHeader icon={'\u{1F4DD}'} title="Live Enrollments" feed={feed} sound
                       sub={'Enrollments as they happen \u00b7 last ' + LIVE_DAYS + ' days'} />
 
       <div className="live-count">
