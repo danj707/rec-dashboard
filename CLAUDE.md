@@ -1,5 +1,220 @@
 # Project notes for Claude
 
+## The cha-ching (2026-09-04)
+
+Dan: *"every time a person enrolls and pays, play a 'cha-ching' sound. mute by
+default, but add a 'mute' checkbox on the card, that can be unchecked... Give me
+a few sample sounds and I'll pick one. Maybe the super mario bros coin sound"* —
+then, with a link to it: *"this is it"*.
+
+### IT IS SYNTHESISED, NOT SAMPLED — and that is a decision
+
+An audio FILE here would be a redistributed copy of Nintendo's recording sitting
+in a public repo, and one more asset that can 404 on a dashboard people leave
+open all day. The coin is **two square-wave notes — B5 (987.77 Hz) then E6
+(1318.51 Hz)**, the second held and decaying, so the synth IS the sound rather
+than an impression of it. Both frequencies are pinned by the spec: the interval
+is what makes it recognisable, so neither note may be tuned by feel.
+
+Four to choose from (`coin`, `chaching`, `arcade`, `bell`), because Dan asked to
+hear a few. **Choosing one in the menu plays it**, so the menu is its own preview
+and there is no second button that does nothing else.
+
+### THE FIRST LOAD IS SILENT, and that is the load-bearing half
+
+The chime rides the **same `fresh` diff the row highlight uses**, which is empty
+on the first poll by construction. So opening the dashboard on a week holding 61
+paid registrations plays **nothing** instead of 61 coins — and the card can never
+ring for a row it does not also light up.
+
+**A mutation to exactly that survived the spec's first draft.**
+`seenRef.current || new Set()` leaves the `if (seen)` branch standing and passing
+while making every row on the first load an arrival. The spec now pins the ref
+being read **with no fallback**, which is the only form that discriminates.
+
+### "ENROLLS AND PAYS" — so an unpaid hold is silent
+
+`liveChimeWorthy()` is `liveMarkState(r) !== 'unpaid'`, i.e. **the same predicate
+the price colour and the revenue figure already read**, so the three cannot
+disagree about one row. A cha-ching for a hold with no money behind it announces
+revenue that has not arrived, out loud.
+
+### A BURST IS CAPPED AT THREE, staggered 130ms
+
+Twelve registrations landing in one poll is **one event** to somebody listening
+from across the room; twelve overlapping coins is a reason to mute the card for
+good. Two or three still read as two or three.
+
+### The mute box, and the gesture problem
+
+- **Ticked by default**, remembered per browser like the theme and the column
+  toggles. The stored form is `!== '0'`, so an absent key, an unreadable store
+  and a private window all land on **muted** — reading `=== '1'` is equivalent
+  today and would flip the default the first time the written value changed.
+- **UNTICKING IT IS THE BROWSER GESTURE.** Browsers keep an `AudioContext`
+  suspended until the user has interacted, so without a `resume()` there the
+  first arrival after unticking is silent and the checkbox reads as broken. A
+  *persisted* unmute arrives with no gesture behind it, so the context is woken
+  again on the first pointer or key event — `{ once: true }`, not a listener
+  left on the window for the session.
+- **Mute is read through a REF inside `load`.** As a dependency it would rebuild
+  the callback, and the poll interval is keyed on that callback — so muting the
+  card would silently restart its 60-second clock.
+- **The AudioContext is built on first use**, never at module scope: otherwise
+  every dashboard load including every muted one starts a suspended context.
+
+### The mute box is on BOTH cards, the sound menu on one
+
+Mute is an operating control like Pause — one feed behind two cards, so it has to
+read the same on either. But WHICH sound is a setting you touch once, and two
+menus side by side both reading *"Coin"* look like a duplication bug rather than
+a choice. The menu also **cannot outlive the sound**: beside a ticked Mute box it
+would be a control that does nothing.
+
+### THE GUARDS NEEDED A COUNTER, because a browser has no ears
+
+`liveChime()` bumps `window.__liveChimeRings` **before it touches audio at all**,
+and this container has no audio device. That counter is the only observable:
+*"a Mute box rendered"* passes just as happily on a chime wired to every arrival,
+to the first load, or to an unpaid hold.
+
+So the render fixture now delivers **one paid AND one unpaid arrival on every
+refresh**, and the case requires **exactly one ring** — two means it does not
+read the payment, zero means unmuting did nothing. **A pair per call, not a fixed
+script:** the first draft prepended the pair on one specific call number and the
+muted case, which refreshes twice, *consumed it* — so by the time the sound was
+on there was nothing new left to ring for, and a passing-looking `0` meant
+nothing. Accumulating means the case order cannot starve the case that matters.
+
+The four cases share one page and **must run in order** (the mute box is real
+state, and unticking it persists); the last of them re-ticks it.
+
+**And the unmute had to be a REAL click.** React tracks a controlled input's
+value internally and ignores a direct assignment, so the first draft toggled the
+DOM, left the state ticked, and timed out on a menu that never appeared — the
+same lesson already recorded for the reporting project's cache dial.
+
+### Guards
+
+`scripts/live-widgets.spec.js` 157 → **182 assertions**, lifting and RUNNING
+`liveChimeWorthy`. Mutation-tested six ways, all failing by name: the chime not
+gated on the box, the paid filter dropped, the default flipped to unmuted, the
+picker shown while muted, the burst cap removed, and the first load treated as
+arrivals. Plus **four `ci-check-render.js` cases**, all four verified against a
+real regression in a browser.
+
+**Two pre-existing assertions had to have their intent restored**, both instances
+of a shape this file and its sibling keep recording: one pinned
+`clearTimeout(timerRef.current), [])` and broke the day a second timer joined the
+same unmount effect, and one pinned `LiveCardHeader`'s exact parameter list and
+broke when a fourth prop was added. Both test membership now.
+
+## Live Enrollments, and the revenue figure that cannot match (2026-09-04, second pass)
+
+Dan's tonight list. Five were mechanical; the sixth is a measurement.
+
+### Live Enrollments
+
+Second rename in a day, and neither older name is spelled out anywhere in
+`dashboard.html` — the comments in the babel block are served to the browser, so
+a comment naming a retired card still ships it. That was a real leftover the
+first time: a comment kept the old name in the served HTML while the spec's
+own assertion read a comment-STRIPPED copy and passed.
+
+### The legend was landing on the hour labels
+
+`.lt-day em` is absolutely placed at `bottom: -14px` — OUTSIDE the timeline's
+box — so a legend pulled up under the lane sits in the same fourteen pixels.
+The timeline reserves that space in its margin now. **The render case is
+geometry** (the legend's top against the tick's bottom), because the DOM is
+identical either way.
+
+### The price carries its payment state's colour
+
+Green paid, orange part-paid, default ink for unpaid — the same two colours as
+the dots in the lane, because they say the same thing about the same
+enrollment. **Unpaid deliberately keeps the default colour**: the grey dot
+already says it, and a grey price reads as disabled.
+
+**AND THE ARRIVAL POP WAS STEALING THAT COLOUR.** `liveMoneyPop` animated
+`color` to green for ten seconds, so a brand-new UNPAID price rendered green —
+saying the money had arrived when it had not. It animates scale only now. Found
+by the case that reads the computed colour of each state, not by review.
+
+### The right card covers the FEED's window now
+
+*"Can we get more programs to show up on the right side chart? Seems a little
+thin over there. where is this list coming from?"*
+
+It comes from card 21286 — the same rows as the list on the left — and it was
+**scoped to today**, so a quiet morning was a five-row card. Watertown had 13
+enrollments across 5 programs that morning: five rows was every row there was,
+and the ten-row cap had nothing to do with it. It reads the whole feed window
+(`LIVE_DAYS` = 7) now: one query, one window, two views. `todaySignups` still
+separates what arrived today for the headline.
+
+### PROGRAM REVENUE IS MONEY RECEIVED — and it cannot equal the Revenue tab
+
+*"The program revenue doesn't seem to be matching what we're showing on the
+Programs->Revenue tab for programs. It needs to."*
+
+Half of that is fixable and half is not, so both halves are here.
+
+**Fixed:** the column counted `Price` (what was charged) under the header
+`Charged`. The reporting project's Revenue tab counts payments **received**, so
+this column now counts `Paid` — what has actually succeeded — and ranks on it.
+The amount charged appears underneath only when the two differ, which is a
+payment plan.
+
+**NOT fixable, and this is the part to keep.** Card 17295 windows on **SESSION
+dates**; this feed windows on the **SIGNUP date**. Measured at Watertown on
+2026-09-04 — 13 enrollments taking $1,082:
+
+| of that day's enrollments | count | money |
+|---|---|---|
+| for a section running THAT DAY | **0** | $0 |
+| for a section running anywhere in September | 4 | $270 |
+| for a section starting after September | **9** | $812 |
+
+So a Revenue tab set to that day shows **$0** of it, and September shows $270 —
+the other $812 is fall and winter programming that lands in those months'
+windows over there. Same money, filed by when the programme RUNS rather than
+when it SOLD. It is the same gap already recorded in the sibling repo for
+`period_received` ("August money paid for sections that do NOT run in
+August", ~$514K at apex).
+
+**The two agree on the INCREMENT, which is what watching it live is for**: a
+$65 enrollment moves both by $65, in whichever window that section belongs to.
+The card's sub-line names its basis so nobody reconciles a total.
+
+### What the widgets cost
+
+Asked and measured, because "live" invites the question:
+
+- The page polls every **60s per open dashboard**, and `LIVE_REPORT_TTL_MS` is
+  60s for `enrollments`, so a poll is served from cache **instantly** and
+  triggers a background refresh when the entry is older than that. The cache key
+  is org + params, so it is **one card run per minute per ORG**, not per viewer.
+- Card time through the public endpoint, 7-day window, two passes each:
+  **Watertown 2.6s → 1.0s (61 rows), Niagara Falls 2.9s → 0.6s (37), Torrance
+  15.4s → 9.0s (198)**.
+- **Torrance is the one to watch**: a 9-second query once a minute is a ~15%
+  duty cycle on a Metabase connection for as long as a dashboard is open there.
+  Row count drives it. If that becomes a problem the lever is a longer TTL for
+  big orgs (the poll can stay at 60s — it would just serve stale more often),
+  not a cheaper card.
+
+### Guards
+
+`live-widgets.spec.js` 152 → **157 assertions**. Four old ones had to be
+corrected rather than deleted: they pinned the today-only window and the
+charged basis. Nine new `ci-check-render.js` cases, and three of them found real
+faults in my own work before the run reported clean — the pop animation
+recolouring an unpaid price, a `thead` compared case-sensitively when
+`innerText` honours `text-transform`, and a leaderboard assertion keyed on a
+program that ranks below the ten-row cap (relational now: the card knows more
+than 14 programs, where today-only knew 14).
+
 ## The live cards, polished (2026-09-04)
 
 Dan's list, in his words, after watching the pair on production for a morning:

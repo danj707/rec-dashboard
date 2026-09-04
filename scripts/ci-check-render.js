@@ -122,8 +122,13 @@ const ENROLLMENTS = [
     'Section': 'Play on 60+ Beginner Oxygen Dance', 'Program': 'Oxygen Dance Aerobics', 'Price': 25, 'Paid': 25 },
   { 'Signed Up At': liveIso(0, '13:06:40'), 'Customer Name': 'Ryan Little', 'Participant': 'Brayden Little',
     'Section': 'Boys (Grades 4-5) Tryouts', 'Program': 'SBA Travel Teams', 'Price': 25 },
+  /* PART-PAID, and it has to be HIGH IN THE LIST: only the newest eight rows
+     render, and the other part-paid row (Swim Lessons) sits ninth — so the
+     orange-price assertion had nothing to read. A payment plan among the first
+     three rows is what makes that case discriminating. */
   { 'Signed Up At': liveIso(0, '11:35:00'), 'Customer Name': 'Nicole Baldarelli', 'Participant': 'Cameron Baldarelli',
-    'Section': 'Music, Movement & Sensory Play', 'Program': 'Music, Movement & Sensory Play', 'Price': 60 },
+    'Section': 'Music, Movement & Sensory Play', 'Program': 'Music, Movement & Sensory Play',
+    'Price': 60, 'Paid': 25 },
   /* YESTERDAY, and LATER IN THE DAY than the row above it — which is exactly
      what made the list look unsorted: a column showing only a clock cannot say
      that 8:15p was yesterday. This row is what proves the weekday prefix. */
@@ -176,7 +181,32 @@ const ENROLLMENTS = [
    so it lands at the top, and it is the ONLY one that may light up. */
 const ENROLL_ARRIVAL = { 'Signed Up At': liveIso(0, '23:59:01'), 'Customer Name': 'Newly Arrived',
   'Participant': 'Kid Arrived', 'Section': 'Just Registered', 'Program': 'Just Registered', 'Price': 42 };
+/* EVERY REFRESH DELIVERS ONE PAID AND ONE UNPAID ARRIVAL, so the chime can be
+   OBSERVED rather than assumed. A browser has no ears and this container has no
+   audio device, so the only way to tell a chime wired to "a paid arrival" from
+   one wired to "any arrival" is to hand it one of each in the SAME diff and
+   require exactly one ring.
+
+   A PAIR PER CALL, not a fixed script: the first draft prepended the pair on
+   one specific call number, and the muted case — which refreshes twice —
+   consumed it, so by the time the sound was on there was nothing new left to
+   ring for and a passing-looking 0 meant nothing. Accumulating means the case
+   order cannot starve the case that matters. */
 let enrollCalls = 0;
+const enrollExtra = [];
+function enrollArrivals() {
+  if (enrollCalls <= 1) return [];
+  if (enrollCalls === 2) { enrollExtra.unshift(ENROLL_ARRIVAL); return enrollExtra.slice(); }
+  const n = enrollCalls;
+  enrollExtra.unshift(
+    { 'Signed Up At': liveIso(0, '23:5' + (n % 10) + ':4' + (n % 10)), 'Customer Name': 'Unpaid ' + n,
+      'Participant': 'Kid U' + n, 'Section': 'Unpaid Section ' + n, 'Program': 'Unpaid Program',
+      'Price': 60, 'Paid': 0 },
+    { 'Signed Up At': liveIso(0, '23:5' + (n % 10) + ':5' + (n % 10)), 'Customer Name': 'Paid ' + n,
+      'Participant': 'Kid P' + n, 'Section': 'Paid Section ' + n, 'Program': 'Paid Program',
+      'Price': 60, 'Paid': 60 });
+  return enrollExtra.slice();
+}
 
 const FIXTURES = {
   memberships: MEMBERSHIPS,
@@ -454,6 +484,92 @@ const CASES = [
   { name: 'live · ...and a program with no section id is not a dead link',
     needs: '[data-live-progs] [data-live-prog="Summer Camp"]',
     absent: '[data-live-progs] a.live-link[href$="/sections/undefined"], [data-live-progs] a.live-link[href$="/sections/"]' },
+  /* THE RIGHT CARD COVERS THE FEED'S WINDOW (Dan: "Can we get more programs to
+     show up on the right side chart? Seems a little thin over there"). The
+     fixture's other-day rows — Shrewsbury Rec Youth Basketball (yesterday) and
+     Rec Connect Fall (three days ago) — are the ones that prove it: under the
+     old today-only rule neither appeared. */
+  /* RELATIONAL, not a magic number: the other-day programs carry little or no
+     money, so they rank below the ten-row cap and cannot be asserted by name.
+     What the widening changes is how many programs the card KNOWS about — 14
+     under the old today-only rule, more now. */
+  { name: 'live · the leaderboard covers the whole feed, not just today',
+    needs: 'body[data-lp-widened="1"]',
+    act: async page => {
+      await page.waitForSelector('[data-live-progs]', { timeout: 15000 });
+      await page.evaluate(() => {
+        const n = Number(document.querySelector('[data-live-progs]').getAttribute('data-live-progs') || 0);
+        document.body.setAttribute('data-lp-known', String(n));
+        if (n > 14) document.body.setAttribute('data-lp-widened', '1');
+      });
+    } },
+  { name: 'live · ...and the headline still separates what arrived today',
+    needs: 'body[data-lp-big*="today"]' },
+  /* PROGRAM REVENUE IS MONEY RECEIVED. Swim Lessons is charged $480 with $240
+     in, so the cell reading 240 and the sub-line reading 480 is the whole
+     distinction — a build that kept the charged basis renders 480 in the cell
+     and no sub-line at all. */
+  { name: 'live · program revenue is what arrived, not what was charged',
+    needs: '[data-live-progs] [data-live-prog="Swim Lessons"] [data-live-prog-charged="240"]',
+    absent: '[data-live-progs] [data-live-prog="Swim Lessons"] [data-live-prog-charged="480"]' },
+  { name: 'live · ...with the charge underneath it on a payment plan',
+    needs: 'body[data-lp-plan*="of $480 charged"]',
+    act: async page => {
+      await page.waitForSelector('[data-live-prog="Swim Lessons"]', { timeout: 15000 });
+      await page.evaluate(() => {
+        const c = document.querySelector('[data-live-prog="Swim Lessons"] .lm');
+        document.body.setAttribute('data-lp-plan', c ? c.innerText.replace(/\s+/g, ' ').trim() : '');
+      });
+    } },
+  { name: 'live · the column is called Program revenue',
+    needs: 'body[data-lp-head*="program revenue"]',
+    absent: 'body[data-lp-head*="charged"]',
+    act: async page => {
+      await page.evaluate(() => {
+        const h = document.querySelector('[data-live-progs] .live-table thead');
+        // innerText honours text-transform, and these headers are uppercased
+        // in CSS — so compare in one case rather than pinning the rendering.
+        document.body.setAttribute('data-lp-head',
+          h ? h.innerText.replace(/\s+/g, ' ').trim().toLowerCase() : '');
+      });
+    } },
+  /* THE PRICE CARRIES ITS PAYMENT STATE'S COLOUR (Dan: "Full payment the price
+     is in green, partial or installment plan, price is in orange to match the
+     legend"). Computed, because a class name proves nothing about the ink. */
+  { name: 'live · a paid price is green and a part-paid one orange',
+    needs: 'body[data-lc-paid="rgb(22, 163, 74)"][data-lc-part="rgb(245, 158, 11)"]',
+    act: async page => {
+      await page.waitForSelector('[data-live-regs] td[data-live-price]', { timeout: 15000 });
+      await page.evaluate(() => {
+        const pick = st => document.querySelector('[data-live-regs] td[data-live-price="' + st + '"]');
+        for (const st of ['paid', 'part', 'unpaid']) {
+          const el = pick(st);
+          if (el) document.body.setAttribute('data-lc-' + st, getComputedStyle(el).color);
+        }
+      });
+    } },
+  /* AN UNPAID PRICE KEEPS THE DEFAULT INK — a third colour, or a grey price,
+     reads as disabled. Asserted as "not either of the two". */
+  { name: 'live · ...and an unpaid one is neither',
+    needs: 'body[data-lc-unpaid]',
+    absent: 'body[data-lc-unpaid="rgb(22, 163, 74)"], body[data-lc-unpaid="rgb(245, 158, 11)"]' },
+  /* THE LEGEND CLEARS THE HOUR LABELS. They are absolutely placed BELOW the
+     timeline's own box, so a legend pulled up under it lands in the same 14
+     pixels — which is what Dan saw. Geometry, because the DOM is identical
+     either way. */
+  { name: 'live · the legend clears the hour labels',
+    needs: 'body[data-lg-clear="1"]',
+    act: async page => {
+      await page.waitForSelector('[data-live-legend]', { timeout: 15000 });
+      await page.evaluate(() => {
+        const tick = document.querySelector('[data-live-regs] .lt-day em');
+        const leg  = document.querySelector('[data-live-regs] [data-live-legend]');
+        if (!tick || !leg) return;
+        const gap = leg.getBoundingClientRect().top - tick.getBoundingClientRect().bottom;
+        document.body.setAttribute('data-lg-gap', String(Math.round(gap)));
+        if (gap >= 0) document.body.setAttribute('data-lg-clear', '1');
+      });
+    } },
   { name: 'live · two widgets in the section',
     needs: '[data-live-section] [data-live-regs] ~ [data-live-progs]' },
 
@@ -496,6 +612,82 @@ const CASES = [
       await page.waitForFunction((b) => performance.getEntriesByType('resource')
         .filter(e => /api\/data\/enrollments/.test(e.name)).length > b, { timeout: 15000 }, before);
       await page.evaluate(() => document.body.setAttribute('data-lr-refetched', '1'));
+    } },
+  /* ── THE CHA-CHING ────────────────────────────────────────────────────────
+     Dan: "every time a person enrolls and pays, play a 'cha-ching' sound. mute
+     by default, but add a 'mute' checkbox on the card".
+
+     THESE FOUR CASES SHARE ONE PAGE AND MUST RUN IN ORDER — the mute box is
+     real state, and unticking it persists. The last of them re-ticks it, or
+     every later case runs on an unmuted dashboard.
+
+     They read `window.__liveChimeRings`, a counter `liveChime` bumps before it
+     touches audio at all. That is the only observable: this container has no
+     audio device, and "a Mute box rendered" passes just as happily on a chime
+     wired to every arrival, to the first load, or to an unpaid hold. */
+  { name: 'live · muted by default, with no sound menu',
+    needs: '[data-live-regs] input[data-live-mute="1"]',
+    absent: '.live-chime-pick',
+    act: async page => {
+      const checked = await page.$eval('input[data-live-mute="1"]', el => el.checked);
+      if (!checked) throw new Error('the Mute box is NOT ticked on arrival');
+    } },
+  /* MUTED, A PAID ARRIVAL IS SILENT. Refresh twice: the second call brings a
+     paid registration that the card highlights, and the counter must not move.
+     A chime that ignored the box would look identical on screen. */
+  { name: 'live · muted, a paid arrival makes no sound', needs: 'body[data-chime-muted="0"]',
+    act: async page => {
+      await page.evaluate(() => { window.__liveChimeRings = 0; });
+      for (let i = 0; i < 2; i++) {
+        await page.waitForSelector('[data-live-regs] [data-live-refresh]:not([disabled])', { timeout: 20000 });
+        const b = await page.evaluate(() => performance.getEntriesByType('resource')
+          .filter(e => /api\/data\/enrollments/.test(e.name)).length);
+        await page.click('[data-live-regs] [data-live-refresh]');
+        await page.waitForFunction((n) => performance.getEntriesByType('resource')
+          .filter(e => /api\/data\/enrollments/.test(e.name)).length > n, { timeout: 15000 }, b);
+      }
+      // The paid arrival really did land — otherwise a zero count proves nothing.
+      await page.waitForFunction(() => /\bPaid \d/.test(document.body.innerText), { timeout: 10000 });
+      const rings = await page.evaluate(() => window.__liveChimeRings || 0);
+      await page.evaluate(n => document.body.setAttribute('data-chime-muted', String(n)), rings);
+    } },
+  /* UNTICKING IT REVEALS THE MENU, and choosing a sound plays it — the menu is
+     its own preview, which is why there is no second button. */
+  { name: 'live · unmuting offers the sounds, and picking one plays it',
+    needs: '.live-chime-pick[data-live-chime="chaching"]',
+    act: async page => {
+      /* A REAL CLICK, never `el.checked = false` plus a synthetic event:
+         React tracks a controlled input's value internally and ignores a
+         direct assignment, so the first draft of this case toggled the DOM,
+         left the state ticked, and timed out on a menu that never appeared. */
+      await page.click('input[data-live-mute="1"]');
+      await page.waitForSelector('.live-chime-pick', { timeout: 10000 });
+      await page.evaluate(() => { window.__liveChimeRings = 0; });
+      await page.select('.live-chime-pick', 'chaching');
+      await page.waitForFunction(() => (window.__liveChimeRings || 0) > 0, { timeout: 10000 });
+    } },
+  /* AND THE COUNT IS WHAT SEPARATES "PAID" FROM "ANY ARRIVAL". This refresh
+     delivers ONE paid registration and ONE unpaid one together, so a correct
+     card rings exactly once. Two rings means it does not read the payment;
+     zero means unmuting did nothing. */
+  { name: 'live · unmuted, one paid + one unpaid arrival rings ONCE',
+    needs: 'body[data-chime-rings="1"]',
+    act: async page => {
+      await page.evaluate(() => { window.__liveChimeRings = 0; });
+      await page.waitForSelector('[data-live-regs] [data-live-refresh]:not([disabled])', { timeout: 20000 });
+      const b = await page.evaluate(() => performance.getEntriesByType('resource')
+        .filter(e => /api\/data\/enrollments/.test(e.name)).length);
+      await page.click('[data-live-regs] [data-live-refresh]');
+      const seenBefore = await page.evaluate(() => document.body.innerText.match(/Unpaid \d+/g) || []);
+      await page.waitForFunction((prev) => (document.body.innerText.match(/Unpaid \d+/g) || [])
+        .some(x => prev.indexOf(x) < 0), { timeout: 15000 }, seenBefore);
+      // The burst is staggered, so give the later handles time to have fired
+      // had they been queued — a count read too early would hide a second ring.
+      await new Promise(r => setTimeout(r, 600));
+      const rings = await page.evaluate(() => window.__liveChimeRings || 0);
+      await page.evaluate(n => document.body.setAttribute('data-chime-rings', String(n)), rings);
+      // Re-tick it, or every case after this one runs on an unmuted dashboard.
+      await page.click('input[data-live-mute="1"]');
     } },
   /* THE BIG LINE READS AS WORDS. "9across 5 programmes" was the bug (Dan: "fix
      the spacing"), and it took two assertions because it is two faults wearing
@@ -569,7 +761,7 @@ const CASES = [
       const rt = m ? m[1] : null;
       if (rt === 'enrollments') {
         enrollCalls++;
-        return json({ rows: enrollCalls > 1 ? [ENROLL_ARRIVAL, ...ENROLLMENTS] : ENROLLMENTS });
+        return json({ rows: [...enrollArrivals(), ...ENROLLMENTS] });
       }
       return json({ rows: (rt && FIXTURES[rt]) || [] });
     }

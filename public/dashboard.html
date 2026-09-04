@@ -160,6 +160,14 @@ body { font-family: var(--font-body); background: var(--bg-page); color: var(--t
                 justify-content: center; transition: color .15s, border-color .15s; }
 .live-refresh:hover:not(:disabled) { color: var(--green); border-color: var(--green); }
 .live-refresh:disabled { opacity: .45; cursor: default; }
+/* THE SOUND MENU. Styled explicitly rather than left as a native select,
+   because a default control renders with the OS chrome and the OS's own light
+   background — which on the dark theme is a white box in a tinted card, the
+   same collision the season menu in the reporting project shipped with. */
+.live-chime-pick { background: var(--bg); border: 1px solid var(--border); color: var(--text-muted);
+                   border-radius: 5px; height: 20px; font-size: 10px; font-family: inherit;
+                   padding: 0 4px; cursor: pointer; max-width: 96px; }
+.live-chime-pick:hover { color: var(--green); border-color: var(--green); }
 @media (prefers-reduced-motion: no-preference) {
   .live-refresh:disabled { animation: liveSpin 0.9s linear infinite; }
   @keyframes liveSpin { to { transform: rotate(360deg); } }
@@ -179,7 +187,7 @@ body { font-family: var(--font-body); background: var(--bg-page); color: var(--t
 /* THE TIMELINE. One lane across the last seven days; every mark is one
    registration at its own minute, and a paid one carries a $. Marks are
    absolutely placed, so adding one costs no layout anywhere else on the card. */
-.live-timeline { position: relative; height: 42px; margin: 10px 0 12px;
+.live-timeline { position: relative; height: 42px; margin: 10px 0 22px;
                  border-bottom: 1px solid var(--border); }
 .live-timeline .lt-day { position: absolute; top: 0; bottom: 0; }
 .live-timeline .lt-day i { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--border-subtle); }
@@ -200,8 +208,14 @@ body { font-family: var(--font-body); background: var(--bg-page); color: var(--t
                           border-radius: 50%; background: var(--border); }
 .live-timeline .lt-mark.paid { background: #16a34a; box-shadow: 0 0 0 2px rgba(22,163,74,.18); }
 .live-timeline .lt-mark.part { background: #f59e0b; box-shadow: 0 0 0 2px rgba(245,158,11,.20); }
-.live-legend { display: flex; gap: 10px; align-items: center; font-size: 9px;
-               color: var(--text-muted); margin: -4px 0 8px; }
+/* THE LEGEND SITS BELOW THE HOUR LABELS, not on top of them. The tick labels
+   are absolutely placed at `bottom: -14px` — OUTSIDE the timeline's own box —
+   so a legend pulled up under it lands in the same 14 pixels and the two read
+   as one cramped row (Dan: "Some spacing issues on the chat legend"). The
+   timeline reserves that space in its margin now and the legend starts after
+   it. */
+.live-legend { display: flex; gap: 14px; align-items: center; font-size: 9.5px;
+               color: var(--text-muted); margin: 0 0 12px; }
 .live-legend i { display: inline-block; width: 7px; height: 7px; border-radius: 50%;
                  margin-right: 4px; vertical-align: middle; background: var(--border); }
 .live-legend .lg-paid i { background: #16a34a; }
@@ -230,6 +244,10 @@ body { font-family: var(--font-body); background: var(--bg-page); color: var(--t
 .live-table .ls { color: var(--text-secondary); }
 .live-table .lm { width: 62px; padding-right: 0; text-align: right;
                   font-variant-numeric: tabular-nums; font-weight: 600; color: var(--text-primary); }
+/* Paid green, part-paid orange — the same two colours as the dots in the lane,
+   because they are saying the same thing about the same registration. */
+.live-table .lm.live-paid { color: #16a34a; }
+.live-table .lm.live-part { color: #f59e0b; }
 .live-table th.lm { text-align: right; }
 
 /* A NEW REGISTRATION ANNOUNCES ITSELF, then stops. Dan: "the new one(s) pop on
@@ -282,10 +300,15 @@ body { font-family: var(--font-body); background: var(--bg-page); color: var(--t
 .live-more { display: inline-block; margin-left: 4px; font-size: 9px; font-weight: 700;
              color: var(--text-muted); vertical-align: 1px; }
 @media (prefers-reduced-motion: no-preference) {
+  /* THE POP MOVES THE FIGURE; IT DOES NOT RECOLOUR IT. It used to animate
+     `color` to green, which overrode the payment-state ink for ten seconds —
+     so a brand-new UNPAID price rendered green, saying the money had arrived
+     when it had not. Caught by the render case that reads the computed colour
+     of each state. Scale only now. */
   .live-table tr.live-new .lm { animation: liveMoneyPop 10s ease-out both; }
   @keyframes liveMoneyPop {
-    0%  { transform: scale(1.28); color: #16a34a; }
-    7%  { transform: scale(1);    color: #16a34a; }
+    0%  { transform: scale(1.28); }
+    7%  { transform: scale(1); }
     100%{ transform: scale(1); }
   }
 }
@@ -2395,6 +2418,117 @@ const LIVE_ROWS = 8;
 const LIVE_PROG_ROWS = 10;
 const LIVE_DAYS    = 7;
 
+/* THE CHA-CHING. Dan: "every time a person enrolls and pays, play a 'cha-ching'
+   sound. mute by default, but add a 'mute' checkbox on the card... Maybe the
+   super mario bros coin sound" — then, with a link to it: "this is it".
+
+   IT IS SYNTHESISED, NOT SAMPLED, and that is a decision rather than a
+   shortcut. The Artifact/CSP rules aside, an audio FILE here would be a
+   redistributed copy of Nintendo's recording sitting in a public repo, and it
+   would be one more asset that can 404 on a dashboard people leave open all
+   day. The coin is two square-wave notes — B5 then E6, the second held and
+   decaying — so the synth IS the sound rather than an impression of it.
+
+   FOUR TO PICK FROM, because Dan asked to hear a few. `coin` is the default
+   since he named it; choosing one in the menu plays it, so the menu is its own
+   preview and there is no second button that does nothing else. */
+const LIVE_CHIMES = [
+  ['coin',     'Coin'],
+  ['chaching', 'Cha-ching'],
+  ['arcade',   'Arcade'],
+  ['bell',     'Bell'],
+];
+const LIVE_CHIME_DEFAULT = 'coin';
+/* HOW MANY RING FOR ONE BATCH. Twelve registrations landing in one poll is ONE
+   event to somebody listening from across the room; twelve overlapping coins is
+   noise, and on a registration morning it would be a reason to mute the card
+   for good. Staggered so two or three read as two or three. */
+const LIVE_CHIME_MAX = 3;
+const LIVE_CHIME_GAP_MS = 130;
+const LIVE_MUTE_KEY  = 'rec-dash-live-muted';
+const LIVE_CHIME_KEY = 'rec-dash-live-chime';
+
+/* ONE AudioContext, built on first use and never before. Constructing one at
+   module scope starts a suspended context on every dashboard load including
+   every muted one, and some browsers log about it. */
+let _liveAudio = null;
+function liveAudioCtx() {
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return null;
+  if (!_liveAudio) { try { _liveAudio = new AC(); } catch (e) { return null; } }
+  return _liveAudio;
+}
+/* THE UNMUTE IS THE GESTURE. Browsers keep a context suspended until the user
+   has interacted, so without this the first arrival after unmuting is silent
+   and the checkbox reads as broken. Called again on the first pointer or key
+   event, because the mute choice persists and a reload arrives with no gesture
+   behind it. */
+function liveAudioWake() {
+  const ctx = liveAudioCtx();
+  if (ctx && ctx.state === 'suspended') { try { ctx.resume(); } catch (e) {} }
+}
+let _liveWokeOnce = false;
+function liveAudioWakeOnFirstGesture() {
+  if (_liveWokeOnce) return;
+  _liveWokeOnce = true;
+  const go = () => { liveAudioWake(); };
+  window.addEventListener('pointerdown', go, { once: true, passive: true });
+  window.addEventListener('keydown', go, { once: true });
+}
+
+// A note. Square for the chiptune voices, sine for the bell partials.
+function liveTone(ctx, { type, freq, at, dur, gain, decay }) {
+  const o = ctx.createOscillator();
+  const g = ctx.createGain();
+  o.type = type;
+  o.frequency.setValueAtTime(freq, at);
+  g.gain.setValueAtTime(0, at);
+  g.gain.linearRampToValueAtTime(gain, at + 0.006);
+  if (decay) g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+  else { g.gain.setValueAtTime(gain, at + dur - 0.01); g.gain.linearRampToValueAtTime(0, at + dur); }
+  o.connect(g); g.connect(ctx.destination);
+  o.start(at); o.stop(at + dur + 0.02);
+}
+
+/* RING ONCE. Counted on `window.__liveChimeRings` because a browser check has
+   no ears and no audio device: "a mute box rendered" passes just as happily on
+   a chime wired to the wrong condition, so the render cases assert the COUNT
+   moves on a paid arrival and does not move on an unpaid one or under a ticked
+   box. */
+function liveChime(kind) {
+  window.__liveChimeRings = (window.__liveChimeRings || 0) + 1;
+  const ctx = liveAudioCtx();
+  if (!ctx) return;
+  liveAudioWake();
+  const t = ctx.currentTime + 0.01;
+  if (kind === 'chaching') {
+    // A till: two bright partials over a short, harder strike.
+    liveTone(ctx, { type: 'square',   freq: 1046.5, at: t,       dur: 0.09, gain: 0.16 });
+    liveTone(ctx, { type: 'triangle', freq: 1568.0, at: t + 0.05, dur: 0.45, gain: 0.14, decay: true });
+    liveTone(ctx, { type: 'triangle', freq: 2093.0, at: t + 0.06, dur: 0.40, gain: 0.07, decay: true });
+  } else if (kind === 'arcade') {
+    liveTone(ctx, { type: 'triangle', freq: 1046.5, at: t,        dur: 0.08, gain: 0.15 });
+    liveTone(ctx, { type: 'triangle', freq: 1318.5, at: t + 0.08, dur: 0.08, gain: 0.15 });
+    liveTone(ctx, { type: 'triangle', freq: 1568.0, at: t + 0.16, dur: 0.30, gain: 0.15, decay: true });
+  } else if (kind === 'bell') {
+    liveTone(ctx, { type: 'sine', freq: 1318.5, at: t, dur: 0.70, gain: 0.18, decay: true });
+    liveTone(ctx, { type: 'sine', freq: 2637.0, at: t, dur: 0.35, gain: 0.05, decay: true });
+  } else {
+    /* THE COIN. B5 for a beat, then E6 held and decaying — the interval is what
+       makes it recognisable, so neither note may be tuned by feel. */
+    liveTone(ctx, { type: 'square', freq: 987.77,  at: t,        dur: 0.075, gain: 0.15 });
+    liveTone(ctx, { type: 'square', freq: 1318.51, at: t + 0.075, dur: 0.62,  gain: 0.15, decay: true });
+  }
+}
+
+/* WHAT RINGS. "enrolls AND PAYS" — so a registration whose money has not
+   arrived is silent, which is the same predicate the price colour and the
+   revenue figure already read. A cha-ching for an unpaid hold would claim money
+   that is not there, out loud. */
+function liveChimeWorthy(r) {
+  return liveMarkState(r) !== 'unpaid';
+}
+
 // Local calendar dates, built from PARTS. `new Date("2026-09-03")` is UTC
 // midnight and lands on the previous day west of UTC — the bug this codebase
 // and its sibling have both been bitten by.
@@ -2534,15 +2668,26 @@ function liveByProgram(rows, today) {
   if (!today) return [];
   const by = new Map();
   (rows || []).forEach(r => {
-    if (liveDay(r['Signed Up At']) !== today) return;
+    /* EVERY DAY THE FEED CARRIES, not just today. Dan: "Can we get more
+       programs to show up on the right side chart? Seems a little thin over
+       there." It was thin because it was scoped to TODAY — Watertown had 13
+       enrollments across 5 programs that morning, so five rows was every row
+       there was, and the ten-row cap had nothing to do with it. The feed
+       already holds LIVE_DAYS of enrollments for the list on the left, so the
+       leaderboard reads the same rows: one query, one window, two views.
+       `today` is still passed and still used — for the freshness diff and to
+       label a row that arrived today — so nothing here needs the caller to
+       fetch anything more. */
+    if (!liveDay(r['Signed Up At'])) return;
     const name = String(r['Program'] == null ? '' : r['Program']).trim() || '(no program)';
     let g = by.get(name);
-    if (!g) g = { program: name, signups: 0, charged: null, paid: null, lastAt: '',
+    if (!g) g = { program: name, signups: 0, todaySignups: 0, charged: null, paid: null, lastAt: '',
                   sections: new Set(), sectionIds: new Set(), lastSectionId: '', lastSection: '' };
     g.signups += 1;
     const pr = r['Price'], pd = r['Paid'];
     if (pr != null && Number.isFinite(Number(pr))) g.charged = (g.charged || 0) + Number(pr);
     if (pd != null && Number.isFinite(Number(pd))) g.paid    = (g.paid    || 0) + Number(pd);
+    if (liveDay(r['Signed Up At']) === today) g.todaySignups = (g.todaySignups || 0) + 1;
     const ts = String(r['Signed Up At'] || '');
     /* THE LATEST REGISTRATION'S SECTION, so the program row can link somewhere
        real. Dan: "I should also be able to click the section name on the right
@@ -2558,9 +2703,12 @@ function liveByProgram(rows, today) {
     if (r['Section Id']) g.sectionIds.add(String(r['Section Id']));
     by.set(name, g);
   });
+  /* RANKED ON WHAT THE COLUMN SHOWS — money RECEIVED, not money charged. It
+     ranked on `charged` while the header said Charged; both moved together
+     (see the note on the cell) so the sort follows the figure. */
   return [...by.values()]
     .map(g => Object.assign(g, { sectionCount: g.sections.size }))
-    .sort((a, b) => (b.charged == null ? -1 : b.charged) - (a.charged == null ? -1 : a.charged)
+    .sort((a, b) => (b.paid == null ? -1 : b.paid) - (a.paid == null ? -1 : a.paid)
                  || b.signups - a.signups
                  || (a.lastAt < b.lastAt ? 1 : a.lastAt > b.lastAt ? -1 : 0));
 }
@@ -2659,6 +2807,38 @@ function useLiveEnrollments(onAvailable) {
   const [flash, setFlash] = React.useState(() => new Set());
   const seenRef  = React.useRef(null);
   const timerRef = React.useRef(null);
+  const chimeTimersRef = React.useRef([]);
+
+  /* MUTED BY DEFAULT, per Dan, and remembered per browser like the theme and
+     the column toggles — an unmute is a preference about this screen, not a
+     question about this minute. A ticked box is the safe default for a
+     dashboard somebody may open in a meeting. */
+  const [muted, setMuted] = useState(() => {
+    try { return localStorage.getItem(LIVE_MUTE_KEY) !== '0'; } catch (e) { return true; }
+  });
+  const [chime, setChime] = useState(() => {
+    try {
+      const v = localStorage.getItem(LIVE_CHIME_KEY);
+      return LIVE_CHIMES.some(c => c[0] === v) ? v : LIVE_CHIME_DEFAULT;
+    } catch (e) { return LIVE_CHIME_DEFAULT; }
+  });
+  /* READ THROUGH REFS INSIDE `load`. Putting `muted` in load's dependency list
+     would rebuild the callback on every tick of the checkbox, and the poll
+     interval is keyed on that callback — so muting the card would silently
+     restart its 60-second clock. */
+  const mutedRef = React.useRef(muted);
+  const chimeRef = React.useRef(chime);
+  useEffect(() => {
+    mutedRef.current = muted;
+    try { localStorage.setItem(LIVE_MUTE_KEY, muted ? '1' : '0'); } catch (e) {}
+    if (!muted) liveAudioWake();
+    else { chimeTimersRef.current.forEach(clearTimeout); chimeTimersRef.current = []; }
+  }, [muted]);
+  useEffect(() => {
+    chimeRef.current = chime;
+    try { localStorage.setItem(LIVE_CHIME_KEY, chime); } catch (e) {}
+  }, [chime]);
+  useEffect(() => { liveAudioWakeOnFirstGesture(); }, []);
 
   const load = React.useCallback(() => {
     const w = liveWindow(LIVE_DAYS);
@@ -2677,6 +2857,22 @@ function useLiveEnrollments(onAvailable) {
           const fresh = keys.filter(k => !seen.has(k));
           if (fresh.length) {
             setFlash(new Set(fresh));
+            /* IT RINGS OFF THE SAME `fresh` DIFF THE HIGHLIGHT USES, which is
+               what keeps the sound honest: the card cannot ring for a row it
+               does not light up, and — the load-bearing half — the FIRST load
+               produces no diff at all, so opening the dashboard on a week with
+               61 paid registrations plays nothing instead of 61 coins. */
+            if (!mutedRef.current) {
+              const paid = fresh
+                .map(k => j.rows[keys.indexOf(k)])
+                .filter(r => r && liveChimeWorthy(r));
+              const kind = chimeRef.current;
+              paid.slice(0, LIVE_CHIME_MAX).forEach((r, i) => {
+                if (i === 0) { liveChime(kind); return; }
+                const h = setTimeout(() => liveChime(kind), i * LIVE_CHIME_GAP_MS);
+                chimeTimersRef.current.push(h);
+              });
+            }
             // The class comes off after the highlight has faded, so a later
             // re-render cannot replay the animation on a row that is no longer
             // news. Cleared on unmount as well, or a closed tab still fires it.
@@ -2708,12 +2904,15 @@ function useLiveEnrollments(onAvailable) {
     const t = setInterval(load, LIVE_POLL_MS);
     return () => clearInterval(t);
   }, [load, paused]);
-  useEffect(() => () => clearTimeout(timerRef.current), []);
+  useEffect(() => () => {
+    clearTimeout(timerRef.current);
+    chimeTimersRef.current.forEach(clearTimeout);
+  }, []);
 
   /* REFRESHING DOES NOT UNPAUSE. Pausing says "stop moving while I read"; a
      manual refresh says "move once, now". Conflating them would make the
      button a second, hidden un-pause. */
-  return { rows, err, at, paused, setPaused, flash, loading, refresh: load };
+  return { rows, err, at, paused, setPaused, flash, loading, refresh: load, muted, setMuted, chime, setChime };
 }
 
 /* ONE HEADER, BOTH CARDS. It carries the live dot, the Pause box, the manual
@@ -2725,8 +2924,8 @@ function useLiveEnrollments(onAvailable) {
    button cannot land on one card and not the other.
    PAUSE IS ON BOTH because there is one feed behind them: a Pause on the left
    card that silently stopped the right one was the confusing half-measure. */
-function LiveCardHeader({ icon, title, sub, feed }) {
-  const { paused, setPaused, refresh, loading } = feed;
+function LiveCardHeader({ icon, title, sub, feed, sound }) {
+  const { paused, setPaused, refresh, loading, muted, setMuted, chime, setChime } = feed;
   return (
     <div className="widget-header">
       <div>
@@ -2737,6 +2936,28 @@ function LiveCardHeader({ icon, title, sub, feed }) {
         <label className="live-pause" title="Stops the 60-second refresh, so a row cannot move while you are reading it.">
           <input type="checkbox" checked={paused} onChange={e => setPaused(e.target.checked)} /> Pause
         </label>
+        {/* MUTE, TICKED. Unticking it is also the browser gesture that lets the
+            sound play at all, so there is nothing else to press. The picker
+            only exists while the sound can be heard — a menu of sounds beside a
+            ticked Mute box is a control that cannot do anything. */}
+        <label className="live-pause" data-live-mute-box="1"
+               title="Ticked, the cards are silent. Unticked, a short sound plays when a paid enrollment lands.">
+          <input type="checkbox" data-live-mute="1" checked={muted}
+                 onChange={e => setMuted(e.target.checked)} /> Mute
+        </label>
+        {/* THE PICKER IS ON ONE CARD, THE MUTE BOX ON BOTH. Mute is an
+            operating control like Pause — one feed behind two cards, so it has
+            to read the same on either — but WHICH sound is a setting you touch
+            once, and two menus side by side both reading "Coin" look like a
+            duplication bug rather than a choice. */}
+        {muted || !sound ? null : (
+          <select className="live-chime-pick" data-live-chime={chime} value={chime}
+                  aria-label="Which sound"
+                  title="Pick a sound. Choosing one plays it."
+                  onChange={e => { setChime(e.target.value); liveChime(e.target.value); }}>
+            {LIVE_CHIMES.map(c => <option key={c[0]} value={c[0]}>{c[1]}</option>)}
+          </select>
+        )}
         <button type="button" className="live-refresh" data-live-refresh="1"
                 onClick={refresh} disabled={loading} aria-label="Refresh now"
                 title="Refresh both live cards now, without waiting for the next minute.">
@@ -2748,12 +2969,11 @@ function LiveCardHeader({ icon, title, sub, feed }) {
   );
 }
 
-/* LIVE PROGRAM REGISTRATIONS. Renamed 2026-09-04 from the cup-of-coffee name it
-   shipped with — Dan: "much sexier. Sorry coffee." The name is the only thing
-   that changed here; the card is the same one-day lane and list. The old name
-   is deliberately not spelled out anywhere in this file: these comments are
-   served to the browser inside the babel block, so a comment naming it still
-   ships it. */
+/* LIVE ENROLLMENTS. Renamed twice on 2026-09-04 — off the cup-of-coffee name it
+   shipped with, then to this. Neither older name is spelled out anywhere in
+   this file: these comments are served to the browser inside the babel block,
+   so a comment naming one still ships it. The card itself is unchanged — one
+   day's lane, and the list. */
 function LiveRegistrations({ feed, recOrgId }) {
   const { rows, err, at, paused, flash } = feed;
 
@@ -2771,7 +2991,7 @@ function LiveRegistrations({ feed, recOrgId }) {
   if (!rows) {
     return (
       <div className="widget-card widget-md live-card" data-live-loading="1">
-        <LiveCardHeader icon={'\u{1F4DD}'} title="Live Program Registrations" feed={feed}
+        <LiveCardHeader icon={'\u{1F4DD}'} title="Live Enrollments" feed={feed} sound
                         sub={'Loading the last ' + LIVE_DAYS + ' days\u2026'} />
         <div className="skeleton skeleton-chart" />
       </div>
@@ -2786,8 +3006,8 @@ function LiveRegistrations({ feed, recOrgId }) {
 
   return (
     <div className="widget-card widget-md live-card" data-live-regs={String(rows.length)}>
-      <LiveCardHeader icon={'\u{1F4DD}'} title="Live Program Registrations" feed={feed}
-                      sub={'Registrations as they happen \u00b7 last ' + LIVE_DAYS + ' days'} />
+      <LiveCardHeader icon={'\u{1F4DD}'} title="Live Enrollments" feed={feed} sound
+                      sub={'Enrollments as they happen \u00b7 last ' + LIVE_DAYS + ' days'} />
 
       <div className="live-count">
         <span className="live-n" data-live-today={String(todayRows.length)}>{todayRows.length}</span>
@@ -2859,7 +3079,15 @@ function LiveRegistrations({ feed, recOrgId }) {
                                data-live-section={String(r['Section Id'])}>{r['Section']}</a>
                            : r['Section'];
                 })()}</td>
-                <td className="lm">{liveMoney(r['Price']) || '\u2014'}</td>
+                {/* THE PRICE IS COLOURED BY WHAT ITS MONEY IS DOING, matching
+                    the dots above it (Dan: "Full payment the price is in
+                    green, partial or installment plan, price is in orange to
+                    match the legend"). Unpaid keeps the default ink rather
+                    than a third colour: the grey dot already says it, and a
+                    grey PRICE reads as disabled. */}
+                <td className={'lm live-' + liveMarkState(r)} data-live-price={liveMarkState(r)}>
+                  {liveMoney(r['Price']) || '\u2014'}
+                </td>
               </tr>
             );
           })}
@@ -2887,7 +3115,7 @@ function ProgramsLive({ feed, recOrgId }) {
   if (!rows) {
     return (
       <div className="widget-card widget-md live-card" data-live-progloading="1">
-        <LiveCardHeader icon={'\u{1F3AF}'} title="Programs Live" feed={feed} sub={'Loading today\u2026'} />
+        <LiveCardHeader icon={'\u{1F3AF}'} title="Programs Live" feed={feed} sub={'Loading the last ' + LIVE_DAYS + ' days\u2026'} />
         <div className="skeleton skeleton-chart" />
       </div>
     );
@@ -2913,7 +3141,8 @@ function ProgramsLive({ feed, recOrgId }) {
     if (Number.isFinite(pr)) g.charged += pr;
     freshBy.set(name, g);
   });
-  const totalCharged = progs.reduce((n, g) => n + (g.charged || 0), 0);
+  const totalPaid    = progs.reduce((n, g) => n + (g.paid || 0), 0);
+  const todaySignups = progs.reduce((n, g) => n + (g.todaySignups || 0), 0);
   const totalSignups = progs.reduce((n, g) => n + g.signups, 0);
 
   /* NOTHING TODAY IS A REAL ANSWER, and it is not the same as a broken feed.
@@ -2923,9 +3152,9 @@ function ProgramsLive({ feed, recOrgId }) {
     return (
       <div className="widget-card widget-md live-card" data-live-progs="0">
         <LiveCardHeader icon={'\u{1F3AF}'} title="Programs Live" feed={feed}
-                        sub={'Top programs by revenue \u00b7 today'} />
+                        sub={'Top programs by money received \u00b7 last ' + LIVE_DAYS + ' days'} />
         <div style={{padding:'18px 4px',fontSize:12,color:'var(--text-muted)'}}>
-          No registrations yet today.
+          No enrollments in the last {LIVE_DAYS} days.
         </div>
       </div>
     );
@@ -2934,7 +3163,7 @@ function ProgramsLive({ feed, recOrgId }) {
   return (
     <div className="widget-card widget-md live-card" data-live-progs={String(progs.length)}>
       <LiveCardHeader icon={'\u{1F3AF}'} title="Programs Live" feed={feed}
-                      sub={'Top programs by revenue \u00b7 today'} />
+                      sub={'Top programs by money received \u00b7 last ' + LIVE_DAYS + ' days'} />
 
       {/* A SPACE IN THE TEXT AS WELL AS A GAP IN THE LAYOUT. The flex gap fixes
           what it looks like; `textContent` is still "15across" without the
@@ -2943,7 +3172,8 @@ function ProgramsLive({ feed, recOrgId }) {
       <div className="live-big" data-live-progtotal={String(totalSignups)}>
         <strong>{totalSignups}</strong>{' '}
         <span>across {progs.length} program{progs.length > 1 ? 's' : ''}
-          {totalCharged > 0 ? ' \u00b7 ' + liveMoney(totalCharged) + ' charged' : ''}</span>
+          {totalPaid > 0 ? ' \u00b7 ' + liveMoney(totalPaid) + ' received' : ''}
+          {todaySignups > 0 ? ' \u00b7 ' + todaySignups + ' today' : ''}</span>
       </div>
 
       <table className="live-table">
@@ -2952,7 +3182,7 @@ function ProgramsLive({ feed, recOrgId }) {
             <th className="lt">Last</th>
             <th className="ls">Program</th>
             <th className="lp">Signups</th>
-            <th className="lm">Charged</th>
+            <th className="lm">Program revenue</th>
           </tr>
         </thead>
         <tbody>
@@ -2984,13 +3214,29 @@ function ProgramsLive({ feed, recOrgId }) {
                 })()}
               </td>
               <td className="lp">{g.signups}</td>
-              {/* CHARGED leads because it is the money the registration
-                  committed; PAID is shown underneath only when it differs, so a
-                  payment plan reads as "charged now, arriving later" rather
-                  than as a discrepancy. A program whose rows carried no price
-                  at all gets a dash, never $0. */}
-              <td className="lm" data-live-prog-charged={g.charged == null ? '' : String(g.charged)}>
-                {g.charged == null ? '\u2014' : liveMoney(g.charged)}
+              {/* PROGRAM REVENUE IS MONEY RECEIVED (Dan, 2026-09-04: "Change
+                  'charged' on the programs live chart to 'Program Revenue'",
+                  and "it needs to match ... Programs->Revenue"). That tab
+                  counts payments RECEIVED, so this column counts the same
+                  thing — `Paid`, what has actually succeeded — and the amount
+                  charged is shown underneath only when the two differ, which
+                  is a payment plan.
+
+                  IT STILL WILL NOT EQUAL THAT TAB'S TOTAL, and no code here
+                  can make it: card 17295 windows on SESSION dates, this feed
+                  windows on the SIGNUP date. Measured at Watertown on
+                  2026-09-04 — of 13 enrollments taking $1,082, NONE were for a
+                  section running that day and only 4 ($270) for a section
+                  running in September at all; the other 9 are fall and winter
+                  programming, which lands in those months' windows over there.
+                  Same money, filed by when the programme RUNS rather than when
+                  it SOLD. The sub-line says which basis this is, and the two
+                  agree on the INCREMENT — which is the thing you get from
+                  watching it live.
+
+                  No readable money on any row is a dash, never $0. */}
+              <td className="lm" data-live-prog-charged={g.paid == null ? '' : String(g.paid)}>
+                {g.paid == null ? '\u2014' : liveMoney(g.paid)}
                 {/* THE INCREMENT, only while it is news. A total that grew by
                     $215 is a different thing to read than a total that is
                     $215, so the delta is signed and sits beside the figure
@@ -3002,7 +3248,10 @@ function ProgramsLive({ feed, recOrgId }) {
                     : null;
                 })()}
                 {g.charged != null && g.paid != null && g.paid !== g.charged
-                  ? <div style={{fontSize:9,color:'var(--text-muted)',fontWeight:400}}>{liveMoney(g.paid)} paid</div>
+                  ? <div style={{fontSize:9,color:'#f59e0b',fontWeight:400}}
+                         title="Charged in full at enrollment; the rest arrives on the payment plan.">
+                      of {liveMoney(g.charged)} charged
+                    </div>
                   : null}
               </td>
             </tr>

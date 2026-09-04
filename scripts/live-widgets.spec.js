@@ -65,6 +65,12 @@ const sql = fs.readFileSync(CARD, 'utf8');
 // the trap that left nine specs in the sibling repo blind over a region.
 const strip = t => t.replace(/^\s*\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
 const code = strip(src);
+// The sounds the page offers, read out of the page rather than transcribed —
+// a spec carrying its own copy of the list agrees with itself and nothing else.
+const LIVE_CHIME_NAMES = (() => {
+  const m = code.match(/const LIVE_CHIMES = \[([\s\S]*?)\];/);
+  return m ? (m[1].match(/'[a-z]+',/g) || []).map(x => x.slice(1, -2)) : [];
+})();
 
 let pass = 0;
 const failures = [];
@@ -91,8 +97,9 @@ try {
     liftFn(src, 'liveWindow') + '\n' + liftFn(src, 'liveDay') + '\n' +
     liftFn(src, 'liveClock') + '\n' + liftFn(src, 'liveMoney') + '\n' +
     liftFn(src, 'liveKey') + '\n' + liftFn(src, 'liveByProgram') + '\n' +
-    liftFn(src, 'liveMarkState') + '\n' +
-    'return { liveWindow, liveDay, liveClock, liveMoney, liveKey, liveByProgram, liveMarkState };')();
+    liftFn(src, 'liveMarkState') + '\n' + liftFn(src, 'liveChimeWorthy') + '\n' +
+    'return { liveWindow, liveDay, liveClock, liveMoney, liveKey, liveByProgram, liveMarkState,' +
+    ' liveChimeWorthy };')();
   pass++;
 } catch (e) {
   // A guard that DIES instead of failing has not told anyone what broke.
@@ -379,13 +386,26 @@ if (H.liveWindow) {
      registration backdated by minutes). */
   ok(/const fresh = keys\.filter\(k => !seen\.has\(k\)\);/.test(code),
      'an arrival is a row the previous poll did not have');
+  /* AND THE PREVIOUS SET IS READ WITH NO FALLBACK. `seenRef.current ||
+     new Set()` leaves the `if (seen)` branch standing and passing while making
+     every row on the first load an "arrival" — which since the chime landed
+     means three coins on every open, not just a card that lights up whole.
+     A mutation to exactly that survived this spec until this assertion. */
+  ok(/const seen = seenRef\.current;/.test(code),
+     'the diff reads the previous poll\'s set with no empty-set fallback');
   ok(/if \(seen\) \{/.test(code),
      'THE FIRST LOAD HIGHLIGHTS NOTHING — every row is new to an empty set, and a card that lights up entirely on arrival has a highlight that means nothing');
   ok(/setTimeout\(\(\) => setFlash\(new Set\(\)\), LIVE_FLASH_MS\)/.test(code),
      'and the highlight comes off on a timer, so a later re-render cannot replay it on a row that is no longer news');
   ok(/const LIVE_FLASH_MS = 10000;/.test(code), '...after ten seconds');
-  ok(/clearTimeout\(timerRef\.current\), \[\]\)/.test(code),
-     'the timer is cleared on unmount');
+  // Tests the CLEANUP, not its one-line shape: this pinned
+  // `clearTimeout(timerRef.current), [])` and broke the day a second timer
+  // joined the same unmount effect — nothing about the flash timer had changed.
+  {
+    const un = code.slice(code.indexOf('useEffect(() => () =>'));
+    ok(/clearTimeout\(timerRef\.current\)/.test(un.slice(0, un.indexOf('}, [])') + 6)),
+       'the timer is cleared on unmount');
+  }
 
   ok(/if \(wasPaused\) load\(\);/.test(code),
      'unpausing refreshes immediately, rather than leaving the reader staring for up to a minute at the list they paused');
@@ -480,16 +500,23 @@ if (H.liveByProgram) {
      'and a program with NO readable price sorts LAST — null is "we cannot tell", not "nothing"');
 
   const swim = out.find(g => g.program === 'Swim Camp');
-  eq(swim.signups, 3, "a programme's signups count only TODAY's rows");
+  eq(swim.signups, 3, "a program's signups count every row the feed carries");
   eq(swim.charged, 360, 'charged is the sum of what was committed');
   eq(swim.paid, 270, '...and paid is only what has actually arrived');
   ok(swim.charged !== swim.paid,
      'charged and paid DIFFER on a payment plan, which is why one "revenue" number would be a lie');
   eq(swim.sectionCount, 2, 'sections are counted distinctly, so two signups on one section are one section');
 
+  /* EVERY DAY THE FEED CARRIES, since 2026-09-04. Dan: "Can we get more
+     programs to show up on the right side chart? Seems a little thin over
+     there." It was scoped to today, so a quiet morning was a three-row card
+     while the feed already held a week for the list beside it. Tap Dance's
+     yesterday row is the one that proves the widening — it used to be dropped. */
   const tap = out.find(g => g.program === 'Tap Dance');
-  eq(tap.signups, 1, "yesterday's registration is excluded from the count as well as the ordering");
-  eq(tap.charged, 60, "...and from the money");
+  eq(tap.signups, 2, "yesterday's registration COUNTS now — the card covers the feed's window");
+  eq(tap.charged, 120, '...and its money with it');
+  eq(tap.todaySignups, 1,
+     '...while `todaySignups` still separates what arrived today, which is what the headline reads');
 
   const free = out.find(g => g.program === 'Free Play');
   eq(free.charged, null, 'a programme whose rows carried NO price is null, never 0 — free and unreadable are different facts');
@@ -513,21 +540,39 @@ if (H.liveByProgram) {
      'ONE feed for both widgets — two polls would double the query and let the cards disagree about the same minute');
   ok(!/function ProgramsLive[\s\S]{0,4000}?fetch\(/.test(code),
      '...and the programmes card does not fetch for itself');
-  ok(/data-live-prog-charged/.test(code) && /g\.charged == null \? '\\u2014'/.test(code),
-     'no plan money renders a dash, never $0');
+  /* PROGRAM REVENUE IS MONEY RECEIVED (Dan: "Change 'charged' on the programs
+     live chart to 'Program Revenue'" / "It needs to match" the reporting
+     project's Revenue tab, which counts payments received). The cell reads
+     `paid`; `charged` survives as the sub-line on a payment plan. */
+  ok(/data-live-prog-charged/.test(code) && /g\.paid == null \? '\\u2014'/.test(code),
+     'no readable money renders a dash, never $0');
+  ok(/<th className="lm">Program revenue<\/th>/.test(code),
+     'the column is called Program revenue');
+  ok(/of \{liveMoney\(g\.charged\)\} charged/.test(code),
+     '...with what was CHARGED underneath it, and only when the two differ — that is a payment plan, not a discrepancy');
+  ok(/\(b\.paid == null \? -1 : b\.paid\) - \(a\.paid == null \? -1 : a\.paid\)/.test(code),
+     'and the table ranks on the figure it shows, or the leaderboard disagrees with its own column');
 }
 
 /* ── 13. Dan's 2026-09-04 polish pass ────────────────────────────────────── */
 {
   // The rename. "Coffee Counter" must not survive anywhere a person can read.
-  ok(/Live Program Registrations/.test(code), 'the card is called Live Program Registrations');
+  ok(/Live Enrollments/.test(code), 'the card is called Live Enrollments');
+  ok(!/Live Program Registrations/.test(src),
+     '...and no older name survives anywhere a person can read — these comments ship to the browser');
   ok(!/Coffee Counter/.test(src), '...and nothing still says Coffee Counter, comments included');
 
   /* ONE HEADER, BOTH CARDS. The bolt lived in two copies and Dan reported the
      second as dead; a shared header is what stops the pair drifting, and it is
      also what puts the refresh button on both at once. */
-  ok(/function LiveCardHeader\(\{ icon, title, sub, feed \}\)/.test(code),
-     'the live cards share ONE header component');
+  // Membership in the parameter list, not the literal list — this pinned
+  // `{ icon, title, sub, feed }` and broke when a fourth prop was added.
+  {
+    const sig = (code.match(/function LiveCardHeader\(\{([^}]*)\}\)/) || [])[1] || '';
+    ok((code.match(/function LiveCardHeader\(/g) || []).length === 1,
+       'the live cards share ONE header component');
+    ok(/\bfeed\b/.test(sig), '...taking the one shared feed rather than its own');
+  }
   ok((code.match(/<LiveCardHeader/g) || []).length >= 4,
      '...used by every state of both cards — a loading branch with its own header is how one bolt ends up different');
   ok(!/widget-icon live-bolt/.test(code.slice(code.indexOf('function LiveRegistrations'))),
@@ -592,6 +637,81 @@ if (H.liveByProgram) {
      'the live tint is a token defined in both the dark and light blocks');
   ok(/background: var\(--live-bg\); border-color: var\(--live-border\)/.test(code),
      '...and the card reads it rather than a literal');
+}
+
+
+/* ── 14. THE CHA-CHING ────────────────────────────────────────────────────────
+   Dan: "every time a person enrolls and pays, play a 'cha-ching' sound. mute by
+   default, but add a 'mute' checkbox on the card". Every assertion here is
+   about a CONDITION, not about a checkbox existing: a mute box renders
+   identically on a chime wired to fire on every arrival, on first load, or on
+   an unpaid hold. */
+{
+  /* "ENROLLS AND PAYS". An unpaid registration is silent — a cha-ching for a
+     hold with no money behind it announces revenue that has not arrived. And
+     it reads the SAME predicate the price colour and the revenue figure use,
+     so the three cannot disagree about one row. */
+  if (H.liveChimeWorthy) {
+    ok(H.liveChimeWorthy({ Price: 40, Paid: 40 }) === true,  'a fully paid enrollment rings');
+    ok(H.liveChimeWorthy({ Price: 40, Paid: 10 }) === true,  'a partial payment rings — money did arrive');
+    ok(H.liveChimeWorthy({ Price: 40, Paid: 0 })  === false, 'an UNPAID enrollment is silent');
+    ok(H.liveChimeWorthy({ Price: 40 })           === false, '...and so is one with no payment field at all');
+    ok(/liveMarkState\(r\)\s*!==\s*'unpaid'/.test(code),
+       "...via liveMarkState, not its own arithmetic — one predicate, three readers");
+  }
+
+  /* THE FIRST LOAD IS SILENT, and this is the load-bearing one. The chime
+     rides the `fresh` diff, which is empty on the first poll by construction —
+     so opening the dashboard on a week holding 61 paid registrations plays
+     nothing rather than 61 coins. */
+  const loadFn = code.slice(code.indexOf('const fresh = keys.filter'), code.indexOf('seenRef.current = new Set(keys)'));
+  ok(/if \(fresh\.length\)/.test(loadFn) && /liveChime\(/.test(loadFn),
+     'the chime fires inside the fresh-arrivals branch, so the first load cannot ring');
+  ok(!/liveChime\(/.test(code.slice(0, code.indexOf('const fresh = keys.filter'))
+       .slice(code.slice(0, code.indexOf('const fresh = keys.filter')).indexOf('function useLiveEnrollments'))),
+     '...and nowhere else inside the hook ahead of that diff');
+  ok(/mutedRef\.current/.test(loadFn),
+     'it reads mute through a REF — a dependency would rebuild `load` and restart the poll clock');
+  ok(/\.filter\(r => r && liveChimeWorthy\(r\)\)/.test(loadFn),
+     'the arrivals are filtered to the paid ones before any of them rings');
+
+  /* A BURST IS CAPPED. Twelve arrivals in one poll is one event to somebody
+     listening; twelve overlapping coins is a reason to mute the card for good. */
+  ok(/LIVE_CHIME_MAX\s*=\s*3/.test(code), 'a batch rings at most three times');
+  ok(/\.slice\(0, LIVE_CHIME_MAX\)/.test(loadFn), '...and the cap is applied to the batch, not hoped for');
+  ok(/i \* LIVE_CHIME_GAP_MS/.test(loadFn), '...staggered, so two arrivals read as two');
+
+  /* MUTED BY DEFAULT, and the stored form has to make the DEFAULT the safe one:
+     `!== '0'` means an absent key, an unreadable store and a private window all
+     land on muted. Reading `=== '1'` would be equivalent today and would flip
+     the default the first time the value written changed. */
+  ok(/localStorage\.getItem\(LIVE_MUTE_KEY\) !== '0'/.test(code),
+     'mute defaults ON, including when localStorage cannot be read');
+  ok(/checked=\{muted\}/.test(code), 'the box reflects the state rather than being decorative');
+
+  /* THE UNMUTE IS THE GESTURE. Browsers keep an AudioContext suspended until
+     the user has interacted, so without a resume the first arrival after
+     unticking is silent and the checkbox reads as broken. */
+  ok(/if \(!muted\) liveAudioWake\(\)/.test(code), 'unticking Mute resumes the audio context');
+  ok(/liveAudioWakeOnFirstGesture\(\)/.test(code),
+     '...and a persisted unmute is woken by the first gesture after a reload, which carries none');
+  ok(/\{ once: true/.test(code), '...once, not a listener left on the window for the session');
+
+  /* NO AUDIO FILE. A sampled coin would be a redistributed recording in a
+     public repo and one more asset that can 404 on a dashboard left open all
+     day. The interval is what makes it recognisable, so both notes are pinned:
+     B5 then E6. */
+  ok(!/\.mp3|\.wav|\.ogg|new Audio\(/.test(code), 'no audio asset and no <audio> — the sound is synthesised');
+  ok(/987\.77/.test(code) && /1318\.51/.test(code), 'the coin is B5 then E6');
+  ok(LIVE_CHIME_NAMES.length >= 3, 'there are several sounds to choose between');
+  ok(/LIVE_CHIME_DEFAULT = 'coin'/.test(code), "...and the default is the one Dan named");
+
+  /* THE PICKER CANNOT OUTLIVE THE SOUND. A menu of sounds beside a ticked Mute
+     box is a control that does nothing. */
+  ok(/\{muted \|\| !sound \? null : \(/.test(code),
+     'the sound menu is hidden while muted');
+  ok((code.match(/data-live-mute="1"/g) || []).length === 1,
+     'one mute box in one shared header — two copies is how Pause and the bolt drifted');
 }
 
 /* THE REPORT GOES LAST, and this was a real bug for one revision: the block
