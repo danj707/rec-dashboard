@@ -278,6 +278,9 @@ body { font-family: var(--font-body); background: var(--bg-page); color: var(--t
    revenue for that program." The delta comes from the same arrival diff the
    row highlight uses, so the two cannot disagree about what just happened. */
 .live-bump { display: inline-block; margin-left: 5px; font-size: 9px; font-weight: 700; color: #16a34a; }
+/* +N: this row covers more sections than the one its link opens. */
+.live-more { display: inline-block; margin-left: 4px; font-size: 9px; font-weight: 700;
+             color: var(--text-muted); vertical-align: 1px; }
 @media (prefers-reduced-motion: no-preference) {
   .live-table tr.live-new .lm { animation: liveMoneyPop 10s ease-out both; }
   @keyframes liveMoneyPop {
@@ -2534,14 +2537,25 @@ function liveByProgram(rows, today) {
     if (liveDay(r['Signed Up At']) !== today) return;
     const name = String(r['Program'] == null ? '' : r['Program']).trim() || '(no program)';
     let g = by.get(name);
-    if (!g) g = { program: name, signups: 0, charged: null, paid: null, lastAt: '', sections: new Set() };
+    if (!g) g = { program: name, signups: 0, charged: null, paid: null, lastAt: '',
+                  sections: new Set(), sectionIds: new Set(), lastSectionId: '', lastSection: '' };
     g.signups += 1;
     const pr = r['Price'], pd = r['Paid'];
     if (pr != null && Number.isFinite(Number(pr))) g.charged = (g.charged || 0) + Number(pr);
     if (pd != null && Number.isFinite(Number(pd))) g.paid    = (g.paid    || 0) + Number(pd);
     const ts = String(r['Signed Up At'] || '');
-    if (ts > g.lastAt) g.lastAt = ts;
+    /* THE LATEST REGISTRATION'S SECTION, so the program row can link somewhere
+       real. Dan: "I should also be able to click the section name on the right
+       side and open a new tab directly to the rec admin section page." A
+       program row is not a section — it can span several — so what it opens is
+       the section the most recent signup went into, and the cell says so. */
+    if (ts > g.lastAt) {
+      g.lastAt = ts;
+      g.lastSectionId = String(r['Section Id'] || '');
+      g.lastSection   = String(r['Section'] || '');
+    }
     if (r['Section']) g.sections.add(String(r['Section']));
+    if (r['Section Id']) g.sectionIds.add(String(r['Section Id']));
     by.set(name, g);
   });
   return [...by.values()]
@@ -2734,10 +2748,12 @@ function LiveCardHeader({ icon, title, sub, feed }) {
   );
 }
 
-/* LIVE PROGRAM REGISTRATIONS (was the Coffee Counter — Dan, 2026-09-04:
-   "change the coffee counter name to 'Live Program Registrations', much
-   sexier. Sorry coffee."). The name is the only thing that changed here; the
-   card is the same one-day lane and list. */
+/* LIVE PROGRAM REGISTRATIONS. Renamed 2026-09-04 from the cup-of-coffee name it
+   shipped with — Dan: "much sexier. Sorry coffee." The name is the only thing
+   that changed here; the card is the same one-day lane and list. The old name
+   is deliberately not spelled out anywhere in this file: these comments are
+   served to the browser inside the babel block, so a comment naming it still
+   ships it. */
 function LiveRegistrations({ feed, recOrgId }) {
   const { rows, err, at, paused, flash } = feed;
 
@@ -2944,8 +2960,29 @@ function ProgramsLive({ feed, recOrgId }) {
             <tr key={g.program} className={freshBy.has(g.program) ? 'live-new' : ''}
                 data-live-prog={g.program} data-live-prog-signups={String(g.signups)}>
               <td className="lt">{liveClock(g.lastAt)}</td>
+              {/* THE NAME OPENS REC. One section behind the program and the link
+                  is unambiguous; SEVERAL and it opens the most recent one, with
+                  a +N marking that the row covers more than what it opens —
+                  the same "+N is a primary, not the whole truth" shape the
+                  reporting project uses for instructors. Plain text when the
+                  feed carried no section id, because a link to nowhere is
+                  worse than no link. */}
               <td className="ls" title={g.sectionCount + ' section' + (g.sectionCount === 1 ? '' : 's') +
-                                        ': ' + [...g.sections].join(', ')}>{g.program}</td>
+                                        ': ' + [...g.sections].join(', ') +
+                                        (g.sectionCount > 1 && g.lastSection
+                                          ? ' \u00b7 opens the most recent (' + g.lastSection + ')' : '')}>
+                {(() => {
+                  const u = liveSectionUrl(recOrgId, g.lastSectionId);
+                  const extra = g.sectionCount > 1
+                    ? <span className="live-more">{'+' + (g.sectionCount - 1)}</span> : null;
+                  return u
+                    ? <React.Fragment>
+                        <a className="live-link" href={u} target="_blank" rel="noopener noreferrer"
+                           data-live-prog-section={g.lastSectionId}>{g.program}</a>{extra}
+                      </React.Fragment>
+                    : <React.Fragment>{g.program}{extra}</React.Fragment>;
+                })()}
+              </td>
               <td className="lp">{g.signups}</td>
               {/* CHARGED leads because it is the money the registration
                   committed; PAID is shown underneath only when it differs, so a

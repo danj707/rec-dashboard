@@ -149,7 +149,12 @@ const ENROLLMENTS = [
          proven without it. */
   ...[
     ['Summer Camp',   900, 900, '07:05:00'],
-    ['Swim Lessons',  480, 240, '07:10:00'],
+    /* THE ONE FILLER WITH A SECTION ID, and it has to be one that RANKS: the
+       card shows the top ten by revenue, so Oxygen Dance ($25, the other row
+       carrying an id) sorts thirteenth and never renders. That is what the
+       first draft of the link case keyed on, and it failed for that reason
+       rather than because the link was broken. */
+    ['Swim Lessons',  480, 240, '07:10:00', 'sec-swim'],
     ['Gymnastics',    300, 300, '07:15:00'],
     ['Soccer Clinic', 260,   0, '07:20:00'],
     ['Ceramics',      220, 220, '07:25:00'],
@@ -158,10 +163,10 @@ const ENROLLMENTS = [
     ['Track & Field', 100, 100, '07:40:00'],
     ['Cooking 101',    80,  80, '07:45:00'],
     ['Story Time',     70,  70, '07:50:00'],
-  ].map(([program, price, paid, clock]) => ({
+  ].map(([program, price, paid, clock, secId]) => ({
     'Signed Up At': liveIso(0, clock), 'Customer Name': program + ' Buyer',
     'Participant': program + ' Kid', 'Section': program + ' AM',
-    'Program': program, 'Price': price, 'Paid': paid,
+    'Section Id': secId, 'Program': program, 'Price': price, 'Paid': paid,
   })),
 ];
 
@@ -435,6 +440,20 @@ const CASES = [
     needs: 'body[data-lp-rows="10"]', absent: 'body[data-lp-rows="8"]' },
   { name: 'live · ...and the footer names the cap',
     needs: 'body[data-lp-foot*="showing top 10 of"]' },
+  /* THE PROGRAM NAME OPENS REC (Dan: "I should also be able to click the
+     section name on the right side and open a new tab directly to the rec
+     admin section page"). Keyed on the HREF, not on an anchor existing: a link
+     built from the wrong id renders identically and 404s, which is the mistake
+     already recorded for rec_id vs users.id. Swim Lessons is the row that
+     carries an id AND ranks inside the top ten. */
+  { name: 'live · the program name links into Rec',
+    needs: '[data-live-progs] a.live-link[data-live-prog-section="sec-swim"]'
+         + '[href="https://www.rec.us/admin/o/rec-org-uuid/programming/sections/sec-swim"][target="_blank"]' },
+  /* AND A PROGRAM WITH NO SECTION ID IS PLAIN TEXT. Most of this fixture has
+     none, so the row still renders — it just does not pretend to link. */
+  { name: 'live · ...and a program with no section id is not a dead link',
+    needs: '[data-live-progs] [data-live-prog="Summer Camp"]',
+    absent: '[data-live-progs] a.live-link[href$="/sections/undefined"], [data-live-progs] a.live-link[href$="/sections/"]' },
   { name: 'live · two widgets in the section',
     needs: '[data-live-section] [data-live-regs] ~ [data-live-progs]' },
 

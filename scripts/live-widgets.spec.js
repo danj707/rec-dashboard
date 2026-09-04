@@ -517,12 +517,6 @@ if (H.liveByProgram) {
      'no plan money renders a dash, never $0');
 }
 
-if (failures.length) {
-  console.error('\n✗ live-widgets.spec.js — ' + failures.length + ' failure(s):\n');
-  failures.forEach(f => console.error('  ✗ ' + f));
-  console.error('\n' + pass + ' passed, ' + failures.length + ' failed.\n');
-  process.exit(1);
-}
 /* ── 13. Dan's 2026-09-04 polish pass ────────────────────────────────────── */
 {
   // The rename. "Coffee Counter" must not survive anywhere a person can read.
@@ -567,12 +561,50 @@ if (failures.length) {
      '...and the row lights up from the same map rather than a second scan');
   ok(/data-live-bump=/.test(code), '...with the increment on screen, so a render case can read it');
 
+  /* THE PROGRAM NAME OPENS REC. Dan: "I should also be able to click the
+     section name on the right side and open a new tab directly to the rec
+     admin section page." A program row is not a section, so what it opens is
+     the section its most recent registration went into. */
+  ok(/data-live-prog-section=\{g\.lastSectionId\}/.test(code),
+     'the program name links to a section');
+  ok(/liveSectionUrl\(recOrgId, g\.lastSectionId\)/.test(code),
+     '...built with the same helper the registrations list uses, so one id shape governs both');
+  if (H.liveByProgram) {
+    const D = '2026-09-04';   // fixed, like the block above: a literal day, never the clock
+    const R2 = (day, clock, program, section, secId) => ({
+      'Signed Up At': day + 'T' + clock, 'Program': program, 'Section': section,
+      'Section Id': secId, 'Price': 10, 'Paid': 10, 'Customer Name': 'C',
+    });
+    const multi = H.liveByProgram([
+      R2(D, '09:00:00', 'Camp', 'Camp AM', 'sec-am'),
+      R2(D, '11:00:00', 'Camp', 'Camp PM', 'sec-pm'),
+    ], D)[0];
+    eq(multi.lastSectionId, 'sec-pm',
+       'a program spanning two sections opens the MOST RECENT one, not whichever arrived first');
+    eq(multi.sectionCount, 2, '...and still counts both, so the +N can say the link is a primary');
+    const none = H.liveByProgram([R2(D, '09:00:00', 'Camp', 'Camp AM', null)], D)[0];
+    eq(none.lastSectionId, '', 'no id means no link rather than a link to nowhere');
+  }
+
   /* THE WARM TINT, in BOTH themes. A colour defined once is a card that reads
      correctly in one theme and disappears in the other. */
   ok((code.match(/--live-bg:/g) || []).length === 2,
      'the live tint is a token defined in both the dark and light blocks');
   ok(/background: var\(--live-bg\); border-color: var\(--live-border\)/.test(code),
      '...and the card reads it rather than a literal');
+}
+
+/* THE REPORT GOES LAST, and this was a real bug for one revision: the block
+   below used to sit ABOVE section 13, so every assertion added after it ran,
+   incremented `pass`, and could never be REPORTED — a failing one exited
+   nowhere and the spec printed a clean 146. One of them was in fact failing.
+   Same family as the guards in the sibling repo that died instead of failing:
+   a check whose result cannot reach the report is not a check. */
+if (failures.length) {
+  console.error('\n✗ live-widgets.spec.js — ' + failures.length + ' failure(s):\n');
+  failures.forEach(f => console.error('  ✗ ' + f));
+  console.error('\n' + pass + ' passed, ' + failures.length + ' failed.\n');
+  process.exit(1);
 }
 
 console.log('✓ live-widgets.spec.js — ' + pass + ' assertions passed.');

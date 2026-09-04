@@ -112,6 +112,24 @@ the flex gap had already fixed and would have passed on a page with no gap at
 all. It measures the two bounding rects now AND checks the text, because the
 symptom is one and the faults are two.
 
+### The program name opens Rec
+
+*"I should also be able to click the section name on the right side and open a
+new tab directly to the rec admin section page."*
+
+A program row is **not** a section — it can span several — so what it opens is
+the section the **most recent** registration went into, and where the row covers
+more than that, a muted `+N` says so (the same "+N is a primary, not the whole
+truth" shape the reporting project uses for instructors). No section id on the
+row means plain text, not a link to nowhere. It goes through the same
+`liveSectionUrl` the registrations list uses, so one id shape governs both.
+
+**The render case for it failed first time, and not because the link was
+broken:** it keyed on Oxygen Dance, whose $25 sorts it thirteenth of fourteen —
+below the ten-row cap, so it never rendered. The fixture's Swim Lessons row
+carries the id now, because it ranks second. *A case has to key on something the
+page actually draws.*
+
 ### The warm tint, and a cascade collision
 
 `--live-bg` / `--live-border` are tokens defined in **both** theme blocks — a
@@ -145,6 +163,15 @@ Mutation-tested eight ways, all failing by name: the tint reverted to a bare
 `.live-card` (the cascade bug), the text space removed, the flex gap removed,
 part-paid folded into paid, the cap back to eight, the sort back to recency, the
 refresh button removed, and the programs bolt's animation killed.
+
+**AND THE SPEC'S FAILURE REPORT WAS IN THE WRONG PLACE**, which is the worst of
+these to leave behind. `if (failures.length) { … process.exit(1) }` sat ABOVE
+the section I added, so all seventeen new assertions ran, incremented `pass`,
+and could never be REPORTED — one of them was in fact failing (a comment still
+naming the old card, which SHIPS: these comments are served to the browser
+inside the babel block) and the spec printed a clean 146. The report goes last
+now. Same family as the guards in the sibling repo that died instead of failing:
+a check whose result cannot reach the report is not a check.
 
 ## Live Widgets — a new section, and the Coffee Counter (2026-09-03)
 
