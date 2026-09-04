@@ -1,5 +1,34 @@
 # Project notes for Claude
 
+## The Programs Live money column was 62px (2026-09-04)
+
+Dan: *"look at the alignment on the headers and revenue section"*, with the
+header **PROGRAM REVENUE** running off the card's right edge and the sub-line
+reading *"of $1,879 cha…"*.
+
+**`.live-table` is shared by both live cards, and `.lm` was 62px** — the right
+width for the registrations card, whose money cell holds a bare price. The
+programs card reuses the same table for a fifteen-character header and an
+`of $X charged` sub-line. With `table-layout: fixed` the declared width is
+honoured rather than negotiated, so the `nowrap` header simply overflowed the
+cell and then the card, and the sub-line was clipped.
+
+`.live-table-progs` widens that one column to 116px. **Scoped to the programs
+table rather than to `.live-table`**, because the registrations column really is
+that narrow and widening both would steal width from the name column for no
+reason.
+
+The sub-line also moved off an inline style onto `.lm-sub` — an inline style
+only wins for the properties it names, and `white-space` was not one of them.
+
+### The guard has to be GEOMETRY
+
+*"A header rendered"* passes on the clipped version, and `textContent` is blind
+to a box the text is spilling out of — the same lesson as the `9across` headline
+two changes ago. The cases compare `scrollWidth` against `clientWidth` for both
+the header and the sub-line, and the header's right edge against the card's.
+Mutation-tested by putting 62px back: both fail by name.
+
 ## The cha-ching (2026-09-04)
 
 Dan: *"every time a person enrolls and pays, play a 'cha-ching' sound. mute by

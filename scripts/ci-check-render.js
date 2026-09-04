@@ -689,6 +689,45 @@ const CASES = [
       // Re-tick it, or every case after this one runs on an unmuted dashboard.
       await page.click('input[data-live-mute="1"]');
     } },
+  /* THE MONEY COLUMN HOLDS ITS OWN HEADER. Dan: "look at the alignment on the
+     headers and revenue section" — `.lm` was 62px, sized for the registrations
+     card's bare price, and `table-layout: fixed` honours that, so the programs
+     card's 15-character nowrap header overflowed the card's right edge and the
+     "of $X charged" sub-line was clipped.
+
+     GEOMETRY, not presence: "a header rendered" passes on the clipped version,
+     and textContent is blind to a box the text is spilling out of. This
+     compares the header's own text width against the cell it lives in, and the
+     cell's right edge against the card's. */
+  { name: 'live · the revenue header fits its column',
+    needs: 'body[data-lm-fit="1"][data-lm-inside="1"]',
+    act: async page => {
+      await page.waitForSelector('[data-live-progs] .live-table-progs th.lm', { timeout: 20000 });
+      await page.evaluate(() => {
+        const th = document.querySelector('[data-live-progs] .live-table-progs th.lm');
+        const card = th.closest('.widget-card');
+        // scrollWidth > clientWidth means the text does not fit the cell.
+        const fits = th.scrollWidth <= th.clientWidth + 1;
+        const r = th.getBoundingClientRect(), c = card.getBoundingClientRect();
+        document.body.setAttribute('data-lm-fit', fits ? '1' : '0');
+        document.body.setAttribute('data-lm-inside', r.right <= c.right + 1 ? '1' : '0');
+        document.body.setAttribute('data-lm-debug',
+          'th ' + Math.round(th.scrollWidth) + '/' + Math.round(th.clientWidth) +
+          ' right ' + Math.round(r.right) + ' card ' + Math.round(c.right));
+      });
+    } },
+  /* ...AND SO DOES THE "of $X charged" SUB-LINE, which is the other half of
+     what was clipped. Keyed on a row that actually HAS one — a fixture where
+     paid == charged everywhere would make this vacuous. */
+  { name: 'live · the charged sub-line is not clipped',
+    needs: 'body[data-lmsub-fit="1"]',
+    act: async page => {
+      await page.waitForSelector('[data-live-progs] .live-table-progs .lm-sub', { timeout: 20000 });
+      await page.evaluate(() => {
+        const el = document.querySelector('[data-live-progs] .live-table-progs .lm-sub');
+        document.body.setAttribute('data-lmsub-fit', el.scrollWidth <= el.clientWidth + 1 ? '1' : '0');
+      });
+    } },
   /* THE BIG LINE READS AS WORDS. "9across 5 programmes" was the bug (Dan: "fix
      the spacing"), and it took two assertions because it is two faults wearing
      one symptom:
