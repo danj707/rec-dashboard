@@ -24,6 +24,12 @@
   --blue: #3b82f6; --green: #22c55e; --red: #ef4444; --purple: #8b5cf6;
   --pink: #ec4899; --cyan: #06b6d4;
   --chart-grid: #262626; --chart-text: #888;
+  /* The live cards sit in the same grid as everything else and were washed out
+     against it (Dan: "they look a bit washed out and don't stand out"). A warm
+     tint separates them from the date-filtered cards without a second border
+     style — and it is a TOKEN, so the dark and light versions are one decision
+     rather than two literals scattered through the rules below. */
+  --live-bg: #191510; --live-border: #33291a;
   --font-display: 'DM Sans', sans-serif; --font-body: 'Inter', sans-serif;
 }
 [data-theme="light"] {
@@ -35,6 +41,7 @@
   --blue: #2563eb; --green: #16a34a; --red: #dc2626; --purple: #7c3aed;
   --pink: #db2777; --cyan: #0891b2;
   --chart-grid: #e5e5e5; --chart-text: #666;
+  --live-bg: #fdf6e8; --live-border: #e7d9b8;
 }
 [data-theme="light"] .btn { background: #fff; border-color: #d4d4d4; color: #333; }
 [data-theme="light"] .btn:hover { background: #f5f5f5; border-color: #bbb; }
@@ -120,7 +127,16 @@ body { font-family: var(--font-body); background: var(--bg-page); color: var(--t
    Everything here is themed through the same tokens as the rest of the
    dashboard, so the card reads the same in light and dark. The one literal
    colour is the live green, which has to mean "live" in both. */
+/* THE TINT NEEDS THE COMPOUND SELECTOR, and this is a cascade collision, not a
+   style preference: `.widget-card` sets `background: var(--bg-card)` a hundred
+   lines BELOW this block, and at equal specificity the later rule wins — so a
+   bare `.live-card` background is silently overridden and the cards render
+   exactly as washed-out as before. `.widget-card.live-card` (0,2,0) outranks it
+   whatever the order. Caught by the render check comparing the two computed
+   backgrounds; no source assertion would have noticed. */
 .live-card { display: flex; flex-direction: column; }
+.widget-card.live-card { background: var(--live-bg); border-color: var(--live-border); }
+.widget-card.live-card:hover { border-color: var(--live-border); }
 .live-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #16a34a;
             box-shadow: 0 0 0 3px rgba(22,163,74,.16); margin-right: 5px; vertical-align: middle; }
 @media (prefers-reduced-motion: no-preference) {
@@ -130,6 +146,32 @@ body { font-family: var(--font-body); background: var(--bg-page); color: var(--t
 .live-chip { background: rgba(22,163,74,.12); color: #16a34a; padding: 1px 5px; border-radius: 3px;
              font-weight: 600; font-size: 9px; margin-right: 4px; }
 .live-pause { display: flex; align-items: center; gap: 5px; font-size: 10px; color: var(--text-muted); cursor: pointer; }
+.live-controls { display: flex; align-items: center; gap: 8px; }
+.live-sub { font-size: 10px; color: var(--text-muted); margin-top: 2px; font-weight: 400; }
+/* REFRESH NOW. Dan: "add a manual refresh button on both these live cards in
+   case I don't want to wait every minute." It is the SAME fetch the poll runs,
+   so both cards move together — there is one feed, and a button that refreshed
+   half the pair would be the two-cards-disagree bug this section was built to
+   avoid. Disabled while a fetch is in flight, so an impatient double-click
+   cannot queue two. */
+.live-refresh { background: transparent; border: 1px solid var(--border); color: var(--text-muted);
+                border-radius: 5px; width: 20px; height: 20px; line-height: 1; font-size: 12px;
+                cursor: pointer; padding: 0; display: inline-flex; align-items: center;
+                justify-content: center; transition: color .15s, border-color .15s; }
+.live-refresh:hover:not(:disabled) { color: var(--green); border-color: var(--green); }
+.live-refresh:disabled { opacity: .45; cursor: default; }
+@media (prefers-reduced-motion: no-preference) {
+  .live-refresh:disabled { animation: liveSpin 0.9s linear infinite; }
+  @keyframes liveSpin { to { transform: rotate(360deg); } }
+}
+/* THE BIG LINE HAD NO RULE AT ALL, which is why it read "9across 5" — two
+   inline elements with nothing between them. Dan: "fix the spacing". A flex
+   gap, not a literal space in the markup, so the number and its caption cannot
+   drift apart again. */
+.live-big { display: flex; align-items: baseline; gap: 8px; margin: 10px 0 6px; flex-wrap: wrap; }
+.live-big strong { font-family: var(--font-display); font-size: 30px; font-weight: 700; line-height: 1;
+                   color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.live-big span { font-size: 11px; color: var(--text-muted); }
 .live-count { display: flex; align-items: baseline; gap: 8px; margin: 10px 0 2px; }
 .live-count .live-n { font-family: var(--font-display); font-size: 34px; font-weight: 700; line-height: 1;
                       color: var(--text-primary); font-variant-numeric: tabular-nums; }
@@ -147,10 +189,23 @@ body { font-family: var(--font-body); background: var(--bg-page); color: var(--t
 /* NOW is a real edge on this card, so it is drawn. Without it the last day
    reads as empty rather than as not-yet-happened. */
 .live-timeline .lt-now { position: absolute; top: 0; bottom: 0; width: 1px; background: #16a34a; opacity: .5; }
+/* THREE PAYMENT STATES, AS DOTS. Dan: "change the dollar signs (yeah I loved
+   it too) to a green dot for paid, and an orange dot for a partial
+   payment/payment plan (you had a grey dot right now)". Colour is the only
+   difference, so all three keep the same size and shape — a dot that also
+   changed shape would read as a different KIND of thing rather than the same
+   registration at a different stage. The legend under the lane names them,
+   because a three-colour code with nothing explaining it is a puzzle. */
 .live-timeline .lt-mark { position: absolute; width: 9px; height: 9px; margin-left: -4px;
-                          font-size: 9px; line-height: 9px; text-align: center; border-radius: 50%;
-                          background: var(--border); color: transparent; }
-.live-timeline .lt-mark.paid { background: transparent; color: #16a34a; font-weight: 700; border-radius: 0; }
+                          border-radius: 50%; background: var(--border); }
+.live-timeline .lt-mark.paid { background: #16a34a; box-shadow: 0 0 0 2px rgba(22,163,74,.18); }
+.live-timeline .lt-mark.part { background: #f59e0b; box-shadow: 0 0 0 2px rgba(245,158,11,.20); }
+.live-legend { display: flex; gap: 10px; align-items: center; font-size: 9px;
+               color: var(--text-muted); margin: -4px 0 8px; }
+.live-legend i { display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+                 margin-right: 4px; vertical-align: middle; background: var(--border); }
+.live-legend .lg-paid i { background: #16a34a; }
+.live-legend .lg-part i { background: #f59e0b; }
 @media (prefers-reduced-motion: no-preference) {
   .live-timeline .lt-mark.fresh { animation: liveMarkIn 10s ease-out both; }
   @keyframes liveMarkIn {
@@ -204,12 +259,34 @@ body { font-family: var(--font-body); background: var(--bg-page); color: var(--t
 @media (prefers-reduced-motion: no-preference) {
   .live-bolt { animation: liveBolt 2.8s ease-in-out infinite; }
   @keyframes liveBolt {
-    0%, 62%, 100% { opacity: .55; transform: scale(1); }
-    68%           { opacity: 1;   transform: scale(1.18); }
-    74%           { opacity: .7;  transform: scale(1); }
-    80%           { opacity: 1;   transform: scale(1.1); }
+    /* Never fully at rest. It used to sit at .55 for two of every three
+       seconds, so a still frame — or a glance — read as a dead icon: Dan saw
+       one bolt bright and the other faint and reported the second as not
+       animating. Both were running; the flat stretch is what made it look
+       otherwise, so the baseline now drifts and the flicker is stronger. */
+    0%, 100%      { opacity: .62; transform: scale(1); }
+    30%           { opacity: .78; transform: scale(1.04); }
+    62%           { opacity: .62; transform: scale(1); }
+    68%           { opacity: 1;   transform: scale(1.22); }
+    74%           { opacity: .72; transform: scale(1.02); }
+    80%           { opacity: 1;   transform: scale(1.12); }
+    88%           { opacity: .7;  transform: scale(1); }
   }
 }
+/* MONEY LANDING IS THE EVENT on the programs card, so the figure itself moves
+   and says how much arrived. Dan: "the card on the right pulses with more
+   revenue for that program." The delta comes from the same arrival diff the
+   row highlight uses, so the two cannot disagree about what just happened. */
+.live-bump { display: inline-block; margin-left: 5px; font-size: 9px; font-weight: 700; color: #16a34a; }
+@media (prefers-reduced-motion: no-preference) {
+  .live-table tr.live-new .lm { animation: liveMoneyPop 10s ease-out both; }
+  @keyframes liveMoneyPop {
+    0%  { transform: scale(1.28); color: #16a34a; }
+    7%  { transform: scale(1);    color: #16a34a; }
+    100%{ transform: scale(1); }
+  }
+}
+
 /* A link into Rec. Underlined on hover only: a column of eight underlined
    names reads as a wall of links rather than a list of people. */
 .live-table tr.live-daybreak td { border-top: 1px solid var(--border); }
@@ -2307,6 +2384,12 @@ function WidgetCard({ widgetId, reportData, loading, freshRts, target, onTargetC
 const LIVE_POLL_MS = 60000;
 const LIVE_FLASH_MS = 10000;
 const LIVE_ROWS = 8;
+/* THE PROGRAMS CARD SHOWS MORE THAN THE REGISTRATION LIST, deliberately. Dan:
+   "We need to show more programs on the program revenue card, I'd expect to see
+   the top, say 10 or so programs." Each row there is a whole program rather
+   than one signup, so ten of them is a leaderboard while ten registrations
+   would be a wall. */
+const LIVE_PROG_ROWS = 10;
 const LIVE_DAYS    = 7;
 
 // Local calendar dates, built from PARTS. `new Date("2026-09-03")` is UTC
@@ -2384,10 +2467,13 @@ function liveTimeline(rows, today) {
       // Stagger by ARRIVAL ORDER now that every mark shares one day, so a
       // cluster still reads as a cluster rather than as one dot.
       lane: n++ % 3,
-      paid: Number(r['Paid']) > 0,
+      state: liveMarkState(r),
       label: liveClock(r['Signed Up At']) + ' \u00b7 ' + (r['Customer Name'] || '') +
-             ' \u00b7 ' + (r['Section'] || '') +
-             (Number(r['Paid']) > 0 ? ' \u00b7 paid ' + liveMoney(r['Paid']) : ' \u00b7 not yet paid'),
+             ' \u00b7 ' + (r['Section'] || '') + ' \u00b7 ' + (
+               liveMarkState(r) === 'paid' ? 'paid ' + liveMoney(r['Paid'])
+             : liveMarkState(r) === 'part' ? liveMoney(r['Paid']) + ' of ' + liveMoney(r['Price'])
+                                            + ' paid \u00b7 payment plan'
+             : 'not yet paid'),
     });
   });
   // A FIXED 24-HOUR AXIS, deliberately, rather than one fitted to the marks:
@@ -2418,18 +2504,27 @@ function liveTimeline(rows, today) {
    tag flip — and the two widgets cannot report different numbers for the same
    minute, because there is only one set of rows.
 
-   MOST RECENT FIRST, which is the ask. Not biggest-first: the question this
-   answers is "what is happening right now", and a program that took forty
-   registrations last night is not news at 9am. Ordered on the raw timestamp
-   STRING — an ISO-shaped stamp sorts correctly as text, and `new Date()` on
-   the feed's org-local string would re-apply the viewer's zone.
+   BIGGEST BY REVENUE FIRST, since 2026-09-04. It shipped most-recent-first,
+   which answers "what just happened" — but Dan asked for a leaderboard: "I'd
+   expect to see the top, say 10 or so programs, which pulse or move as users
+   enroll in them. User pays, they show up on the left card as a new
+   registration, AND the card on the right pulses with more revenue for that
+   program." So money ranks the table and arrival ANIMATES it: a program that
+   takes a registration lights up where it stands, and climbs if the money moves
+   it. Recency is still on screen in the Last column, which is why the sort
+   could move without losing anything.
+
+   Ties break on signups, then on the raw timestamp STRING — an ISO-shaped stamp
+   sorts correctly as text, and `new Date()` on the feed's org-local string would
+   re-apply the viewer's zone. A program with NO readable price sorts last
+   rather than first: `null` is "we cannot tell", not "nothing".
 
    CHARGED AND PAID ARE BOTH KEPT, and the card prints which is which. They
    diverge by design: a registration on a payment plan is charged in full and
    has only its first installment paid, so a single "revenue" number here would
    be true of one and false of the other.
 
-   MONEY IS null WHEN NOTHING CARRIED A PRICE, never 0 — a free programme and a
+   MONEY IS null WHEN NOTHING CARRIED A PRICE, never 0 — a free program and a
    price we could not read are different facts, the same rule the counter's own
    money column follows. */
 function liveByProgram(rows, today) {
@@ -2437,7 +2532,7 @@ function liveByProgram(rows, today) {
   const by = new Map();
   (rows || []).forEach(r => {
     if (liveDay(r['Signed Up At']) !== today) return;
-    const name = String(r['Program'] == null ? '' : r['Program']).trim() || '(no programme)';
+    const name = String(r['Program'] == null ? '' : r['Program']).trim() || '(no program)';
     let g = by.get(name);
     if (!g) g = { program: name, signups: 0, charged: null, paid: null, lastAt: '', sections: new Set() };
     g.signups += 1;
@@ -2451,7 +2546,9 @@ function liveByProgram(rows, today) {
   });
   return [...by.values()]
     .map(g => Object.assign(g, { sectionCount: g.sections.size }))
-    .sort((a, b) => (a.lastAt < b.lastAt ? 1 : a.lastAt > b.lastAt ? -1 : 0));
+    .sort((a, b) => (b.charged == null ? -1 : b.charged) - (a.charged == null ? -1 : a.charged)
+                 || b.signups - a.signups
+                 || (a.lastAt < b.lastAt ? 1 : a.lastAt > b.lastAt ? -1 : 0));
 }
 
 /* REC ADMIN LINKS. Both shapes are already in use in the reporting project —
@@ -2481,6 +2578,31 @@ function liveWhen(ts, todayKey) {
   return ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()] + ' ' + clock;
 }
 
+/* WHAT A REGISTRATION'S MONEY IS DOING, in three states. Dan: "change the
+   dollar signs to a green dot for paid, and an orange dot for a partial
+   payment/payment plan (you had a grey dot right now)."
+
+   The feed carries the charge (`Price`) and what has arrived (`Paid`), which is
+   all three states: nothing in, some in, all in. A PAYMENT PLAN is the middle
+   one by construction — charged in full at registration with only the first
+   installment taken — so it needs no separate column to be visible here.
+
+   PAID WITH NO CHARGE ON THE ROW STILL READS AS PAID. Money arrived; a row we
+   cannot price is not evidence that it did not. And a half-cent epsilon,
+   because two figures rounded independently must not make a fully-paid
+   registration read as a plan.
+
+   At module scope so the spec can RUN it — a regex over a three-branch
+   comparison passes on an inverted one. */
+function liveMarkState(r) {
+  const charged = Number(r['Price']);
+  const paid    = Number(r['Paid']);
+  const hasPaid = Number.isFinite(paid) && paid > 0;
+  if (!hasPaid) return 'unpaid';
+  if (Number.isFinite(charged) && charged > 0 && paid + 0.005 < charged) return 'part';
+  return 'paid';
+}
+
 function liveMoney(v) {
   const n = Number(v);
   return Number.isFinite(n) && n > 0 ? '$' + Math.round(n).toLocaleString() : '';
@@ -2506,6 +2628,10 @@ function useLiveEnrollments(onAvailable) {
   const [err, setErr]   = useState(false);
   const [at, setAt]     = useState(null);
   const [paused, setPaused] = useState(false);
+  /* IN FLIGHT, so the refresh button can say so and refuse a second click. It
+     starts true: the first fetch is already running when the cards mount, and a
+     button that looks ready during it invites a click that does nothing. */
+  const [loading, setLoading] = useState(true);
   /* WHAT ARRIVED SINCE THE LAST LOOK. Dan: "when a new registration happens,
      the bottom one drops off, the new one(s) pop on the top, highlighted, then
      the highlighting fades." So the widget has to remember what it had already
@@ -2526,6 +2652,7 @@ function useLiveEnrollments(onAvailable) {
     const url = IS_SHARE
       ? `/share/${SHARE_TOKEN}/data/enrollments?${qs}`
       : `/${ORG_SLUG}/api/data/enrollments?token=${TOKEN}&${qs}`;
+    setLoading(true);
     fetch(url)
       .then(r => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
       .then(j => {
@@ -2544,10 +2671,10 @@ function useLiveEnrollments(onAvailable) {
           }
         }
         seenRef.current = new Set(keys);
-        setRows(j.rows); setErr(false); setAt(new Date());
+        setRows(j.rows); setErr(false); setAt(new Date()); setLoading(false);
         if (onAvailable) onAvailable(true);
       })
-      .catch(() => { setErr(true); if (onAvailable) onAvailable(false); });
+      .catch(() => { setErr(true); setLoading(false); if (onAvailable) onAvailable(false); });
   }, [onAvailable]);
 
   useEffect(() => { load(); }, [load]);
@@ -2569,11 +2696,50 @@ function useLiveEnrollments(onAvailable) {
   }, [load, paused]);
   useEffect(() => () => clearTimeout(timerRef.current), []);
 
-  return { rows, err, at, paused, setPaused, flash };
+  /* REFRESHING DOES NOT UNPAUSE. Pausing says "stop moving while I read"; a
+     manual refresh says "move once, now". Conflating them would make the
+     button a second, hidden un-pause. */
+  return { rows, err, at, paused, setPaused, flash, loading, refresh: load };
 }
 
-function CoffeeCounter({ feed, recOrgId }) {
-  const { rows, err, at, paused, setPaused, flash } = feed;
+/* ONE HEADER, BOTH CARDS. It carries the live dot, the Pause box, the manual
+   refresh and the bolt — and it exists as a component because the two cards
+   had two copies of it and the bolt was the thing that went wrong: Dan saw the
+   registrations bolt pulsing and the programs one apparently dead. Both were
+   animating (proven in a browser), but two copies of a header is how they
+   would eventually differ for real, and a shared one also means the refresh
+   button cannot land on one card and not the other.
+   PAUSE IS ON BOTH because there is one feed behind them: a Pause on the left
+   card that silently stopped the right one was the confusing half-measure. */
+function LiveCardHeader({ icon, title, sub, feed }) {
+  const { paused, setPaused, refresh, loading } = feed;
+  return (
+    <div className="widget-header">
+      <div>
+        <span className="widget-label"><span className="live-dot" /> {icon} {title}</span>
+        <div className="live-sub"><span className="live-chip">Live</span>{sub}</div>
+      </div>
+      <div className="live-controls">
+        <label className="live-pause" title="Stops the 60-second refresh, so a row cannot move while you are reading it.">
+          <input type="checkbox" checked={paused} onChange={e => setPaused(e.target.checked)} /> Pause
+        </label>
+        <button type="button" className="live-refresh" data-live-refresh="1"
+                onClick={refresh} disabled={loading} aria-label="Refresh now"
+                title="Refresh both live cards now, without waiting for the next minute.">
+          {'\u21BB'}
+        </button>
+        <span className="widget-icon live-bolt" aria-hidden="true">{'\u26A1'}</span>
+      </div>
+    </div>
+  );
+}
+
+/* LIVE PROGRAM REGISTRATIONS (was the Coffee Counter — Dan, 2026-09-04:
+   "change the coffee counter name to 'Live Program Registrations', much
+   sexier. Sorry coffee."). The name is the only thing that changed here; the
+   card is the same one-day lane and list. */
+function LiveRegistrations({ feed, recOrgId }) {
+  const { rows, err, at, paused, flash } = feed;
 
   /* ABSENT, NEVER A ZERO, when the feed cannot answer. A "0 signups today"
      counter on a registration morning says nobody registered when the truth is
@@ -2589,16 +2755,8 @@ function CoffeeCounter({ feed, recOrgId }) {
   if (!rows) {
     return (
       <div className="widget-card widget-md live-card" data-live-loading="1">
-        <div className="widget-header">
-          <div>
-            <span className="widget-label"><span className="live-dot" /> {'\u2615'} Coffee Counter</span>
-            <div style={{fontSize:10,color:'var(--text-muted)',marginTop:2,fontWeight:400}}>
-              <span className="live-chip">Live</span>
-              Loading the last {LIVE_DAYS} days{'\u2026'}
-            </div>
-          </div>
-          <span className="widget-icon live-bolt" aria-hidden="true">{'\u26A1'}</span>
-        </div>
+        <LiveCardHeader icon={'\u{1F4DD}'} title="Live Program Registrations" feed={feed}
+                        sub={'Loading the last ' + LIVE_DAYS + ' days\u2026'} />
         <div className="skeleton skeleton-chart" />
       </div>
     );
@@ -2611,32 +2769,19 @@ function CoffeeCounter({ feed, recOrgId }) {
   const tl = liveTimeline(rows, today);
 
   return (
-    <div className="widget-card widget-md live-card" data-live-coffee={String(rows.length)}>
-      <div className="widget-header">
-        <div>
-          <span className="widget-label"><span className="live-dot" /> {'\u2615'} Coffee Counter</span>
-          <div style={{fontSize:10,color:'var(--text-muted)',marginTop:2,fontWeight:400}}>
-            <span className="live-chip">Live</span>
-            Registrations as they happen {'\u00b7'} last {LIVE_DAYS} days
-          </div>
-        </div>
-        <div style={{display:'flex',alignItems:'center',gap:8}}>
-          <label className="live-pause" title="Stops the 60-second refresh, so a row cannot move while you are reading it.">
-            <input type="checkbox" checked={paused} onChange={e => setPaused(e.target.checked)} /> Pause
-          </label>
-          <span className="widget-icon live-bolt" aria-hidden="true">{'\u26A1'}</span>
-        </div>
-      </div>
+    <div className="widget-card widget-md live-card" data-live-regs={String(rows.length)}>
+      <LiveCardHeader icon={'\u{1F4DD}'} title="Live Program Registrations" feed={feed}
+                      sub={'Registrations as they happen \u00b7 last ' + LIVE_DAYS + ' days'} />
 
       <div className="live-count">
         <span className="live-n" data-live-today={String(todayRows.length)}>{todayRows.length}</span>
         <span className="live-u">{todayRows.length === 1 ? 'signup' : 'signups'} today{liveMoney(todayVal) ? ' \u00b7 ' + liveMoney(todayVal) : ''}</span>
       </div>
 
-      {/* WHEN, not how many. One mark per registration at its own minute; a $
-          where the money has actually arrived. The right-hand edge is now. */}
+      {/* WHEN, not how many. One mark per registration at its own minute,
+          coloured by what its money is doing. The right-hand edge is now. */}
       <div className="live-timeline" data-live-marks={String(tl.marks.length)}
-           title="Every registration in the last seven days, placed at the time it happened. $ means paid.">
+           title="Every registration today, placed at the time it happened. Green paid, orange part-paid, grey not yet.">
         {tl.tickLabels.map((d, i) => (
           <span key={i} className={'lt-day'}
                 style={{left: d.left + '%'}}><i /><em>{d.text}</em></span>
@@ -2644,11 +2789,19 @@ function CoffeeCounter({ feed, recOrgId }) {
         {tl.nowLeft == null ? null : <span className="lt-now" style={{left: tl.nowLeft + '%'}} title="Now" />}
         {tl.marks.map(m => (
           <span key={m.key}
-                className={'lt-mark' + (m.paid ? ' paid' : '') + (flash.has(m.key) ? ' fresh' : '')}
-                data-live-mark={m.paid ? 'paid' : 'unpaid'}
+                className={'lt-mark ' + m.state + (flash.has(m.key) ? ' fresh' : '')}
+                data-live-mark={m.state}
                 style={{left: m.left + '%', top: (6 + m.lane * 10) + 'px'}}
-                title={m.label}>{m.paid ? '$' : ''}</span>
+                title={m.label} />
         ))}
+      </div>
+      {/* A THREE-COLOUR CODE NEEDS NAMING. The dots' own titles say it on
+          hover; the legend says it at a glance, which is how this card is
+          read. */}
+      <div className="live-legend" data-live-legend="1">
+        <span className="lg-paid"><i />paid</span>
+        <span className="lg-part"><i />part-paid</span>
+        <span className="lg-none"><i />not yet</span>
       </div>
 
       {/* FIXED COLUMNS, because the rows change under the reader. With natural
@@ -2718,16 +2871,7 @@ function ProgramsLive({ feed, recOrgId }) {
   if (!rows) {
     return (
       <div className="widget-card widget-md live-card" data-live-progloading="1">
-        <div className="widget-header">
-          <div>
-            <span className="widget-label"><span className="live-dot" /> {'\u{1F3AF}'} Programs Live</span>
-            <div style={{fontSize:10,color:'var(--text-muted)',marginTop:2,fontWeight:400}}>
-              <span className="live-chip">Live</span>
-              Loading today{'\u2026'}
-            </div>
-          </div>
-          <span className="widget-icon live-bolt" aria-hidden="true">{'\u26A1'}</span>
-        </div>
+        <LiveCardHeader icon={'\u{1F3AF}'} title="Programs Live" feed={feed} sub={'Loading today\u2026'} />
         <div className="skeleton skeleton-chart" />
       </div>
     );
@@ -2738,9 +2882,21 @@ function ProgramsLive({ feed, recOrgId }) {
   // A row is fresh if any registration behind it is one of the arrivals the
   // shared feed just diffed — so a program lights up when it takes a signup,
   // which is the whole point of watching this card.
-  const isFresh = g => rows.some(r => liveDay(r['Signed Up At']) === today &&
-                                      (String(r['Program'] || '').trim() || '(no programme)') === g.program &&
-                                      flash.has(liveKey(r)));
+  /* WHAT JUST LANDED, PER PROGRAM — one pass over the arrivals rather than a
+     scan of every row per program, and it carries the MONEY as well as the
+     fact, so the row can say "+$215" instead of merely lighting up. The delta
+     is summed from the same `flash` set the registrations list highlights, so
+     the two cards cannot disagree about what arrived in the last minute. */
+  const freshBy = new Map();
+  rows.forEach(r => {
+    if (liveDay(r['Signed Up At']) !== today || !flash.has(liveKey(r))) return;
+    const name = String(r['Program'] == null ? '' : r['Program']).trim() || '(no program)';
+    const g = freshBy.get(name) || { n: 0, charged: 0 };
+    g.n += 1;
+    const pr = Number(r['Price']);
+    if (Number.isFinite(pr)) g.charged += pr;
+    freshBy.set(name, g);
+  });
   const totalCharged = progs.reduce((n, g) => n + (g.charged || 0), 0);
   const totalSignups = progs.reduce((n, g) => n + g.signups, 0);
 
@@ -2750,16 +2906,8 @@ function ProgramsLive({ feed, recOrgId }) {
   if (!progs.length) {
     return (
       <div className="widget-card widget-md live-card" data-live-progs="0">
-        <div className="widget-header">
-          <div>
-            <span className="widget-label"><span className="live-dot" /> {'\u{1F3AF}'} Programs Live</span>
-            <div style={{fontSize:10,color:'var(--text-muted)',marginTop:2,fontWeight:400}}>
-              <span className="live-chip">Live</span>
-              Registrations by programme {'\u00b7'} today
-            </div>
-          </div>
-          <span className="widget-icon live-bolt" aria-hidden="true">{'\u26A1'}</span>
-        </div>
+        <LiveCardHeader icon={'\u{1F3AF}'} title="Programs Live" feed={feed}
+                        sub={'Top programs by revenue \u00b7 today'} />
         <div style={{padding:'18px 4px',fontSize:12,color:'var(--text-muted)'}}>
           No registrations yet today.
         </div>
@@ -2769,20 +2917,16 @@ function ProgramsLive({ feed, recOrgId }) {
 
   return (
     <div className="widget-card widget-md live-card" data-live-progs={String(progs.length)}>
-      <div className="widget-header">
-        <div>
-          <span className="widget-label"><span className="live-dot" /> {'\u{1F3AF}'} Programs Live</span>
-          <div style={{fontSize:10,color:'var(--text-muted)',marginTop:2,fontWeight:400}}>
-            <span className="live-chip">Live</span>
-            Registrations by programme {'\u00b7'} today
-          </div>
-        </div>
-        <span className="widget-icon live-bolt" aria-hidden="true">{'\u26A1'}</span>
-      </div>
+      <LiveCardHeader icon={'\u{1F3AF}'} title="Programs Live" feed={feed}
+                      sub={'Top programs by revenue \u00b7 today'} />
 
+      {/* A SPACE IN THE TEXT AS WELL AS A GAP IN THE LAYOUT. The flex gap fixes
+          what it looks like; `textContent` is still "15across" without the
+          space, which is what a screen reader says and what a copy-paste
+          carries. Dan reported the look; both are the same bug. */}
       <div className="live-big" data-live-progtotal={String(totalSignups)}>
-        <strong>{totalSignups}</strong>
-        <span>across {progs.length} programme{progs.length > 1 ? 's' : ''}
+        <strong>{totalSignups}</strong>{' '}
+        <span>across {progs.length} program{progs.length > 1 ? 's' : ''}
           {totalCharged > 0 ? ' \u00b7 ' + liveMoney(totalCharged) + ' charged' : ''}</span>
       </div>
 
@@ -2790,14 +2934,14 @@ function ProgramsLive({ feed, recOrgId }) {
         <thead>
           <tr>
             <th className="lt">Last</th>
-            <th className="ls">Programme</th>
+            <th className="ls">Program</th>
             <th className="lp">Signups</th>
             <th className="lm">Charged</th>
           </tr>
         </thead>
         <tbody>
-          {progs.slice(0, LIVE_ROWS).map(g => (
-            <tr key={g.program} className={isFresh(g) ? 'live-new' : ''}
+          {progs.slice(0, LIVE_PROG_ROWS).map(g => (
+            <tr key={g.program} className={freshBy.has(g.program) ? 'live-new' : ''}
                 data-live-prog={g.program} data-live-prog-signups={String(g.signups)}>
               <td className="lt">{liveClock(g.lastAt)}</td>
               <td className="ls" title={g.sectionCount + ' section' + (g.sectionCount === 1 ? '' : 's') +
@@ -2806,10 +2950,20 @@ function ProgramsLive({ feed, recOrgId }) {
               {/* CHARGED leads because it is the money the registration
                   committed; PAID is shown underneath only when it differs, so a
                   payment plan reads as "charged now, arriving later" rather
-                  than as a discrepancy. A programme whose rows carried no price
+                  than as a discrepancy. A program whose rows carried no price
                   at all gets a dash, never $0. */}
               <td className="lm" data-live-prog-charged={g.charged == null ? '' : String(g.charged)}>
                 {g.charged == null ? '\u2014' : liveMoney(g.charged)}
+                {/* THE INCREMENT, only while it is news. A total that grew by
+                    $215 is a different thing to read than a total that is
+                    $215, so the delta is signed and sits beside the figure
+                    rather than replacing it. */}
+                {(() => {
+                  const f = freshBy.get(g.program);
+                  return f && f.charged > 0
+                    ? <span className="live-bump" data-live-bump={String(Math.round(f.charged))}>{'+' + liveMoney(f.charged)}</span>
+                    : null;
+                })()}
                 {g.charged != null && g.paid != null && g.paid !== g.charged
                   ? <div style={{fontSize:9,color:'var(--text-muted)',fontWeight:400}}>{liveMoney(g.paid)} paid</div>
                   : null}
@@ -2822,7 +2976,7 @@ function ProgramsLive({ feed, recOrgId }) {
       <div className="live-foot">
         {at ? 'Updated ' + liveClock(at.getFullYear() + '-01-01T' + String(at.getHours()).padStart(2,'0') + ':' + String(at.getMinutes()).padStart(2,'0')) : ''}
         {paused ? ' \u00b7 paused' : ' \u00b7 refreshes every minute'}
-        {progs.length > LIVE_ROWS ? ' \u00b7 showing ' + LIVE_ROWS + ' of ' + progs.length : ''}
+        {progs.length > LIVE_PROG_ROWS ? ' \u00b7 showing top ' + LIVE_PROG_ROWS + ' of ' + progs.length : ''}
       </div>
     </div>
   );
@@ -2848,7 +3002,7 @@ function LiveSection({ reportingBaseUrl, recOrgId }) {
         <div className="section-line" />
       </div>
       <div className="widget-grid">
-        <CoffeeCounter feed={feed} recOrgId={recOrgId} />
+        <LiveRegistrations feed={feed} recOrgId={recOrgId} />
         <ProgramsLive feed={feed} recOrgId={recOrgId} />
       </div>
     </div>

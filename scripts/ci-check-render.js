@@ -138,6 +138,31 @@ const ENROLLMENTS = [
     'Section': 'Girls Grades 7-8', 'Program': 'Shrewsbury Rec Youth Basketball', 'Price': 170, 'Paid': 0 },
   { 'Signed Up At': liveIso(3, '09:02:00'), 'Customer Name': 'Zaid Syed', 'Participant': null,
     'Section': 'Apple Picking', 'Program': 'Rec Connect Fall', 'Price': 30 },
+  /* TEN MORE PROGRAMS TODAY, and they are load-bearing three ways.
+     (1) The programs card caps at LIVE_PROG_ROWS = 10, and with three programs
+         a cap of 8 and a cap of 10 render identically.
+     (2) SUMMER CAMP HOLDS THE MOST MONEY AND IS NOT THE MOST RECENT — Oxygen
+         Dance is, at 14:41. So a revenue sort and a recency sort put different
+         rows on top, which is the only way an assertion can tell them apart.
+     (3) Swim Lessons is charged $480 with $240 in: the PART-PAID state, which
+         nothing else in this fixture produces, and the orange dot cannot be
+         proven without it. */
+  ...[
+    ['Summer Camp',   900, 900, '07:05:00'],
+    ['Swim Lessons',  480, 240, '07:10:00'],
+    ['Gymnastics',    300, 300, '07:15:00'],
+    ['Soccer Clinic', 260,   0, '07:20:00'],
+    ['Ceramics',      220, 220, '07:25:00'],
+    ['Chess Club',    180, 180, '07:30:00'],
+    ['Yoga Basics',   140, 140, '07:35:00'],
+    ['Track & Field', 100, 100, '07:40:00'],
+    ['Cooking 101',    80,  80, '07:45:00'],
+    ['Story Time',     70,  70, '07:50:00'],
+  ].map(([program, price, paid, clock]) => ({
+    'Signed Up At': liveIso(0, clock), 'Customer Name': program + ' Buyer',
+    'Participant': program + ' Kid', 'Section': program + ' AM',
+    'Program': program, 'Price': price, 'Paid': paid,
+  })),
 ];
 
 /* THE SECOND POLL BRINGS ONE MORE. A widget that highlights arrivals can only
@@ -229,9 +254,9 @@ const CASES = [
      printing the row count, on a sparkline drawn from the wrong days, and on a
      list wired to the wrong feed. */
   { name: 'live · the section is on the page', needs: '[data-live-section]' },
-  { name: 'live · the coffee counter reads its own feed', needs: '[data-live-coffee="6"]' },
-  // THREE of the five rows are today. A widget printing rows.length reads 5.
-  { name: 'live · and counts TODAY, not the list', needs: '[data-live-today="4"]' },
+  { name: 'live · the registrations card reads its own feed', needs: '[data-live-regs="16"]' },
+  // 14 of the 16 rows are today. A widget printing rows.length reads 16.
+  { name: 'live · and counts TODAY, not the list', needs: '[data-live-today="14"]' },
   { name: 'live · above the date-ranged sections', needs: '.dashboard-section[data-live-section] + .dashboard-section' },
   // HALF WIDTH (Dan). widget-lg spans all four columns; this is a list of
   // eight short rows, not a chart, and full-bleed it dwarfed the dashboard.
@@ -282,11 +307,11 @@ const CASES = [
         const b = [...document.querySelectorAll('button')].find(x => (x.textContent || '').trim() === 'Cancel');
         if (b) b.click();
       });
-      await page.waitForSelector('[data-live-coffee] .live-table thead th', { timeout: 15000 });
+      await page.waitForSelector('[data-live-regs] .live-table thead th', { timeout: 15000 });
       await page.evaluate(() => {
-        const hs = [...document.querySelectorAll('[data-live-coffee] .live-table thead th')].map(h => h.textContent.trim());
+        const hs = [...document.querySelectorAll('[data-live-regs] .live-table thead th')].map(h => h.textContent.trim());
         document.body.setAttribute('data-livehead', hs.join('|'));
-        document.body.setAttribute('data-livefixed', getComputedStyle(document.querySelector('[data-live-coffee] .live-table')).tableLayout);
+        document.body.setAttribute('data-livefixed', getComputedStyle(document.querySelector('[data-live-regs] .live-table')).tableLayout);
       });
     } },
   { name: 'live · ...and fixed column tracks', needs: 'body[data-livefixed="fixed"]' },
@@ -296,7 +321,7 @@ const CASES = [
      forces the refresh, and the stub serves one extra row from the second call
      — so a widget that highlights everything, or nothing, fails. */
   { name: 'live · a new registration lands highlighted, at the top',
-    needs: '[data-live-coffee] .live-table tbody tr:first-child[data-live-new="1"] td.ln',
+    needs: '[data-live-regs] .live-table tbody tr:first-child[data-live-new="1"] td.ln',
     act: async page => {
       await page.waitForSelector('.live-pause input', { timeout: 15000 });
       await page.click('.live-pause input');          // pause
@@ -304,29 +329,50 @@ const CASES = [
       await page.waitForSelector('[data-live-new="1"]', { timeout: 15000 });
     } },
   { name: 'live · ...and it is the only one highlighted',
-    needs: '[data-live-coffee] .live-table tbody tr:first-child[data-live-new="1"]',
-    absent: '[data-live-coffee] .live-table tbody tr:nth-child(2)[data-live-new="1"]' },
+    needs: '[data-live-regs] .live-table tbody tr:first-child[data-live-new="1"]',
+    absent: '[data-live-regs] .live-table tbody tr:nth-child(2)[data-live-new="1"]' },
   /* THE TIMELINE replaced a per-day bar chart (Dan: "what is the odd bar chart
      there... how about a moving timeline of the days/time... and when people
      pay, it gets a dollar sign"). Keyed on the MARKS, because a lane with no
      marks in it renders as a perfectly good empty timeline. */
   /* THE LANE IS ONE DAY WIDE (Dan: "would prefer this card show the current
-     day, so it's not so smooshed"). The fixture carries six registrations, of
-     which THREE are today — so 3 is the discriminating number here and 6 is
-     exactly what a revert to the seven-day lane would render. */
+     day, so it's not so smooshed"). By the time this runs the arrival row has
+     been injected, so 15 of the feed's 17 rows are today — and 17 is exactly
+     what a revert to the seven-day lane would render. */
   { name: 'live · the timeline plots today, not the week',
-    needs: '[data-live-coffee] .live-timeline[data-live-marks="5"]',
-    absent: '[data-live-coffee] .live-timeline[data-live-marks="7"]' },
-  { name: 'live · a paid registration carries a dollar sign', needs: '[data-live-coffee] .lt-mark.paid[data-live-mark="paid"]' },
-  { name: 'live · an unpaid one does not', needs: '[data-live-coffee] .lt-mark[data-live-mark="unpaid"]',
-    absent: '[data-live-coffee] .lt-mark.paid[data-live-mark="unpaid"]' },
+    needs: '[data-live-regs] .live-timeline[data-live-marks="15"]',
+    absent: '[data-live-regs] .live-timeline[data-live-marks="17"]' },
+  /* THREE PAYMENT STATES, ALL DOTS (Dan: "change the dollar signs to a green
+     dot for paid, and an orange dot for a partial payment/payment plan").
+     Every one of the three has to be PRESENT, or a build that collapsed part
+     into paid — or into unpaid — renders a perfectly plausible lane. And the $
+     glyph has to be GONE: the class alone cannot tell a green dot from a green
+     dollar sign. */
+  { name: 'live · a paid registration is a green dot', needs: '[data-live-regs] .lt-mark.paid[data-live-mark="paid"]' },
+  { name: 'live · a payment plan is an orange dot', needs: '[data-live-regs] .lt-mark.part[data-live-mark="part"]' },
+  { name: 'live · an unpaid one is neither', needs: '[data-live-regs] .lt-mark[data-live-mark="unpaid"]',
+    absent: '[data-live-regs] .lt-mark.paid[data-live-mark="unpaid"], [data-live-regs] .lt-mark.part[data-live-mark="unpaid"]' },
+  { name: 'live · no dollar signs left in the lane', needs: 'body[data-lt-glyphs=""]',
+    act: async page => {
+      await page.waitForSelector('[data-live-regs] .lt-mark', { timeout: 15000 });
+      await page.evaluate(() => {
+        const t = [...document.querySelectorAll('[data-live-regs] .lt-mark')]
+          .map(x => x.textContent.trim()).join('');
+        document.body.setAttribute('data-lt-glyphs', t);
+      });
+    } },
+  /* THE DOTS ARE NAMED. A three-colour code with nothing explaining it is a
+     puzzle, and the legend is the only thing on the card that says which is
+     which. */
+  { name: 'live · the dots are named in a legend',
+    needs: '[data-live-regs] [data-live-legend] .lg-part' },
   /* Hour ticks, not weekday ones — and keyed on a LATE hour, because an axis
      that quietly reverted to days would still render some `.lt-day` spans. */
-  { name: 'live · the axis is hours across one day', needs: '[data-live-coffee] .lt-day',
+  { name: 'live · the axis is hours across one day', needs: '[data-live-regs] .lt-day',
     act: async page => {
-      await page.waitForSelector('[data-live-coffee] .live-timeline', { timeout: 15000 });
+      await page.waitForSelector('[data-live-regs] .live-timeline', { timeout: 15000 });
       await page.evaluate(() => {
-        const t = [...document.querySelectorAll('[data-live-coffee] .lt-day')].map(x => x.textContent.trim()).join('|');
+        const t = [...document.querySelectorAll('[data-live-regs] .lt-day')].map(x => x.textContent.trim()).join('|');
         document.body.setAttribute('data-lt-ticks', t);
       });
     } },
@@ -337,9 +383,9 @@ const CASES = [
   { name: 'live · a row from another day carries its weekday',
     needs: 'body[data-liveday="1"]',
     act: async page => {
-      await page.waitForSelector('[data-live-coffee] .live-table tbody tr', { timeout: 15000 });
+      await page.waitForSelector('[data-live-regs] .live-table tbody tr', { timeout: 15000 });
       await page.evaluate(() => {
-        const cells = [...document.querySelectorAll('[data-live-coffee] .live-table td.lt')].map(c => c.textContent.trim());
+        const cells = [...document.querySelectorAll('[data-live-regs] .live-table td.lt')].map(c => c.textContent.trim());
         const today = cells.filter(t => /^\d{1,2}:\d{2}[ap]$/.test(t)).length;
         const dated = cells.filter(t => /^(Sun|Mon|Tue|Wed|Thu|Fri|Sat) \d{1,2}:\d{2}[ap]$/.test(t)).length;
         if (today > 0 && dated > 0) document.body.setAttribute('data-liveday', '1');
@@ -364,32 +410,113 @@ const CASES = [
         const n = r => Number(r.getAttribute('data-live-prog-signups') || 0);
         document.body.setAttribute('data-lp-firstn', String(n(rows[0])));
         document.body.setAttribute('data-lp-max', String(Math.max(...rows.map(n))));
+        document.body.setAttribute('data-lp-first', rows[0].getAttribute('data-live-prog') || '');
+        document.body.setAttribute('data-lp-rows', String(rows.length));
+        const foot = document.querySelector('[data-live-progs] .live-foot');
+        document.body.setAttribute('data-lp-foot', foot ? foot.textContent.trim() : '');
+        /* THE BIG LINE HAD NO SPACING RULE and read "9across 5 programmes"
+           (Dan: "fix the spacing"). Read the rendered TEXT, because the markup
+           is identical either way — only the layout differs. */
+        const big = document.querySelector('[data-live-progs] .live-big');
+        document.body.setAttribute('data-lp-big', big ? big.textContent.trim() : '');
       });
     } },
-  /* THE DISCRIMINATING PAIR. SBA Travel Teams has TWO of today's signups and an
-     older last-signup than the programme that leads, so a card sorted by size
-     would put a 2 at the top. Keyed this way rather than on a programme name
-     or a row count, both of which shift with whether the arrival fixture row
-     has been injected by an earlier case. */
-  { name: 'live · the most RECENT programme leads, not the biggest',
-    needs: 'body[data-lp-firstn="1"]', absent: 'body[data-lp-firstn="2"]' },
-  { name: 'live · ...and a bigger programme really is present to lose the race',
-    needs: 'body[data-lp-max="2"]' },
+  /* BIGGEST BY REVENUE LEADS, since 2026-09-04 — Dan asked for a leaderboard:
+     "I'd expect to see the top, say 10 or so programs, which pulse or move as
+     users enroll in them." Summer Camp holds $900 of the fixture's money and
+     is NOT the most recent registration (Oxygen Dance is, at 14:41), so this
+     pair tells a revenue sort from the recency sort it replaced. */
+  { name: 'live · the biggest program by revenue leads',
+    needs: 'body[data-lp-first="Summer Camp"]',
+    absent: 'body[data-lp-first="Oxygen Dance Aerobics"]' },
+  /* TEN ROWS, NOT EIGHT. The fixture has thirteen programs today, so the cap
+     is visible; with three it was not. */
+  { name: 'live · ten programs, and it says how many it left out',
+    needs: 'body[data-lp-rows="10"]', absent: 'body[data-lp-rows="8"]' },
+  { name: 'live · ...and the footer names the cap',
+    needs: 'body[data-lp-foot*="showing top 10 of"]' },
   { name: 'live · two widgets in the section',
-    needs: '[data-live-section] [data-live-coffee] ~ [data-live-progs]' },
+    needs: '[data-live-section] [data-live-regs] ~ [data-live-progs]' },
 
   { name: 'live · the household owner links into Rec',
     needs: 'a.live-link[data-live-user="user-rita"][href="https://www.rec.us/admin/o/rec-org-uuid/users/user-rita"]' },
   { name: 'live · the section links into Rec',
     needs: 'a.live-link[data-live-section="sec-oxygen"][href="https://www.rec.us/admin/o/rec-org-uuid/programming/sections/sec-oxygen"]' },
   { name: 'live · a row with no id is plain text, not a dead link',
-    needs: '[data-live-coffee] .live-table tbody tr', absent: 'a.live-link[href$="/users/undefined"]' },
-  { name: 'live · the bolt is animated', needs: 'body[data-livebolt="1"]',
+    needs: '[data-live-regs] .live-table tbody tr', absent: 'a.live-link[href$="/users/undefined"]' },
+  /* EVERY BOLT, NOT THE FIRST ONE. This case used to read
+     `querySelector('.live-bolt')` — the registrations card's — so the programs
+     card's bolt was never checked, which is exactly the one Dan reported as
+     dead ("The lightning bolt on the programs card isn't pulsing"). Both were
+     in fact running; the guard could not have told us either way. */
+  { name: 'live · every bolt is animated', needs: 'body[data-livebolt="2of2"]',
+    act: async page => {
+      await page.waitForSelector('[data-live-progs] .live-bolt', { timeout: 15000 });
+      await page.evaluate(() => {
+        const els = [...document.querySelectorAll('.live-bolt')];
+        const running = els.filter(el => el.getAnimations && el.getAnimations().length > 0);
+        document.body.setAttribute('data-livebolt', running.length + 'of' + els.length);
+      });
+    } },
+  /* THE MANUAL REFRESH, on BOTH cards (Dan: "add a manual refresh button on
+     both these live cards in case I don't want to wait every minute"). */
+  { name: 'live · both cards have a refresh button',
+    needs: '[data-live-regs] [data-live-refresh]', },
+  { name: 'live · ...including the programs card',
+    needs: '[data-live-progs] [data-live-refresh]' },
+  /* AND IT ACTUALLY REFETCHES. A button that renders and does nothing looks
+     identical, so this counts the enrollments requests the browser made either
+     side of a click. */
+  { name: 'live · clicking refresh refetches the feed', needs: 'body[data-lr-refetched="1"]',
+    act: async page => {
+      await page.waitForSelector('[data-live-progs] [data-live-refresh]:not([disabled])', { timeout: 20000 });
+      const count = () => page.evaluate(() => performance.getEntriesByType('resource')
+        .filter(e => /api\/data\/enrollments/.test(e.name)).length);
+      const before = await count();
+      await page.click('[data-live-progs] [data-live-refresh]');
+      await page.waitForFunction((b) => performance.getEntriesByType('resource')
+        .filter(e => /api\/data\/enrollments/.test(e.name)).length > b, { timeout: 15000 }, before);
+      await page.evaluate(() => document.body.setAttribute('data-lr-refetched', '1'));
+    } },
+  /* THE BIG LINE READS AS WORDS. "9across 5 programmes" was the bug (Dan: "fix
+     the spacing"), and it took two assertions because it is two faults wearing
+     one symptom:
+       - GEOMETRY, for the look. `textContent` is blind to layout, so the first
+         version of this case "caught" a squash that a flex gap had already
+         fixed. The number's right edge and the caption's left edge are what a
+         reader sees.
+       - TEXT, for everything that is not a pair of eyes. With the elements
+         merely spaced apart, `textContent` is still "15across" — what a screen
+         reader says and what a copy-paste carries. */
+  { name: 'live · the headline is spaced, and says Programs',
+    needs: 'body[data-lp-gap="1"][data-lp-big*=" across"]',
+    absent: 'body[data-lp-big*="programme"]',
     act: async page => {
       await page.evaluate(() => {
-        const el = document.querySelector('.live-bolt');
-        const running = el && el.getAnimations && el.getAnimations().length > 0;
-        if (running) document.body.setAttribute('data-livebolt', '1');
+        const big = document.querySelector('[data-live-progs] .live-big');
+        if (!big) return;
+        const n = big.querySelector('strong'), cap = big.querySelector('span');
+        if (!n || !cap) return;
+        const a = n.getBoundingClientRect(), b = cap.getBoundingClientRect();
+        document.body.setAttribute('data-lp-gappx', String(Math.round(b.left - a.right)));
+        if (b.left - a.right >= 4) document.body.setAttribute('data-lp-gap', '1');
+      });
+    } },
+  /* THE WARM TINT. Dan: "make these two cards have a slightly different colored
+     background... they look a bit washed out and don't stand out from the
+     current cards." Computed, and COMPARED against a normal card — a literal
+     colour assertion would pin the shade rather than the difference, and would
+     fail the moment either theme's palette moves. */
+  { name: 'live · the live cards stand out from the rest', needs: 'body[data-lb-tinted="1"]',
+    act: async page => {
+      await page.evaluate(() => {
+        const live = document.querySelector('.live-card');
+        const plain = [...document.querySelectorAll('.widget-card')].find(c => !c.classList.contains('live-card'));
+        if (!live || !plain) return;
+        const a = getComputedStyle(live).backgroundColor, b = getComputedStyle(plain).backgroundColor;
+        document.body.setAttribute('data-lb-live', a);
+        document.body.setAttribute('data-lb-plain', b);
+        if (a && b && a !== b) document.body.setAttribute('data-lb-tinted', '1');
       });
     } },
 ];
