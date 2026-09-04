@@ -307,6 +307,10 @@ body { font-family: var(--font-body); background: var(--bg-page); color: var(--t
    row highlight uses, so the two cannot disagree about what just happened. */
 .live-bump { display: inline-block; margin-left: 5px; font-size: 9px; font-weight: 700; color: #16a34a; }
 /* +N: this row covers more sections than the one its link opens. */
+/* THE PROGRAMME UNDER THE SECTION NAME — context, not identity, so it is
+   smaller, muted and on its own line rather than competing with the link. */
+.live-sub-prog { display: block; font-size: 9px; color: var(--text-muted);
+                 line-height: 1.3; margin-top: 1px; }
 .live-more { display: inline-block; margin-left: 4px; font-size: 9px; font-weight: 700;
              color: var(--text-muted); vertical-align: 1px; }
 /* THE TREND ARROW. Down is the one that needs the reader; up and flat are
@@ -2906,26 +2910,56 @@ function liveProgramTrend(dayCounts, today) {
            recent: recent, prior: prior, pct: pct };
 }
 
-function liveByProgram(rows, today) {
+/* ONE DEFINITION OF "WHICH SECTION IS THIS ROW". The grouping, the arrival
+   highlight and the money bump all key on it, and three inline copies is how a
+   row lights up while its bump lands on a different row — the same rule that
+   made mbPlanKey and siteLabel single functions in the sibling repo.
+
+   THE ID WHERE THERE IS ONE, because two programmes legitimately run a section
+   called "Girls Grades 3-4" and a name key would merge them. Without an id the
+   best available key is programme AND section together. */
+function liveSectionKey(r) {
+  const id = String((r && r['Section Id']) || '');
+  if (id) return id;
+  const prog = String((r && r['Program']) == null ? '' : r['Program']).trim();
+  const sec  = String((r && r['Section']) == null ? '' : r['Section']).trim();
+  return prog + '\u0000' + sec;
+}
+
+function liveBySection(rows, today) {
   if (!today) return [];
   const by = new Map();
   (rows || []).forEach(r => {
-    /* EVERY DAY THE FEED CARRIES, not just today. Dan: "Can we get more
-       programs to show up on the right side chart? Seems a little thin over
-       there." It was thin because it was scoped to TODAY — Watertown had 13
-       enrollments across 5 programs that morning, so five rows was every row
-       there was, and the ten-row cap had nothing to do with it. The feed
-       already holds LIVE_DAYS of enrollments for the list on the left, so the
-       leaderboard reads the same rows: one query, one window, two views.
-       `today` is still passed and still used — for the freshness diff and to
-       label a row that arrived today — so nothing here needs the caller to
-       fetch anything more. */
+    /* ONE ROW PER SECTION, not per programme. Dan, after clicking a $20,390
+       "Team Gymnastics 2026-2027" row and landing on a section page reading
+       $1,970.29: "I don't care how much the program has made, I want to know
+       which section it's associated with."
+
+       He is right, and the old shape could not be rescued by relabelling. A
+       programme row summed five sections while the link opened ONE of them, so
+       the number and its destination differed by 10x with only a tooltip
+       saying why. A section is also what a person actually enrols in. Keyed
+       this way the count, the money and the link are all the same scope and
+       reconcile by construction.
+
+       THE PROGRAMME IS KEPT AS CONTEXT, not dropped: "Compulsory 2 Practice"
+       on its own does not say which programme it belongs to, and the card is
+       read by someone scanning for a programme they just opened registration
+       for. It is the sub-line, never the identity. */
     if (!liveDay(r['Signed Up At'])) return;
-    const name = String(r['Program'] == null ? '' : r['Program']).trim() || '(no program)';
-    let g = by.get(name);
-    if (!g) g = { program: name, signups: 0, todaySignups: 0, charged: null, paid: null, lastAt: '',
-                  dayCounts: {}, trend: null,
-                  sections: new Set(), sectionIds: new Set(), lastSectionId: '', lastSection: '' };
+    const id       = String(r['Section Id'] || '');
+    const secName  = String(r['Section'] == null ? '' : r['Section']).trim();
+    const progName = String(r['Program'] == null ? '' : r['Program']).trim();
+    /* KEYED ON THE SECTION ID WHERE THERE IS ONE. Two programmes legitimately
+       run a section called "Girls Grades 3-4" — that exact collision is
+       already recorded for this feed — so a name key would merge them into one
+       row and one revenue figure. Without an id the best available key is the
+       programme AND the section together, which keeps that pair apart. */
+    const key = liveSectionKey(r);
+    let g = by.get(key);
+    if (!g) g = { key: key, section: secName || '(no section)', program: progName,
+                  sectionId: id, signups: 0, todaySignups: 0, charged: null, paid: null,
+                  lastAt: '', dayCounts: {}, trend: null };
     g.signups += 1;
     // Per-day tally, which is all liveProgramTrend needs — one pass over the
     // rows the leaderboard is already walking rather than a second reduce.
@@ -2934,38 +2968,19 @@ function liveByProgram(rows, today) {
     const pr = r['Price'], pd = r['Paid'];
     if (pr != null && Number.isFinite(Number(pr))) g.charged = (g.charged || 0) + Number(pr);
     if (pd != null && Number.isFinite(Number(pd))) g.paid    = (g.paid    || 0) + Number(pd);
-    if (liveDay(r['Signed Up At']) === today) g.todaySignups = (g.todaySignups || 0) + 1;
+    if (day === today) g.todaySignups = (g.todaySignups || 0) + 1;
     const ts = String(r['Signed Up At'] || '');
-    /* THE LATEST REGISTRATION'S SECTION, so the program row can link somewhere
-       real. Dan: "I should also be able to click the section name on the right
-       side and open a new tab directly to the rec admin section page." A
-       program row is not a section — it can span several — so what it opens is
-       the section the most recent signup went into, and the cell says so. */
-    if (ts > g.lastAt) {
-      g.lastAt = ts;
-      g.lastSectionId = String(r['Section Id'] || '');
-      g.lastSection   = String(r['Section'] || '');
-    }
-    if (r['Section']) g.sections.add(String(r['Section']));
-    if (r['Section Id']) g.sectionIds.add(String(r['Section Id']));
-    by.set(name, g);
+    if (ts > g.lastAt) g.lastAt = ts;
+    by.set(key, g);
   });
-  /* RANKED ON WHAT THE COLUMN SHOWS — money RECEIVED, not money charged. It
-     ranked on `charged` while the header said Charged; both moved together
-     (see the note on the cell) so the sort follows the figure. */
+  /* RANKED ON WHAT THE COLUMN SHOWS — money RECEIVED, not money charged. */
   return [...by.values()]
-    .map(g => Object.assign(g, { sectionCount: g.sections.size,
-                                 trend: liveProgramTrend(g.dayCounts, today) }))
+    .map(g => Object.assign(g, { trend: liveProgramTrend(g.dayCounts, today) }))
     .sort((a, b) => (b.paid == null ? -1 : b.paid) - (a.paid == null ? -1 : a.paid)
                  || b.signups - a.signups
-                 || (a.lastAt < b.lastAt ? 1 : a.lastAt > b.lastAt ? -1 : 0));
+                 || (a.section < b.section ? -1 : a.section > b.section ? 1 : 0));
 }
 
-/* REC ADMIN LINKS. Both shapes are already in use in the reporting project —
-   copied, not guessed: a link built from the wrong id renders identically and
-   404s, which is the mistake already recorded there for rec_id vs users.id.
-   Both return null without an id or an org, and the cell then renders plain
-   text: a link to nowhere is worse than no link. */
 function liveUserUrl(orgId, userId) {
   return orgId && userId ? 'https://www.rec.us/admin/o/' + orgId + '/users/' + userId : null;
 }
@@ -3370,11 +3385,11 @@ function ProgramsLive({ feed, recOrgId }) {
   }
 
   const today = rows.length ? liveDay(rows[0]['Signed Up At']) : '';
-  const progs = liveByProgram(rows, today);
+  const progs = liveBySection(rows, today);
   // A row is fresh if any registration behind it is one of the arrivals the
   // shared feed just diffed — so a program lights up when it takes a signup,
   // which is the whole point of watching this card.
-  /* WHAT JUST LANDED, PER PROGRAM — one pass over the arrivals rather than a
+  /* WHAT JUST LANDED, PER SECTION — one pass over the arrivals rather than a
      scan of every row per program, and it carries the MONEY as well as the
      fact, so the row can say "+$215" instead of merely lighting up. The delta
      is summed from the same `flash` set the registrations list highlights, so
@@ -3382,12 +3397,16 @@ function ProgramsLive({ feed, recOrgId }) {
   const freshBy = new Map();
   rows.forEach(r => {
     if (liveDay(r['Signed Up At']) !== today || !flash.has(liveKey(r))) return;
-    const name = String(r['Program'] == null ? '' : r['Program']).trim() || '(no program)';
-    const g = freshBy.get(name) || { n: 0, charged: 0 };
+    /* KEYED BY SECTION, like the rows. It was keyed by PROGRAMME while the
+       rows were programmes; leaving it that way after the grain changed would
+       light up every section of a programme when one of them took a signup,
+       and add that programme's whole bump to each of their money cells. */
+    const key = liveSectionKey(r);
+    const g = freshBy.get(key) || { n: 0, charged: 0 };
     g.n += 1;
     const pr = Number(r['Price']);
     if (Number.isFinite(pr)) g.charged += pr;
-    freshBy.set(name, g);
+    freshBy.set(key, g);
   });
   const totalPaid    = progs.reduce((n, g) => n + (g.paid || 0), 0);
   const todaySignups = progs.reduce((n, g) => n + (g.todaySignups || 0), 0);
@@ -3400,7 +3419,7 @@ function ProgramsLive({ feed, recOrgId }) {
     return (
       <div className="widget-card widget-md live-card" data-live-progs="0">
         <LiveCardHeader icon={'\u{1F3AF}'} title="Programs Live" feed={feed}
-                        sub={'Top programs by money received \u00b7 last ' + LIVE_DAYS + ' days'} />
+                        sub={'Top sections by money received \u00b7 last ' + LIVE_DAYS + ' days'} />
         <div style={{padding:'18px 4px',fontSize:12,color:'var(--text-muted)'}}>
           No enrollments in the last {LIVE_DAYS} days.
         </div>
@@ -3411,7 +3430,7 @@ function ProgramsLive({ feed, recOrgId }) {
   return (
     <div className="widget-card widget-md live-card" data-live-progs={String(progs.length)}>
       <LiveCardHeader icon={'\u{1F3AF}'} title="Programs Live" feed={feed}
-                      sub={'Top programs by money received \u00b7 last ' + LIVE_DAYS + ' days'} />
+                      sub={'Top sections by money received \u00b7 last ' + LIVE_DAYS + ' days'} />
 
       {/* A SPACE IN THE TEXT AS WELL AS A GAP IN THE LAYOUT. The flex gap fixes
           what it looks like; `textContent` is still "15across" without the
@@ -3419,7 +3438,7 @@ function ProgramsLive({ feed, recOrgId }) {
           carries. Dan reported the look; both are the same bug. */}
       <div className="live-big" data-live-progtotal={String(totalSignups)}>
         <strong>{totalSignups}</strong>{' '}
-        <span>across {progs.length} program{progs.length > 1 ? 's' : ''}
+        <span>across {progs.length} section{progs.length > 1 ? 's' : ''}
           {totalPaid > 0 ? ' \u00b7 ' + liveMoney(totalPaid) + ' received' : ''}
           {todaySignups > 0 ? ' \u00b7 ' + todaySignups + ' today' : ''}</span>
       </div>
@@ -3428,37 +3447,40 @@ function ProgramsLive({ feed, recOrgId }) {
         <thead>
           <tr>
             <th className="lt">Last</th>
-            <th className="ls">Program</th>
+            <th className="ls">Section</th>
             <th className="lp">Signups</th>
-            <th className="lm">Program revenue</th>
+            <th className="lm">Section revenue</th>
           </tr>
         </thead>
         <tbody>
           {progs.slice(0, LIVE_PROG_ROWS).map(g => (
-            <tr key={g.program} className={freshBy.has(g.program) ? 'live-new' : ''}
-                data-live-prog={g.program} data-live-prog-signups={String(g.signups)}>
+            <tr key={g.key} className={freshBy.has(g.key) ? 'live-new' : ''}
+                data-live-prog={g.section} data-live-prog-program={g.program}
+                data-live-prog-signups={String(g.signups)}>
               <td className="lt">{liveClock(g.lastAt)}</td>
-              {/* THE NAME OPENS REC. One section behind the program and the link
-                  is unambiguous; SEVERAL and it opens the most recent one, with
-                  a +N marking that the row covers more than what it opens —
-                  the same "+N is a primary, not the whole truth" shape the
-                  reporting project uses for instructors. Plain text when the
-                  feed carried no section id, because a link to nowhere is
-                  worse than no link. */}
-              <td className="ls" title={g.sectionCount + ' section' + (g.sectionCount === 1 ? '' : 's') +
-                                        ': ' + [...g.sections].join(', ') +
-                                        (g.sectionCount > 1 && g.lastSection
-                                          ? ' \u00b7 opens the most recent (' + g.lastSection + ')' : '')}>
+              {/* THE SECTION IS THE ROW, AND THE LINK OPENS EXACTLY IT. There is
+                  no "+N" here any more and no most-recent-of-several: the name,
+                  the count, the money and the destination are one section, so
+                  clicking a figure lands on a page showing that figure. The old
+                  programme row summed five sections and opened one of them,
+                  which is the 10x mismatch Dan hit.
+
+                  The programme is the SUB-LINE, because "Compulsory 2 Practice"
+                  alone does not say what it belongs to — but it is context, not
+                  the identity, and it is not a link. Plain text when the feed
+                  carried no section id: a link to nowhere is worse than none. */}
+              <td className="ls" title={g.program ? g.section + ' \u00b7 ' + g.program : g.section}>
                 {(() => {
-                  const u = liveSectionUrl(recOrgId, g.lastSectionId);
-                  const extra = g.sectionCount > 1
-                    ? <span className="live-more">{'+' + (g.sectionCount - 1)}</span> : null;
-                  return u
-                    ? <React.Fragment>
-                        <a className="live-link" href={u} target="_blank" rel="noopener noreferrer"
-                           data-live-prog-section={g.lastSectionId}>{g.program}</a>{extra}
-                      </React.Fragment>
-                    : <React.Fragment>{g.program}{extra}</React.Fragment>;
+                  const u = liveSectionUrl(recOrgId, g.sectionId);
+                  return (
+                    <React.Fragment>
+                      {u ? <a className="live-link" href={u} target="_blank" rel="noopener noreferrer"
+                              data-live-prog-section={g.sectionId}>{g.section}</a>
+                         : g.section}
+                      {g.program && g.program !== g.section
+                        ? <span className="live-sub-prog">{g.program}</span> : null}
+                    </React.Fragment>
+                  );
                 })()}
               </td>
               {/* THE COUNT, AND WHETHER IT IS STILL MOVING. The number alone
@@ -3520,7 +3542,7 @@ function ProgramsLive({ feed, recOrgId }) {
                     $215, so the delta is signed and sits beside the figure
                     rather than replacing it. */}
                 {(() => {
-                  const f = freshBy.get(g.program);
+                  const f = freshBy.get(g.key);
                   return f && f.charged > 0
                     ? <span className="live-bump" data-live-bump={String(Math.round(f.charged))}>{'+' + liveMoney(f.charged)}</span>
                     : null;
