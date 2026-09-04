@@ -127,6 +127,12 @@ const ENROLLMENTS = [
   /* YESTERDAY, and LATER IN THE DAY than the row above it — which is exactly
      what made the list look unsorted: a column showing only a clock cannot say
      that 8:15p was yesterday. This row is what proves the weekday prefix. */
+  /* A SECOND signup on SBA Travel Teams, EARLIER in the day. Without it every
+     programme in this fixture has exactly one registration, and a Programs
+     Live card sorted by size would render identically to one sorted by
+     recency — plausible, but unable to tell the two apart. */
+  { 'Signed Up At': liveIso(0, '06:12:00'), 'Customer Name': 'Early Bird', 'Participant': 'Wren Bird',
+    'Section': 'Boys (Grades 4-5) Tryouts', 'Program': 'SBA Travel Teams', 'Price': 25, 'Paid': 25 },
   { 'Signed Up At': liveIso(1, '20:15:37'), 'Customer Name': 'Kaitlin Gentile', 'Participant': 'Cecelia Gentile',
     'User ID': 'user-kaitlin', 'Section Id': 'sec-girls78',
     'Section': 'Girls Grades 7-8', 'Program': 'Shrewsbury Rec Youth Basketball', 'Price': 170, 'Paid': 0 },
@@ -223,9 +229,9 @@ const CASES = [
      printing the row count, on a sparkline drawn from the wrong days, and on a
      list wired to the wrong feed. */
   { name: 'live · the section is on the page', needs: '[data-live-section]' },
-  { name: 'live · the coffee counter reads its own feed', needs: '[data-live-coffee="5"]' },
+  { name: 'live · the coffee counter reads its own feed', needs: '[data-live-coffee="6"]' },
   // THREE of the five rows are today. A widget printing rows.length reads 5.
-  { name: 'live · and counts TODAY, not the list', needs: '[data-live-today="3"]' },
+  { name: 'live · and counts TODAY, not the list', needs: '[data-live-today="4"]' },
   { name: 'live · above the date-ranged sections', needs: '.dashboard-section[data-live-section] + .dashboard-section' },
   // HALF WIDTH (Dan). widget-lg spans all four columns; this is a list of
   // eight short rows, not a chart, and full-bleed it dwarfed the dashboard.
@@ -276,11 +282,11 @@ const CASES = [
         const b = [...document.querySelectorAll('button')].find(x => (x.textContent || '').trim() === 'Cancel');
         if (b) b.click();
       });
-      await page.waitForSelector('.live-table thead th', { timeout: 15000 });
+      await page.waitForSelector('[data-live-coffee] .live-table thead th', { timeout: 15000 });
       await page.evaluate(() => {
-        const hs = [...document.querySelectorAll('.live-table thead th')].map(h => h.textContent.trim());
+        const hs = [...document.querySelectorAll('[data-live-coffee] .live-table thead th')].map(h => h.textContent.trim());
         document.body.setAttribute('data-livehead', hs.join('|'));
-        document.body.setAttribute('data-livefixed', getComputedStyle(document.querySelector('.live-table')).tableLayout);
+        document.body.setAttribute('data-livefixed', getComputedStyle(document.querySelector('[data-live-coffee] .live-table')).tableLayout);
       });
     } },
   { name: 'live · ...and fixed column tracks', needs: 'body[data-livefixed="fixed"]' },
@@ -290,7 +296,7 @@ const CASES = [
      forces the refresh, and the stub serves one extra row from the second call
      — so a widget that highlights everything, or nothing, fails. */
   { name: 'live · a new registration lands highlighted, at the top',
-    needs: '.live-table tbody tr:first-child[data-live-new="1"] td.ln',
+    needs: '[data-live-coffee] .live-table tbody tr:first-child[data-live-new="1"] td.ln',
     act: async page => {
       await page.waitForSelector('.live-pause input', { timeout: 15000 });
       await page.click('.live-pause input');          // pause
@@ -298,26 +304,42 @@ const CASES = [
       await page.waitForSelector('[data-live-new="1"]', { timeout: 15000 });
     } },
   { name: 'live · ...and it is the only one highlighted',
-    needs: '.live-table tbody tr:first-child[data-live-new="1"]',
-    absent: '.live-table tbody tr:nth-child(2)[data-live-new="1"]' },
+    needs: '[data-live-coffee] .live-table tbody tr:first-child[data-live-new="1"]',
+    absent: '[data-live-coffee] .live-table tbody tr:nth-child(2)[data-live-new="1"]' },
   /* THE TIMELINE replaced a per-day bar chart (Dan: "what is the odd bar chart
      there... how about a moving timeline of the days/time... and when people
      pay, it gets a dollar sign"). Keyed on the MARKS, because a lane with no
      marks in it renders as a perfectly good empty timeline. */
-  { name: 'live · the timeline plots every registration', needs: '.live-timeline[data-live-marks="6"]' },
-  { name: 'live · a paid registration carries a dollar sign', needs: '.lt-mark.paid[data-live-mark="paid"]' },
-  { name: 'live · an unpaid one does not', needs: '.lt-mark[data-live-mark="unpaid"]',
-    absent: '.lt-mark.paid[data-live-mark="unpaid"]' },
-  { name: 'live · the last day is labelled Today', needs: '.lt-day.today' },
+  /* THE LANE IS ONE DAY WIDE (Dan: "would prefer this card show the current
+     day, so it's not so smooshed"). The fixture carries six registrations, of
+     which THREE are today — so 3 is the discriminating number here and 6 is
+     exactly what a revert to the seven-day lane would render. */
+  { name: 'live · the timeline plots today, not the week',
+    needs: '[data-live-coffee] .live-timeline[data-live-marks="5"]',
+    absent: '[data-live-coffee] .live-timeline[data-live-marks="7"]' },
+  { name: 'live · a paid registration carries a dollar sign', needs: '[data-live-coffee] .lt-mark.paid[data-live-mark="paid"]' },
+  { name: 'live · an unpaid one does not', needs: '[data-live-coffee] .lt-mark[data-live-mark="unpaid"]',
+    absent: '[data-live-coffee] .lt-mark.paid[data-live-mark="unpaid"]' },
+  /* Hour ticks, not weekday ones — and keyed on a LATE hour, because an axis
+     that quietly reverted to days would still render some `.lt-day` spans. */
+  { name: 'live · the axis is hours across one day', needs: '[data-live-coffee] .lt-day',
+    act: async page => {
+      await page.waitForSelector('[data-live-coffee] .live-timeline', { timeout: 15000 });
+      await page.evaluate(() => {
+        const t = [...document.querySelectorAll('[data-live-coffee] .lt-day')].map(x => x.textContent.trim()).join('|');
+        document.body.setAttribute('data-lt-ticks', t);
+      });
+    } },
+  { name: 'live · ...labelled 12a through 8p', needs: 'body[data-lt-ticks="12a|4a|8a|12p|4p|8p"]' },
   /* ROWS FROM ANOTHER DAY SAY SO. The list is sorted newest-first and always
      was; a column showing only a clock made it look shuffled, because 8:15p
      yesterday sorts below 2:41p today. */
   { name: 'live · a row from another day carries its weekday',
     needs: 'body[data-liveday="1"]',
     act: async page => {
-      await page.waitForSelector('.live-table tbody tr', { timeout: 15000 });
+      await page.waitForSelector('[data-live-coffee] .live-table tbody tr', { timeout: 15000 });
       await page.evaluate(() => {
-        const cells = [...document.querySelectorAll('.live-table td.lt')].map(c => c.textContent.trim());
+        const cells = [...document.querySelectorAll('[data-live-coffee] .live-table td.lt')].map(c => c.textContent.trim());
         const today = cells.filter(t => /^\d{1,2}:\d{2}[ap]$/.test(t)).length;
         const dated = cells.filter(t => /^(Sun|Mon|Tue|Wed|Thu|Fri|Sat) \d{1,2}:\d{2}[ap]$/.test(t)).length;
         if (today > 0 && dated > 0) document.body.setAttribute('data-liveday', '1');
@@ -325,12 +347,43 @@ const CASES = [
     } },
   /* LINKS INTO REC, built from the ids rather than the names — a link built
      from rec_id or from a section NAME renders identically and 404s. */
+  /* PROGRAMS LIVE (Dan: "a live programs card, showing the most recent
+     registrations by program... watch both users enrolling in sections, AND
+     section revenue increasing"). Keyed on COMPUTED values, because a table
+     that rendered the wrong aggregation renders just as convincingly: the
+     fixture's four today-rows span three programmes, and the ordering is by
+     recency rather than size — the newest row is a one-signup programme, so a
+     size sort would put a different name first. */
+  { name: 'live · the programmes card is on the page', needs: '[data-live-progs]' },
+  { name: 'live · programme rows carry their own signup counts',
+    needs: 'body[data-lp-firstn]',
+    act: async page => {
+      await page.waitForSelector('[data-live-prog]', { timeout: 15000 });
+      await page.evaluate(() => {
+        const rows = [...document.querySelectorAll('[data-live-prog]')];
+        const n = r => Number(r.getAttribute('data-live-prog-signups') || 0);
+        document.body.setAttribute('data-lp-firstn', String(n(rows[0])));
+        document.body.setAttribute('data-lp-max', String(Math.max(...rows.map(n))));
+      });
+    } },
+  /* THE DISCRIMINATING PAIR. SBA Travel Teams has TWO of today's signups and an
+     older last-signup than the programme that leads, so a card sorted by size
+     would put a 2 at the top. Keyed this way rather than on a programme name
+     or a row count, both of which shift with whether the arrival fixture row
+     has been injected by an earlier case. */
+  { name: 'live · the most RECENT programme leads, not the biggest',
+    needs: 'body[data-lp-firstn="1"]', absent: 'body[data-lp-firstn="2"]' },
+  { name: 'live · ...and a bigger programme really is present to lose the race',
+    needs: 'body[data-lp-max="2"]' },
+  { name: 'live · two widgets in the section',
+    needs: '[data-live-section] [data-live-coffee] ~ [data-live-progs]' },
+
   { name: 'live · the household owner links into Rec',
     needs: 'a.live-link[data-live-user="user-rita"][href="https://www.rec.us/admin/o/rec-org-uuid/users/user-rita"]' },
   { name: 'live · the section links into Rec',
     needs: 'a.live-link[data-live-section="sec-oxygen"][href="https://www.rec.us/admin/o/rec-org-uuid/programming/sections/sec-oxygen"]' },
   { name: 'live · a row with no id is plain text, not a dead link',
-    needs: '.live-table tbody tr', absent: 'a.live-link[href$="/users/undefined"]' },
+    needs: '[data-live-coffee] .live-table tbody tr', absent: 'a.live-link[href$="/users/undefined"]' },
   { name: 'live · the bolt is animated', needs: 'body[data-livebolt="1"]',
     act: async page => {
       await page.evaluate(() => {
