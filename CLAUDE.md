@@ -47,6 +47,32 @@ evidence.
   there was always at least one row in it, so an empty tbody under live headers
   was unreachable. It now says *"No signups yet today."*
 
+## THE CHECK-INS CARD COULD NEVER MAKE A SOUND (2026-09-05)
+
+Dan: *"no sounds playing from the check-in widget, only the live enrollments one
+is playing sound."*
+
+`useLiveCheckins` computed its `fresh` diff — it used it to drive the highlight —
+and **never returned it**. So `useLiveSound('checkins', feed.freshRows, ...)` was
+handed `undefined` and bailed on its own `!freshRows` guard on every poll. The
+mute box rendered, the sound picker rendered, the card lit up new rows, and it
+was structurally incapable of playing anything.
+
+**BOTH HALVES READ CORRECTLY ON THEIR OWN**, which is why review missed it and
+why no existing assertion caught it: the hook diffs, the card rings, and the one
+value that joins them was simply not in the return object. The enrollments hook
+had `setFreshRows(...)`; this one did not.
+
+**So the guard is the CONTRACT, not either half** — a hook whose feed is handed
+to `useLiveSound` must publish its arrivals. Counted, not matched: a single
+`.test()` passes while one of the two hooks is missing it, which is exactly how
+this shipped. Mutation-tested both ways (the return field dropped, the publish
+dropped); both fail by name.
+
+**Generalise it:** when two correct components are joined by a value passed
+between them, assert the JOIN. Nothing about either end tells you the wire is
+connected.
+
 ## FREE IS NOT "NOT YET PAID" (2026-09-05)
 
 Dan, on Lesline Mullings' Trunk or Treat: *"we're picking up free

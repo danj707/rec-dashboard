@@ -3883,6 +3883,7 @@ function useLiveCheckins(onAvailable, enabled) {
   const [paused, setPaused] = useState(false);
   const [loading, setLoading] = useState(true);
   const [flash, setFlash] = useState(new Set());
+  const [freshRows, setFreshRows] = useState(null);
   const seenRef = React.useRef(null);
   const timerRef = React.useRef(null);
   const pausedRef = React.useRef(paused);
@@ -3929,6 +3930,13 @@ function useLiveCheckins(onAvailable, enabled) {
           const fresh = keys.filter(k => !seen.has(k));
           if (fresh.length) {
             setFlash(new Set(fresh));
+            /* AND PUBLISH THEM, or the card is silent forever. This hook
+               computed `fresh` for the highlight and never handed it over —
+               so `useLiveSound('checkins', feed.freshRows, ...)` was called
+               with undefined and bailed on its own guard every time. The
+               enrollments hook had the line; this one did not, which is why
+               only one of the two cards ever made a noise. */
+            setFreshRows(fresh.map(k => j.rows[keys.indexOf(k)]).filter(Boolean));
             clearTimeout(timerRef.current);
             timerRef.current = setTimeout(() => setFlash(new Set()), LIVE_FLASH_MS);
           }
@@ -3958,7 +3966,7 @@ function useLiveCheckins(onAvailable, enabled) {
   }, [load]);
   useEffect(() => () => clearTimeout(timerRef.current), []);
 
-  return { rows, err, at, paused, setPaused, flash, loading, refresh: load };
+  return { rows, err, at, paused, setPaused, flash, freshRows, loading, refresh: load };
 }
 
 function MembershipCheckins({ feed, recOrgId }) {

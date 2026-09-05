@@ -1428,6 +1428,40 @@ process.on('exit', () => {
        '...while a charged, unpaid registration still shows what is owed');
   }
 
+  /* ── EVERY CARD THAT RINGS MUST BE FED ─────────────────────────────────
+     Dan: "no sounds playing from the check-in widget, only the live
+     enrollments one is playing sound."
+
+     `useLiveCheckins` computed its `fresh` diff for the highlight and never
+     returned it, so `useLiveSound('checkins', feed.freshRows, ...)` was handed
+     `undefined` and bailed on its own `!freshRows` guard on every poll. The
+     card could not make a noise, ever — and nothing caught it, because both
+     halves read correctly on their own: the hook diffs, the card rings, and
+     the value that joins them simply was not passed.
+
+     SO THE GUARD IS THE CONTRACT, not either half: a hook whose feed is handed
+     to useLiveSound has to publish the arrivals. Counted, because a single
+     `.test()` passes while one of the two hooks is missing it — which is
+     exactly how this shipped. */
+  {
+    const ringers = (code.match(/useLiveSound\('[a-z]+', feed\.freshRows/g) || []).length;
+    ok(ringers === 3, 'all three live cards ring off their feed\'s freshRows');
+
+    const returns = (code.match(/return \{ rows, err, at, paused, setPaused, flash, freshRows, loading/g) || []).length;
+    ok(returns === 2, 'BOTH live feed hooks return freshRows — the check-ins one did not, and its card was silent');
+
+    ok((code.match(/setFreshRows\(fresh\.map\(k => j\.rows\[keys\.indexOf\(k\)\]\)\.filter\(Boolean\)\);/g) || []).length === 2,
+       '...and both actually publish the arrivals they already diffed');
+    ok((code.match(/const \[freshRows, setFreshRows\] = useState\(null\);/g) || []).length === 2,
+       '...off state both hooks declare');
+
+    /* THE RING IS OFF THE SAME DIFF AS THE HIGHLIGHT, in both hooks — that is
+       what stops a card ringing for a row it does not light up, and what keeps
+       the FIRST load silent instead of playing a coin per row. */
+    ok((code.match(/if \(muted \|\| !freshRows \|\| !freshRows\.length\) return;/g) || []).length === 1,
+       'one guard, shared: no feed, no sound');
+  }
+
   /* THE TWO HOOKS MUST NOT DRIFT on the two things that were just fixed. A
      feed that keeps serving a stale answer, or one that sleeps through a
      backgrounded tab, is the bug Dan reported — and it would be invisible if
