@@ -135,6 +135,21 @@ const ENROLLMENTS = [
   { 'Signed Up At': liveIso(0, '11:35:00'), 'Customer Name': 'Nicole Baldarelli', 'Participant': 'Cameron Baldarelli',
     'Section': 'Music, Movement & Sensory Play', 'Program': 'Music, Movement & Sensory Play',
     'Price': 60, 'Paid': 25 },
+  /* A PAYMENT PLAN THAT HAS COLLECTED NOTHING YET — Jan Denner's real shape.
+     Dan: "I enrolled in a payment plan section for Jan Denner, it was $5 due
+     as a future installment, but I paid $0 now. I'd expect that to show $5 in
+     orange, with the price showing $0/$5, denoting a payment plan. Also the
+     dot for that should be orange, not grey."
+
+     PRICE 5 / PAID 0 IS BYTE FOR BYTE THE UNPAID ROW two entries down, and
+     that is the entire point: only card 21286 v4's "On Plan" column separates
+     them, so a build that ignores it renders a perfectly plausible grey dot
+     and a bare "$5". Placed above Nicole Baldarelli so both part-paid shapes
+     are inside the newest eight and can be told apart by their PAID figure. */
+  { 'Signed Up At': liveIso(0, '12:10:00'), 'Customer Name': 'Jan Denner', 'Participant': null,
+    'User ID': 'user-jan', 'Section Id': 'sec-demo',
+    'Section': 'Demo Program Template', 'Program': 'Demo Program Template',
+    'Price': 5, 'Paid': 0, 'On Plan': true, 'Plan Installments': 2, 'Plan Installments Paid': 0 },
   /* YESTERDAY, and LATER IN THE DAY than the row above it — which is exactly
      what made the list look unsorted: a column showing only a clock cannot say
      that 8:15p was yesterday. This row is what proves the weekday prefix. */
@@ -340,6 +355,22 @@ const server = http.createServer((req, res) => {
 
 const CASES = [
   { name: 'dashboard renders', needs: '.widget-card' },
+  /* A LAYOUT SAVED BEFORE CUSTOMER SUPPORT WAS REMOVED. Org layouts live on the
+     volume and are not rewritten by the deploy that deletes the widgets, so the
+     page has to survive ids and a section it no longer knows.
+
+     THIS IS A SMOKE TEST, NOT A GUARD, and the difference is worth stating: I
+     could not make it fail. Removing the widget renderer's `if (!def)`, the
+     section renderer's `if (!sec)`, and the metric/chart filter's `W[id] &&` —
+     separately and together — left it green, because the unknown ids are
+     dropped by several independent layers and something upstream of all of them
+     catches this shape first. Defence in depth is why the removal is safe; it
+     is also why no single mutation discriminates here. The exact-text
+     assertions in support-removed.spec.js are what actually pin the guards. */
+  { name: 'dashboard · a retired support layout still renders',
+    retiredSupport: true, needs: '.widget-card' },
+  { name: 'dashboard · ...and the retired widgets are simply absent',
+    retiredSupport: true, needs: '.widget-card', absent: '[data-widget-id^="sup-"]' },
   // Keyed on COMPUTED VALUES, not "a widget rendered" — every regression these
   // guard against leaves a perfectly good-looking tile behind.
   // Read the TILE'S OWN value, not the page text: "a widget rendered" passes on
@@ -371,13 +402,13 @@ const CASES = [
      printing the row count, on a sparkline drawn from the wrong days, and on a
      list wired to the wrong feed. */
   { name: 'live · the section is on the page', needs: '[data-live-section]' },
-  /* TODAY, NOT THE WHOLE FEED. The fixture holds 31 rows of which 15 are
+  /* TODAY, NOT THE WHOLE FEED. The fixture holds 32 rows of which 16 are
      today — different numbers on purpose, so a card that still rendered the
-     seven-day list reads 31 here and fails. */
+     seven-day list reads 32 here and fails. */
   { name: 'live · the registrations card shows TODAY, not the whole feed',
-    needs: '[data-live-regs="15"]',
-    absent: '[data-live-regs="31"]' },
-  { name: 'live · and counts TODAY, not the list', needs: '[data-live-today="15"]' },
+    needs: '[data-live-regs="16"]',
+    absent: '[data-live-regs="32"]' },
+  { name: 'live · and counts TODAY, not the list', needs: '[data-live-today="16"]' },
   /* FREE, NOT "NOT YET PAID". Keyed on the CELL, because the state and the
      word are two different things that can disagree — and on the dot, because
      a free row sharing the unpaid grey is the bug wearing the fix's clothes. */
@@ -469,8 +500,8 @@ const CASES = [
      been injected, so 15 of the feed's 17 rows are today — and 17 is exactly
      what a revert to the seven-day lane would render. */
   { name: 'live · the timeline plots today, not the week',
-    needs: '[data-live-regs] .live-timeline[data-live-marks="16"]',
-    absent: '[data-live-regs] .live-timeline[data-live-marks="18"]' },
+    needs: '[data-live-regs] .live-timeline[data-live-marks="17"]',
+    absent: '[data-live-regs] .live-timeline[data-live-marks="19"]' },
   /* THREE PAYMENT STATES, ALL DOTS (Dan: "change the dollar signs to a green
      dot for paid, and an orange dot for a partial payment/payment plan").
      Every one of the three has to be PRESENT, or a build that collapsed part
@@ -630,10 +661,38 @@ const CASES = [
   { name: 'live · a part-paid row shows what arrived over what was charged',
     needs: '[data-live-regs] td[data-live-price="part"][data-live-paid="$25"]',
     act: async page => {
-      await page.waitForSelector('[data-live-regs] td[data-live-price="part"]', { timeout: 15000 });
-      const txt = await page.$eval('[data-live-regs] td[data-live-price="part"]', el => el.innerText.replace(/\s+/g, ' ').trim());
+      /* SCOPED TO ITS OWN PAID FIGURE. There are two part-paid rows now — this
+         one and Jan Denner's $0 plan — and a bare `part` selector would read
+         whichever sorts first, so the case would pass or fail on row order. */
+      const sel = '[data-live-regs] td[data-live-price="part"][data-live-paid="$25"]';
+      await page.waitForSelector(sel, { timeout: 15000 });
+      const txt = await page.$eval(sel, el => el.innerText.replace(/\s+/g, ' ').trim());
       if (txt !== '$25 / $60') throw new Error('the part-paid cell reads "' + txt + '", not "$25 / $60"');
     } },
+  /* A PLAN THAT HAS TAKEN NOTHING SHOWS ITS ZERO. `liveMoney` suppresses a
+     zero on purpose — "$0 / $170" on an ordinary unpaid row reads as a refund
+     — so the plan row needs its own rule, and no source assertion can tell a
+     cell that prints the zero from one that drops it. This keys on the TEXT.
+
+     Note what the unpaid rows in this fixture are also doing: none of them
+     carries an "On Plan" key at all, which is exactly the shape a warm pre-v4
+     cache entry serves. So the case below that requires an unpaid row to show
+     no zero IS the proof that this degrades rather than guessing. */
+  { name: 'live · a payment plan shows $0 over the full charge',
+    needs: '[data-live-regs] td[data-live-price="part"][data-live-paid="$0"]',
+    act: async page => {
+      const sel = '[data-live-regs] td[data-live-price="part"][data-live-paid="$0"]';
+      await page.waitForSelector(sel, { timeout: 15000 });
+      const txt = await page.$eval(sel, el => el.innerText.replace(/\s+/g, ' ').trim());
+      if (txt !== '$0 / $5') throw new Error('Jan Denner\'s plan cell reads "' + txt + '", not "$0 / $5"');
+    } },
+  /* ...AND ITS DOT IS ORANGE, NOT GREY. The dot and the cell are separate
+     code paths — the timeline builds its own marks — so a build that fixed
+     the cell and not the lane passes the case above. Keyed on the CLASS *and*
+     the state, because the class alone cannot say which row it belongs to. */
+  { name: 'live · a payment plan with nothing collected is an orange dot',
+    needs: '[data-live-regs] .lt-mark.part[data-live-mark="part"][title*="$0 of $5 paid"]',
+    absent: '[data-live-regs] .lt-mark[data-live-mark="unpaid"][title*="Jan Denner"]' },
   /* AND A FULLY PAID ROW DOES NOT. "$45 / $45" is noise, and an unpaid row
      showing "$0 / $170" would read as a refund rather than as a booking
      nobody has paid for yet. Absence, not a different value — the two claims
@@ -1191,6 +1250,9 @@ const CASES = [
     executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/opt/pw-browsers/chromium',
   });
   let failures = [];
+  /* The request handler is installed once, before the case loop, so a case that
+     needs a different stub reaches it through this. */
+  let currentCase = {};
   const page = await browser.newPage();
   await page.setViewport({ width: 1400, height: 1400 });
   await page.setRequestInterception(true);
@@ -1207,7 +1269,25 @@ const CASES = [
     }
     if (/\/api\//.test(u)) {
       const json = (o) => req.respond({ status: 200, contentType: 'application/json', body: JSON.stringify(o) });
-      if (/\/api\/config/.test(u)) return json(CONFIG);
+      if (/\/api\/config/.test(u)) {
+        /* A SAVED LAYOUT FROM BEFORE CUSTOMER SUPPORT WAS REMOVED. Orgs'
+           layouts live on the volume, so the deploy that deletes the widgets
+           does NOT rewrite them — the page has to survive ids it no longer
+           knows. Serving the retired shape here is the only way to prove that;
+           a source assertion about guard clauses cannot. */
+        if (currentCase.retiredSupport) {
+          /* TWO different guards have to hold, and an earlier version of this
+             fixture only reached one: a whole unknown SECTION is dropped before
+             its widget ids are ever looked at, so retired ids also have to sit
+             inside a section that still EXISTS. */
+          const surviving = CONFIG.config.sections.map(sec => ({ ...sec,
+            widgets: ['sup-total', ...sec.widgets, 'tbl-support-topics'] }));
+          return json({ ...CONFIG, config: { ...CONFIG.config,
+            sections: [{ id: 'support', widgets: ['sup-hours-saved'] }, ...surviving] },
+            availableReports: { ...CONFIG.availableReports, support: true } });
+        }
+        return json(CONFIG);
+      }
       // fetchReportData reads json.rows off /:org/api/data/:reportType.
       const m = /\/api\/data\/([a-z-]+)/.exec(u);
       const rt = m ? m[1] : null;
@@ -1260,6 +1340,7 @@ const CASES = [
   }
 
   for (const c of CASES) {
+    currentCase = c;
     let bad = null;
     /* A per-case `act` hook, ported from the sibling repo's render check. Some
        states only exist after an interaction — the widget editor is behind a

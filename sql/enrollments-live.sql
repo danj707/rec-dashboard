@@ -55,6 +55,26 @@
 -- same query with a smaller input, and "smaller input, identical output" is
 -- the whole claim being made here.
 --
+-- v3 (2026-09-03) adds "User ID" and "Section Id" so the widget can link the
+-- household owner and the section straight into Rec.
+--
+-- v4 (2026-09-05) adds "On Plan", "Plan Installments" and "Plan Installments
+-- Paid". Dan, on a $5 registration he took a $0 first payment for: "I'd expect
+-- that to show $5 in orange, with the price showing $0/$5, denoting a payment
+-- plan." THE FEED COULD NOT TELL: a running plan reads Price 5 / Paid 0, which
+-- is byte for byte an unpaid registration, so the widget drew the grey "not
+-- yet paid" dot for somebody who had paid exactly what was due.
+--
+-- THE PLAN TEST IS THE UNION OF TWO SIGNALS and neither alone is enough.
+-- Measured over 287,575 order items across 30 days: `payment_plan` is set on
+-- 6,794 and installments exist on 6,712, and they DISAGREE on 110 — 96 with a
+-- plan whose schedule has not been written yet, 14 the other way. Either test
+-- alone silently mislabels one of those groups.
+--
+-- Additive, proven before the push: 280 rows before and after over Essex
+-- Junction's window and an md5 of b55f44fec5523ff8a6f14c82923a5c85 over every
+-- original column, identical either way. 132 of those 280 are on a plan.
+--
 -- Params: org_id (uuid), start_date, end_date (inclusive, on the SIGNUP date
 -- in the org's timezone). THE DATE TAGS LIVE IN `bk` NOW — that is where the
 -- window has to be applied for any of the above to be true.  Row cap is the
@@ -106,7 +126,26 @@ bk AS (
 money AS (
   SELECT oi.booking_id,
          SUM(COALESCE((oi.applied_pricing->'result'->>'finalCents')::numeric,0)) AS price_cents,
-         SUM(COALESCE(t.succeeded_cents,0)) AS paid_cents
+         SUM(COALESCE(t.succeeded_cents,0)) AS paid_cents,
+         -- ── v4: IS THIS A PAYMENT PLAN? ──────────────────────────────────
+         -- Dan, on Jan Denner: "it was $5 due as a future installment, but I
+         -- paid $0 now. I'd expect that to show $5 in orange, with the price
+         -- showing $0/$5, denoting a payment plan." Before this the feed could
+         -- not tell: a running plan reads Price 5 / Paid 0, which is byte for
+         -- byte an unpaid registration, so it drew the grey "not yet" dot.
+         --
+         -- THE TEST IS THE UNION OF TWO SIGNALS, and neither alone is enough.
+         -- Measured over 287,575 order items in 30 days: `payment_plan` set on
+         -- 6,794, installments present on 6,712, and they DISAGREE on 110 —
+         -- 96 with a plan but no installments scheduled yet, 14 the other way.
+         -- Either test alone silently mislabels one of those groups.
+         BOOL_OR(oi.payment_plan IS NOT NULL OR COALESCE(pl.n,0) > 0)             AS on_plan,
+         -- The schedule itself, so the widget can say "0 of 2 paid" rather
+         -- than only that a plan exists. Counts, not money: the installment
+         -- amounts are the plan's own schedule and reconciling them against
+         -- `Price` is a revenue question this feed does not answer.
+         SUM(COALESCE(pl.n,0))                                                    AS plan_installments,
+         SUM(COALESCE(pl.paid_n,0))                                               AS plan_installments_paid
   FROM bk
   JOIN order_item oi ON oi.booking_id = bk.id AND oi.organization_id = bk.org_id
        AND oi.deleted_at IS NULL AND oi.parent_order_item_id IS NULL
@@ -117,6 +156,13 @@ money AS (
     WHERE oit.order_item_id = oi.id AND oit.deleted_at IS NULL
       AND oit.confirmed_at IS NOT NULL AND oit.credit_id IS NULL
   ) t ON TRUE
+  -- One lookup per order item, on the same items the window already narrowed
+  -- to — so this rides the v2 scoping rather than undoing it.
+  LEFT JOIN LATERAL (
+    SELECT COUNT(*) AS n, COUNT(*) FILTER (WHERE ppi.paid_at IS NOT NULL) AS paid_n
+    FROM payment_plan_installment ppi
+    WHERE ppi.order_item_id = oi.id
+  ) pl ON TRUE
   GROUP BY oi.booking_id
 )
 SELECT
@@ -134,11 +180,9 @@ SELECT
   -- the account holder themselves.
   NULLIF(TRIM(CONCAT(pu.first_name, ' ', pu.last_name)), '')                      AS "Participant",
   s.name                                                                          AS "Section",
-  -- THE SECTION ID IS WHAT MAKES A ROW CLICKABLE. Dan, on the mockup: "each row
-  -- needs a direct clickable link to the section." The page links the Section
-  -- cell straight into its own Section Detail tab, which is keyed on this id —
-  -- the NAME cannot address a section (two programs run "Girls Grades 3-4").
-  -- Cast to text so the page never has to care that it is a uuid.
+  -- THE SECTION ID IS WHAT MAKES A ROW CLICKABLE — the widget links it to
+  -- /admin/o/<org>/programming/sections/<id>. The NAME cannot address a
+  -- section: two programs at Shrewsbury both run "Girls Grades 3-4".
   s.id::text                                                                      AS "Section Id",
   s.section_code                                                                  AS "Section Code",
   p.name                                                                          AS "Program",
@@ -147,6 +191,12 @@ SELECT
     WHERE pa.program_id = p.id)                                                   AS "Activity",
   ROUND(COALESCE(m.price_cents,0) / 100.0, 2)                                     AS "Price",
   ROUND(COALESCE(m.paid_cents,0)  / 100.0, 2)                                     AS "Paid",
+  -- v4. FALSE, never null, for a booking with no order item at all: the widget
+  -- presence-gates on the COLUMN being there, and a null here would be read as
+  -- "we cannot tell" for a registration that simply has no money attached.
+  COALESCE(m.on_plan, FALSE)                                                      AS "On Plan",
+  COALESCE(m.plan_installments, 0)                                                AS "Plan Installments",
+  COALESCE(m.plan_installments_paid, 0)                                           AS "Plan Installments Paid",
   b.status                                                                        AS "Status"
 FROM bk AS b
 JOIN users u    ON u.id = b.customer_user_id
