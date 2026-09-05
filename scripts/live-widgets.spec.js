@@ -1113,20 +1113,6 @@ process.on('exit', () => {
 });
 
 
-/* THE REPORT GOES LAST, and this was a real bug for one revision: the block
-   below used to sit ABOVE section 13, so every assertion added after it ran,
-   incremented `pass`, and could never be REPORTED — a failing one exited
-   nowhere and the spec printed a clean 146. One of them was in fact failing.
-   Same family as the guards in the sibling repo that died instead of failing:
-   a check whose result cannot reach the report is not a check. */
-if (failures.length) {
-  console.error('\n✗ live-widgets.spec.js — ' + failures.length + ' failure(s):\n');
-  failures.forEach(f => console.error('  ✗ ' + f));
-  console.error('\n' + pass + ' passed, ' + failures.length + ' failed.\n');
-  process.exit(1);
-}
-
-
 /* ── MEMBERSHIP CHECK-INS ─────────────────────────────────────────────────*/
 {
   if (H.liveCheckinState) {
