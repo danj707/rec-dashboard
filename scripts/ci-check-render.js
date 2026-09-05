@@ -414,6 +414,37 @@ const FACILITY = [
     Attendees: 1, Price: 999, Paid: 999 },
 ];
 
+/* A DENSE DAY, shaped like Apex's real one: 468 scans between 05:46 and 14:29,
+   peaking at 37 in the 8:45 quarter-hour. The lane's whole reason for changing
+   form is this shape, and a fixture of seventeen scans cannot express it — so
+   the dense cases drive their own feed rather than the shared one.
+
+   THE COUNTS ARE THE REAL PER-QUARTER-HOUR SERIES, not a curve I invented, so
+   the peak label the card prints is a number that came out of a rec centre. */
+const DENSE_CI_BUCKETS = [[23,13],[24,1],[25,3],[26,5],[27,7],[28,4],[29,1],[30,7],[31,12],
+  [32,21],[33,20],[34,16],[35,37],[36,12],[37,17],[38,26],[39,17],[40,17],[41,20],[42,12],
+  [43,15],[44,18],[45,21],[46,14],[47,16],[48,13],[49,9],[50,12],[51,11],[52,14],[53,9],
+  [54,8],[55,6],[56,4],[57,2]];
+function denseCheckins() {
+  const day = liveIso(0, '00:00:00').slice(0, 10);
+  const rows = [];
+  DENSE_CI_BUCKETS.forEach(([b, n]) => {
+    for (let k = 0; k < n; k++) {
+      const mins = b * 15 + Math.floor(k / Math.max(1, n) * 15);
+      const hh = String(Math.floor(mins / 60)).padStart(2, '0');
+      const mm = String(mins % 60).padStart(2, '0');
+      rows.push({ 'Checked In At': day + 'T' + hh + ':' + mm + ':00', 'Org Today': day,
+        /* ONE REFUSAL, in the busiest quarter-hour. Apex turned nobody away on
+           the day this was measured, so the red would never render — and a
+           stack that is only ever one colour cannot prove it stacks. */
+        Member: 'Member ' + b + '-' + k, 'User ID': 'u' + b + '-' + k, 'Member ID': 'M' + b + k,
+        Photo: null, Status: (b === 35 && k === 0) ? 'Failed' : 'Checked In',
+        'Desk Location': 'Front Desk', Product: 'Adult Annual' });
+    }
+  });
+  return rows;
+}
+
 const FIXTURES = {
   memberships: MEMBERSHIPS,
   enrollments: ENROLLMENTS,
@@ -1482,6 +1513,89 @@ const CASES = [
      the real fixture, because the height is the rows. Driven at 1400x900 —
      roughly a 1080p laptop once the browser chrome is off — and the assertion
      is that the whole live grid fits inside it. */
+  /* ── THE LANE CHANGES FORM WHEN THE DAY DOES ──────────────────────────────
+     Dan: "for small orgs, dots are good, for apex and other orgs, they need
+     the bar." No source assertion can tell a working threshold from one that
+     never fires — both render a lane — so these read WHICH FORM each card
+     chose, over a fixture that puts two cards on opposite sides of it in the
+     same paint. */
+  { name: 'live · a busy day draws columns and a quiet one keeps its dots',
+    lightFeeds: true, denseLane: true, needs: '[data-live-lane]',
+    act: async page => {
+      await loadLight(page);
+      await page.waitForSelector('[data-live-ci-marks]', { timeout: 20000 });
+      const got = await page.evaluate(() => {
+        const pick = a => { const el = document.querySelector('[data-' + a + 'marks]');
+                            return el && el.getAttribute('data-live-lane'); };
+        const ci = document.querySelector('[data-live-ci-marks]');
+        return { checkins: pick('live-ci-'), facility: pick('live-fac-'),
+                 enrol: pick('live-'),
+                 ciMarks: ci && Number(ci.getAttribute('data-live-ci-marks')),
+                 peak: ci && ci.getAttribute('data-live-lane-peak'),
+                 cols: document.querySelectorAll('[data-live-ci-marks] .lt-col').length,
+                 dots: document.querySelectorAll('[data-live-ci-marks] .lt-mark').length,
+                 facDots: document.querySelectorAll('[data-live-fac-marks] .lt-mark').length };
+      });
+      /* 440 scans is well over the threshold; 8 bookings is well under. Both
+         cards are in one paint, so this cannot pass by the threshold being
+         hardcoded either way. */
+      if (got.checkins !== 'columns') throw new Error('a ' + got.ciMarks + '-scan day drew ' + got.checkins);
+      if (got.facility !== 'dots') throw new Error('a handful of bookings drew ' + got.facility);
+      if (got.dots !== 0) throw new Error('the busy lane still rendered ' + got.dots + ' dots');
+      if (got.facDots === 0) throw new Error('the quiet lane lost its dots');
+      /* THE PEAK IS THE POINT OF THE COLUMN FORM. 37 in the 8:45 quarter-hour
+         is Apex's real busiest fifteen minutes; a lane that drew columns
+         without a scale would read as "busier here than there" and no more. */
+      if (got.peak !== '37') throw new Error('peak reads ' + got.peak + ', want 37');
+      if (got.cols < 30) throw new Error('only ' + got.cols + ' columns for 35 busy quarter-hours');
+    } },
+
+  { name: 'live · a refusal stacks on its quarter-hour rather than shortening it',
+    lightFeeds: true, denseLane: true, needs: '[data-live-lane-seg="failed"]',
+    act: async page => {
+      await loadLight(page);
+      await page.waitForSelector('[data-live-lane-seg]', { timeout: 20000 });
+      const got = await page.evaluate(() => {
+        const bad = document.querySelector('[data-live-ci-marks] [data-live-lane-seg="failed"]');
+        if (!bad) return { ok: false, why: 'no refused segment rendered' };
+        const col = bad.closest('.lt-col');
+        const good = col.querySelector('[data-live-lane-seg="ok"]');
+        const cs = getComputedStyle(bad);
+        return { ok: true, total: col.getAttribute('data-live-lane-bucket'),
+                 hasGood: !!good, colour: cs.backgroundColor,
+                 /* Stacked ON TOP: the red's `bottom` clears the green's height. */
+                 stacked: good ? parseFloat(bad.style.bottom) >= parseFloat(good.style.height) - 0.01 : false };
+      });
+      if (!got.ok) throw new Error(got.why);
+      if (!got.hasGood) throw new Error('the refused segment has no accepted scans under it to stack on');
+      if (!got.stacked) throw new Error('the refusal is not stacked above the accepted scans');
+      if (got.colour !== 'rgb(220, 38, 38)') throw new Error('a refusal is ' + got.colour + ', not the red it is everywhere else');
+    } },
+
+  /* THE GEOMETRY REGRESSION, in the only place it is visible. The compact
+     cards shrank the lane and the third row of dots then sat BELOW it, on top
+     of the hour labels — the stray "5a" in Dan's screenshot. Measured, not
+     asserted in CSS: every mark's box inside its lane's box. */
+  { name: 'live · no dot escapes its lane',
+    lightFeeds: true, needs: '.live-card .lt-mark',
+    act: async page => {
+      await loadLight(page);
+      await page.waitForSelector('.live-card .lt-mark', { timeout: 20000 });
+      const bad = await page.evaluate(() => {
+        const out = [];
+        document.querySelectorAll('.live-card .live-timeline').forEach(lane => {
+          const lb = lane.getBoundingClientRect();
+          lane.querySelectorAll('.lt-mark').forEach(m => {
+            const mb = m.getBoundingClientRect();
+            if (mb.bottom > lb.bottom + 0.5) out.push(Math.round(mb.bottom - lb.bottom));
+          });
+        });
+        return out;
+      });
+      if (bad.length) throw new Error(bad.length + ' dot(s) hang below the lane by up to '
+                                      + Math.max(...bad) + 'px, onto the hour labels');
+    } },
+
   { name: 'live · four cards fit on one screen',
     lightFeeds: true, needs: '[data-live-fac-today]',
     viewport: { width: 1400, height: 900 },
@@ -1596,6 +1710,7 @@ const CASES = [
         return json({ rows: FACILITY.map(r => ({ ...r, 'Org Today': today })) });
       }
       if (rt === 'checkins-today') {
+        if (currentCase.denseLane) return json({ rows: denseCheckins() });
         const today = liveIso(0, '00:00:00').slice(0, 10);
         return json({ rows: (FIXTURES['checkins-live'] || [])
           .filter(r => String(r['Checked In At']).slice(0, 10) === today)

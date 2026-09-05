@@ -132,6 +132,12 @@ try {
        falls on. LIVE_MONTHS comes with liveShortDay or the lift throws. */
     'const LIVE_MONTHS = ' + (code.match(/const LIVE_MONTHS = (\[[^\]]*\])/) || [0,'[]'])[1] + ';\n' +
     liftFn(src, 'liveShortDay') + '\n' +
+    /* THE LANE'S TWO HELPERS. `liveLaneForm` IS a comparison, so a regex over
+       it passes on an inverted one — it has to be run. */
+    'const LIVE_LANE_BUCKETS = ' + (code.match(/LIVE_LANE_BUCKETS = (\d+)/) || [0,96])[1] + ';\n' +
+    'const LIVE_LANE_MAX_DOTS = ' + (code.match(/LIVE_LANE_MAX_DOTS = (\d+)/) || [0,60])[1] + ';\n' +
+    liftFn(src, 'liveLaneForm') + '\n' + liftFn(src, 'liveBuckets') + '\n' +
+    liftFn(src, 'liveBucketLabel') + '\n' +
     liftFn(src, 'liveHasFacility') + '\n' + liftFn(src, 'liveFacilityKey') + '\n' +
     liftFn(src, 'liveFacilityState') + '\n' + liftFn(src, 'liveFacilityWho') + '\n' +
     liftFn(src, 'liveFacilityWhen') + '\n' + liftFn(src, 'liveFacilityTimeline') + '\n' +
@@ -154,6 +160,7 @@ try {
     ' livePlanOn, livePlanProgress, liveMoneyZ, livePayPhrase,' +
     ' liveFeedChoice, liveHasEnrollments, liveHasCheckins,' +
     ' liveCheckinKey, liveCheckinState, liveInitials, liveDayAxis, liveCheckinTimeline,' +
+    ' liveLaneForm, liveBuckets, liveBucketLabel, LIVE_LANE_MAX_DOTS, LIVE_LANE_BUCKETS,' +
     ' liveShortDay, liveHasFacility, liveFacilityKey, liveFacilityState, liveFacilityWho,' +
     ' liveFacilityWhen, liveFacilityTimeline,' +
     ' LIVE_CHIME_MAX, LIVE_CHIME_GAP_MS, LIVE_CHIME_JITTER_MS, LIVE_CHIME_RING_MS };')();
@@ -436,8 +443,15 @@ if (H.liveWindow) {
   } else {
     ok(false, 'liveMarkState should be liftable — it is the whole payment-dot rule');
   }
-  ok(/data-live-mark=\{m\.state\}/.test(code),
+  /* CORRECTED, NOT DELETED. This pinned the literal `data-live-mark={m.state}`,
+     which was true while three cards each carried their own copy of the lane
+     markup. They share one component now and the attribute is built from the
+     card's prefix — so the literal is gone and the INTENT is unchanged: every
+     mark still stamps its own state where a render case can read it. */
+  ok(/\[ 'data-' \+ prefix \+ 'mark' \]: m\.state/.test(code),
      '...and the mark renders that state, so a render case can read it');
+  ok(/'data-' \+ prefix \+ 'marks'\] = String\(tl\.marks\.length\)/.test(code),
+     '...and the lane still says how many marks it has, under each card\'s own name');
   ok(!/\{m\.paid \? '\$' : ''\}/.test(code),
      'the dollar-sign glyph is gone from the lane — the dots carry it now');
   ok(/live-legend/.test(code),
@@ -2025,4 +2039,148 @@ process.on('exit', () => {
     ok(unscoped.length === 0,
        'every compact rule is scoped to .live-card, so no other widget shrinks with them: ' + unscoped.join(' | '));
   }
+}
+
+/* ── THE LANE'S TWO FORMS ─────────────────────────────────────────────────
+   Dan: "for small orgs, dots are good, for apex and other orgs, they need the
+   bar." The threshold IS the feature, so it is RUN rather than regexed — a
+   pattern over `> LIVE_LANE_MAX_DOTS` passes just as happily on `<`. */
+{
+  if (H.liveLaneForm && H.liveBuckets) {
+    const { liveLaneForm, liveBuckets, liveBucketLabel } = H;
+    const MAX = H.LIVE_LANE_MAX_DOTS, N = H.LIVE_LANE_BUCKETS;
+
+    /* THE THRESHOLD, ON BOTH SIDES AND ON IT. Reading the constant out of the
+       page rather than writing 60 here: a spec that hardcodes the number is a
+       test of the spec, and the page could drop to five with every assertion
+       below still passing. */
+    eq(liveLaneForm(1), 'dots', 'one mark is a dot');
+    eq(liveLaneForm(MAX), 'dots', 'exactly at the threshold is still dots — the boundary belongs to the form that was working');
+    eq(liveLaneForm(MAX + 1), 'columns', 'one over, and the lane changes form');
+    eq(liveLaneForm(468), 'columns', "Apex's real day is columns");
+    eq(liveLaneForm(0), 'dots', 'an empty lane is not a bar chart of nothing');
+    eq(liveLaneForm(null), 'dots', '...and neither is a lane that has not loaded');
+
+    /* THE BUCKETS COME OFF THE INSTANT, NOT THE PERCENTAGE — the bug the
+       render check caught. `left` is a percentage of the day, and
+       525/1440*100/100*96 is 34.999999999999996, so the first mark of every
+       quarter-hour fell into the one before it and the column form
+       under-reported its own peak (37 read as 34). This fixture puts marks
+       exactly on quarter-hour boundaries, which is the only shape where the
+       two implementations differ. */
+    const DAY = new Date(2026, 8, 5).getTime();
+    const ax = { t0: DAY, span: 86400000 };
+    const at = (h, m) => DAY + (h * 60 + m) * 60000;
+    /* `left` IS COMPUTED THE WAY THE PAGE COMPUTES IT, never written as a
+       literal. My first draft hardcoded 36.458333333333336 and the mutation
+       SURVIVED: that literal carries a different rounding error from
+       ((t-t0)/span)*100, and floors to 35 where the real value floors to 34.
+       A fixture that cannot reproduce the bug it names is not a guard —
+       recorded once already in these repos, and it caught me here. */
+    const leftOf = t => Math.min(100, Math.max(0, ((t - ax.t0) / ax.span) * 100));
+    const onBoundary = [];
+    for (let k = 0; k < 8; k++) onBoundary.push({ key: 'k' + k, at: at(8, 45), state: 'ok', left: leftOf(at(8, 45)) });
+    const b1 = liveBuckets(onBoundary, ax);
+    eq(b1.peak, 8, 'eight marks on one quarter-hour boundary are eight in ONE bucket, not seven and a stray');
+    eq(b1.buckets.length, 1, '...and they land in a single bucket');
+    eq(b1.buckets[0].i, 35, '...the 8:45 one');
+
+    /* STACKING. The `by` map is what the column form draws, and a bucket that
+       lost its states would render as one anonymous bar. */
+    const mixed = [
+      { key: 'a', at: at(9, 0), state: 'ok' }, { key: 'b', at: at(9, 1), state: 'ok' },
+      { key: 'c', at: at(9, 2), state: 'failed' },
+      { key: 'd', at: at(17, 30), state: 'ok' },
+    ];
+    const b2 = liveBuckets(mixed, ax);
+    eq(b2.buckets.length, 2, 'two quarter-hours apart are two columns');
+    eq(b2.peak, 3, 'the peak is the busiest bucket, not the total');
+    eq(b2.buckets[0].by.ok, 2, 'the accepted scans are counted');
+    eq(b2.buckets[0].by.failed, 1, '...and the refusal separately, so it can stack rather than shorten the bar');
+    /* THE KEYS RIDE ALONG so the arrival highlight survives the change of
+       form: a dot pops itself, a column can only light up if it knows which
+       marks are in it. */
+    ok(b2.buckets[0].keys.length === 3 && b2.buckets[0].keys.indexOf('c') >= 0,
+       'a bucket keeps its marks\' keys, or a new arrival cannot light up its column');
+
+    /* OUT OF RANGE CLAMPS RATHER THAN THROWING. A mark whose instant is off
+       the axis (a clock skew, a day boundary) must land at an edge, not at
+       index -1 or 96. */
+    eq(liveBuckets([{ key: 'x', at: DAY - 60000, state: 'ok' }], ax).buckets[0].i, 0,
+       'before the day starts clamps to the first bucket');
+    eq(liveBuckets([{ key: 'y', at: DAY + 86400000 * 2, state: 'ok' }], ax).buckets[0].i, N - 1,
+       '...and after it ends, to the last');
+
+    /* THE OLDER SHAPE STILL DRAWS. A mark with no `at` falls back to its
+       position — right to within one bucket, and never a throw. */
+    eq(liveBuckets([{ key: 'z', left: 50, state: 'ok' }], ax).buckets[0].i, 48,
+       'a mark with no instant buckets off its position rather than failing');
+
+    /* THE LABEL IS THE COUNT. A column chart whose hover said only "9:00a"
+       would be the slab again with straighter edges. */
+    const lab = liveBucketLabel(b2.buckets[0], {});
+    ok(/^9:00a/.test(lab), 'the label names the quarter-hour it covers: ' + lab);
+    ok(/\b3\b/.test(lab), '...and how many landed in it: ' + lab);
+    ok(/failed/.test(lab), '...and breaks them out when there is more than one kind: ' + lab);
+  } else {
+    failures.push('the lane helpers could not be lifted — every assertion above is vacuous');
+  }
+
+  /* ONE LANE, THREE CALLERS. Three copies of this markup is how one card keeps
+     its dots forever after somebody fixes the other two. */
+  eq((code.match(/<LiveLane tl=\{tl\}/g) || []).length, 3,
+     'all three cards render the SAME lane component');
+  ok(!/className="live-timeline" data-live-(ci-|fac-)?marks/.test(code),
+     '...and none of them still carries its own copy of the markup');
+  /* EVERY STATE THE TIMELINES EMIT HAS A PLACE IN THE STACK. A state added to
+     a timeline builder without one would silently vanish from the column form
+     — the marks would be counted and drawn as nothing. */
+  const emitted = { pay: ['paid', 'part', 'free', 'none'], ci: ['ok', 'failed'], fac: ['booked', 'canceled'] };
+  [['LIVE_PAY_STATES', emitted.pay], ['LIVE_CI_STATES', emitted.ci], ['LIVE_FAC_STATES', emitted.fac]]
+    .forEach(([name, want]) => {
+      /* `\\s*=` because these three are column-aligned in the page — a single
+         space matched two of them and the third failed its own vacuity guard,
+         which is what that guard is for. */
+      const m = new RegExp('const ' + name + '\\s*= (\\[[^\\]]*\\])').exec(code);
+      ok(m, name + ' is readable — without it this pin is vacuous');
+      if (m) {
+        const got = (m[1].match(/key: '([a-z]+)'/g) || []).map(x => x.split("'")[1]);
+        eq(got.slice().sort().join(','), want.slice().sort().join(','),
+           name + ' covers exactly the states its timeline emits');
+      }
+    });
+  /* THE STACK ORDER IS NOT ALPHABETICAL — the bad state goes on TOP, so a
+     quarter-hour that turned three people away reads as three red above its
+     green rather than as a shorter green bar. */
+  ok(/LIVE_CI_STATES  = \[\{ key: 'ok' \}, \{ key: 'failed' \}\]/.test(code),
+     'a refusal stacks above the accepted scans, not below them');
+  ok(/LIVE_FAC_STATES = \[\{ key: 'booked' \}, \{ key: 'canceled' \}\]/.test(code),
+     '...and so does a cancellation');
+
+  /* THE GEOMETRY IS ONE MEASUREMENT IN TWO FILES. The lane's height in CSS has
+     to hold the marks the JS positions, and the compact cards broke exactly
+     that: a 26px lane with a 10px step put the third row of dots below the box,
+     on top of the hour labels. */
+  const step = /top: \(4 \+ m\.lane \* (\d+)\) \+ 'px'/.exec(code);
+  const size = /\.live-card \.live-timeline \.lt-mark \{ width: (\d+)px/.exec(src);
+  const hgt  = /\.live-card \.live-timeline \{ height: (\d+)px/.exec(src);
+  ok(step && size && hgt, 'the lane geometry is readable — without it this pin is vacuous');
+  if (step && size && hgt) {
+    const need = 4 + 2 * Number(step[1]) + Number(size[1]);
+    ok(Number(hgt[1]) >= need,
+       'the lane is ' + hgt[1] + 'px and its three rows of marks need ' + need
+       + 'px — the third row would hang onto the hour labels');
+  }
+  /* AND THE HOUR LABELS HAVE TO CLEAR THE LEGEND. */
+  const lab = /\.live-card \.live-timeline \.lt-day em \{ bottom: -(\d+)px/.exec(src);
+  const mar = /\.live-card \.live-timeline \{ height: \d+px; margin: \d+px 0 (\d+)px/.exec(src);
+  ok(lab && mar, 'the label offset and the lane margin are readable');
+  if (lab && mar) ok(Number(mar[1]) > Number(lab[1]),
+    'the hour labels hang ' + lab[1] + 'px below a lane with ' + mar[1]
+    + 'px under it — they would sit on the legend');
+
+  /* THE ORPHANED NOTE. `margin-left: auto` put the self-service figure at the
+     far right rim of the card, ~800px from the legend it describes. */
+  ok(!/\.live-legend \.lg-note \{[^}]*margin-left: auto/.test(src),
+     'the legend note sits beside the legend rather than at the far edge of the card');
 }

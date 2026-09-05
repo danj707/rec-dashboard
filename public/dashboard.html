@@ -156,7 +156,17 @@ body { font-family: var(--font-body); background: var(--bg-page); color: var(--t
    right for a widget somebody reads once; these are watched, so they are
    denser. Every other widget on the dashboard is untouched. */
 .widget-card.live-card { padding: 10px 16px; }
-.live-card .live-timeline { height: 26px; margin: 6px 0 13px; }
+/* THE LANE HAS TO HOLD ITS OWN MARKS. Three rows at `top: 4 + lane*8` plus an
+   8px mark is 28px, and the 2px ring makes 30 — so 30px, and the JS step and
+   this height are one measurement the spec pins against each other. It was
+   26px with a step of 10, which put the third row of dots BELOW the box, on
+   top of the hour labels: the stray "5a" in Dan's screenshot. */
+.live-card .live-timeline { height: 30px; margin: 6px 0 13px; }
+.live-card .live-timeline .lt-mark { width: 8px; height: 8px; margin-left: -4px; }
+/* AND THE HOUR LABELS HAVE TO CLEAR THE LEGEND. `bottom: -14px` under a 13px
+   margin overhangs by a pixel; at 8.5px type the label is ~10px tall, so -11px
+   sits it inside the gap with room to spare. */
+.live-card .live-timeline .lt-day em { bottom: -11px; }
 .live-card .live-legend { margin-bottom: 4px; }
 .live-card .live-table th { padding: 3px 8px 3px 0; }
 .live-card .live-table td { padding: 3px 8px 3px 0; }
@@ -284,10 +294,55 @@ body { font-family: var(--font-body); background: var(--bg-page); color: var(--t
    meaning anything. */
 .live-timeline .lt-mark.fac-booked   { background: #16a34a; box-shadow: 0 0 0 2px rgba(22,163,74,.18); }
 .live-timeline .lt-mark.fac-canceled { background: #dc2626; box-shadow: 0 0 0 2px rgba(220,38,38,.20); }
+
+/* ── THE COLUMN FORM ───────────────────────────────────────────────────────
+   The same lane, the same axis, the same two inks — only the marks change.
+   Fifteen-minute columns, stacked bottom-up in each card's own state order.
+   Absolutely positioned like the dots, so switching form costs no layout
+   anywhere else on the card. */
+.live-timeline-cols .lt-col { position: absolute; bottom: 0; top: 0; }
+ /* A SEGMENT IS NEVER INVISIBLE: a quarter-hour with one scan in it against a
+    peak of 37 is 2.7% of the height, under a pixel, and a quiet stretch that
+    renders as nothing reads as no data rather than as a trickle. */
+.live-timeline-cols .lt-col-seg { position: absolute; left: 8%; right: 8%; min-height: 2px;
+                                  background: var(--border); border-radius: 1px 1px 0 0; }
+.live-timeline-cols .lt-col-seg.paid,
+.live-timeline-cols .lt-col-seg.ci-ok,
+.live-timeline-cols .lt-col-seg.fac-booked   { background: #16a34a; }
+.live-timeline-cols .lt-col-seg.part         { background: #f59e0b; }
+.live-timeline-cols .lt-col-seg.free         { background: #64748b; }
+.live-timeline-cols .lt-col-seg.none         { background: var(--border); }
+.live-timeline-cols .lt-col-seg.ci-failed,
+.live-timeline-cols .lt-col-seg.fac-canceled { background: #dc2626; }
+/* THE PEAK, NAMED. A column chart with no number is "busier here than there";
+   the figure is what makes it a count. Top-left, out of the columns' way, and
+   muted because it is a scale label rather than a headline. */
+.live-timeline-cols .lt-peak { position: absolute; top: -1px; left: 0; font-size: 8.5px;
+                               font-weight: 700; color: var(--text-muted); line-height: 1;
+                               font-variant-numeric: tabular-nums; pointer-events: none; }
+/* THE ARRIVAL HIGHLIGHT SURVIVES THE CHANGE OF FORM. A dot pops itself; a
+   column can only light up if it knows which marks are in it, which is why
+   liveBuckets keeps their keys. Same ten-second fade as the row highlight. */
+@media (prefers-reduced-motion: no-preference) {
+  .live-timeline-cols .lt-col.fresh .lt-col-seg { animation: liveColIn 10s ease-out both; }
+  @keyframes liveColIn {
+    0%   { transform: scaleY(1.5); filter: brightness(1.5); }
+    6%   { transform: scaleY(1);   filter: brightness(1.5); }
+    100% { transform: scaleY(1);   filter: brightness(1); }
+  }
+  .live-timeline-cols .lt-col.fresh .lt-col-seg { transform-origin: 50% 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .live-timeline-cols .lt-col.fresh .lt-col-seg { filter: brightness(1.4); }
+}
 /* A LEGEND NOTE, not a fourth dot: the self-service share is a fact about the
    bookings beside it rather than another colour to decode, so it carries no
    swatch and sits at the end of the row. */
-.live-legend .lg-note { margin-left: auto; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+/* BESIDE THE LEGEND, NOT AT THE FAR EDGE. `margin-left: auto` pushed this to
+   the right rim of the card — eight hundred pixels from the dots it belongs
+   with, reading as an orphan rather than as a fact about them. */
+.live-legend .lg-note { color: var(--text-muted); font-variant-numeric: tabular-nums;
+                        padding-left: 12px; border-left: 1px solid var(--border); }
 
 .live-ci-fail { color: #dc2626; font-weight: 600; }
 
@@ -2822,6 +2877,12 @@ function liveTimeline(rows, today) {
     if (t == null) return;
     marks.push({
       key: liveKey(r),
+      /* THE INSTANT RIDES ALONG. `left` is a PERCENTAGE, and bucketing a
+         percentage back into fifteen minutes loses the boundary to floating
+         point — 525/1440*100/100*96 is 34.999999999999996, so the first mark
+         of every quarter-hour fell into the one before it and the column form
+         under-counted its own peak. The column lane buckets off `at`. */
+      at: t,
       left: Math.min(100, Math.max(0, ((t - t0) / span) * 100)),
       // Stagger by ARRIVAL ORDER now that every mark shares one day, so a
       // cluster still reads as a cluster rather than as one dot.
@@ -2831,7 +2892,11 @@ function liveTimeline(rows, today) {
              ' \u00b7 ' + (r['Section'] || '') + ' \u00b7 ' + livePayPhrase(r),
     });
   });
-  return { marks, tickLabels: ax.tickLabels, nowLeft: ax.nowLeft };
+  /* THE AXIS TRAVELS WITH THE MARKS. The column form buckets off real instants
+     rather than off `left`, so it needs the same t0 and span the marks were
+     placed against — passing it here is what stops the columns and the dots
+     disagreeing about which quarter-hour something happened in. */
+  return { marks, tickLabels: ax.tickLabels, nowLeft: ax.nowLeft, ax: ax };
 }
 
 /* ONE AXIS, TWO LANES. The registrations card and the check-ins card sit one
@@ -2927,6 +2992,7 @@ function liveCheckinTimeline(rows, today) {
     const st = liveCheckinState(r);
     marks.push({
       key: liveCheckinKey(r),
+      at: t,   // see liveTimeline: the column lane buckets off the instant
       left: Math.min(100, Math.max(0, ((t - ax.t0) / ax.span) * 100)),
       lane: n++ % 3,
       state: st,
@@ -2935,7 +3001,187 @@ function liveCheckinTimeline(rows, today) {
              (st === 'failed' ? ' \u00b7 turned away' : ''),
     });
   });
-  return { marks, tickLabels: ax.tickLabels, nowLeft: ax.nowLeft };
+  /* THE AXIS TRAVELS WITH THE MARKS. The column form buckets off real instants
+     rather than off `left`, so it needs the same t0 and span the marks were
+     placed against — passing it here is what stops the columns and the dots
+     disagreeing about which quarter-hour something happened in. */
+  return { marks, tickLabels: ax.tickLabels, nowLeft: ax.nowLeft, ax: ax };
+}
+
+/* ── THE TIMELINE LANE, IN TWO FORMS ───────────────────────────────────────
+   Dan, on Apex's check-ins: "the checkins look like a hot green mess. Maybe a
+   line chart would look better there?"
+
+   THE LANE HAS A CAPACITY AND APEX IS SIX TIMES OVER IT. Measured on a real
+   day: 468 scans, all of them between 05:46 and 14:29 — 36% of a 24-hour axis.
+   At the card's width that stretch holds roughly 73 dots across three lanes,
+   so 468 marks land 6.4 deep in every slot. The result is not a dense chart,
+   it is a rectangle: it cannot show WHEN THE RUSH WAS, which is the one
+   question the lane exists to answer.
+
+   SO THE FORM FOLLOWS THE DAY, not the card. Under the threshold the lane is
+   exactly what it always was — Watertown's ten bookings arrive as ten dots
+   that pop, one per person, which is the whole charm of these widgets. Over
+   it, the same lane draws fifteen-minute columns and the peak becomes
+   readable. Dan: "for small orgs, dots are good, for apex and other orgs,
+   they need the bar."
+
+   ONE COMPONENT, THREE CALLERS. The three cards had three copies of this
+   markup, which is how one of them would keep its dots forever after somebody
+   "fixed" the other two — the same reason `progAutopayCell` goes through
+   `progAutopayShare` in the sibling repo. The per-card differences (the mark
+   class prefix, the data attributes, the colour of each state) are arguments. */
+/* THE STACK ORDER PER CARD, bottom-up. Each card codes a different fact, so
+   each names its own — a shared palette would say an unpaid registration and a
+   refused scan are the same kind of thing. The keys are the `state` values the
+   three timeline builders already emit, so a state added there without a place
+   here would silently vanish from the column form; the spec counts them. */
+const LIVE_PAY_STATES = [{ key: 'paid' }, { key: 'part' }, { key: 'free' }, { key: 'none' }];
+const LIVE_CI_STATES  = [{ key: 'ok' }, { key: 'failed' }];
+const LIVE_FAC_STATES = [{ key: 'booked' }, { key: 'canceled' }];
+
+const LIVE_LANE_BUCKETS = 96;      // fifteen minutes across a 24-hour axis
+/* SIXTY, from the geometry rather than from taste: three lanes of ~13px marks
+   across the card's inner width is a little over 200 slots for a whole day,
+   and real traffic never spreads evenly across one — Apex's fits in 36% of the
+   axis. Sixty is where a busy stretch stops being countable. */
+const LIVE_LANE_MAX_DOTS = 60;
+
+/* At module scope so a spec can RUN it: a regex over a comparison passes on an
+   inverted one, and this comparison IS the feature. */
+function liveLaneForm(markCount) {
+  return (markCount || 0) > LIVE_LANE_MAX_DOTS ? 'columns' : 'dots';
+}
+
+/* MARKS TO FIFTEEN-MINUTE COLUMNS, bucketed off each mark's own `left` — the
+   position it already occupies on the axis — so the columns stand exactly
+   where the dots did and the two forms cannot disagree about when something
+   happened.
+
+   It keeps each bucket's KEYS because the arrival highlight has to survive the
+   change of form: a dot pops itself, and a column can only light up if it
+   knows which marks are in it. */
+function liveBuckets(marks, ax) {
+  const n = LIVE_LANE_BUCKETS;
+  const slots = new Array(n).fill(null);
+  const w = (ax && ax.span ? ax.span : 86400000) / n;
+  const t0 = ax && ax.t0 != null ? ax.t0 : 0;
+  let peak = 0;
+  (marks || []).forEach(m => {
+    /* OFF THE INSTANT, NOT THE PERCENTAGE — see the `at` note in liveTimeline.
+       A mark with no instant (an older shape) falls back to its position, which
+       is right to within one bucket and never throws. */
+    const i = m.at != null
+      ? Math.min(n - 1, Math.max(0, Math.floor((m.at - t0) / w)))
+      : Math.min(n - 1, Math.max(0, Math.floor((Number(m.left) || 0) / 100 * n)));
+    let b = slots[i];
+    if (!b) b = slots[i] = { i: i, total: 0, by: {}, keys: [] };
+    b.total++;
+    b.by[m.state] = (b.by[m.state] || 0) + 1;
+    b.keys.push(m.key);
+    if (b.total > peak) peak = b.total;
+  });
+  return { buckets: slots.filter(Boolean), peak: peak };
+}
+
+/* THE LANE. `states` is the stack order, bottom-up, paired with its colour —
+   per card, because the three cards code three different things (money, an
+   accepted scan, a booking that stands) and a shared palette would say they
+   are the same fact. */
+function LiveLane({ tl, flash, prefix, cls, states, title }) {
+  const form = liveLaneForm(tl.marks.length);
+  const attrs = {};
+  attrs['data-' + prefix + 'marks'] = String(tl.marks.length);
+  attrs['data-live-lane'] = form;
+
+  const axis = (
+    <React.Fragment>
+      {tl.tickLabels.map((d, i) => (
+        <span key={'t' + i} className="lt-day" style={{left: d.left + '%'}}><i /><em>{d.text}</em></span>
+      ))}
+      {tl.nowLeft == null ? null : <span className="lt-now" style={{left: tl.nowLeft + '%'}} title="Now" />}
+    </React.Fragment>
+  );
+
+  if (form === 'dots') {
+    return (
+      <div className="live-timeline" title={title} {...attrs}>
+        {axis}
+        {tl.marks.map(m => {
+          const a = { [ 'data-' + prefix + 'mark' ]: m.state };
+          return (
+            <span key={m.key}
+                  className={'lt-mark ' + cls(m.state) + (flash.has(m.key) ? ' fresh' : '')}
+                  {...a}
+                  /* FOUR PIXELS AND AN EIGHT-PIXEL STEP, not six and ten. The
+                     compact cards shrank the lane to fit four widgets on a
+                     screen and the third row of marks then sat BELOW the box,
+                     on top of the hour labels — visible in Dan's screenshot as
+                     a stray "5a" in the legend. The lane's height and this step
+                     are one measurement in two files, so the spec pins them
+                     against each other. */
+                  style={{left: m.left + '%', top: (4 + m.lane * 8) + 'px'}}
+                  title={m.label} />
+          );
+        })}
+      </div>
+    );
+  }
+
+  const { buckets, peak } = liveBuckets(tl.marks, tl.ax);
+  const bw = 100 / LIVE_LANE_BUCKETS;
+  return (
+    <div className="live-timeline live-timeline-cols" title={title} {...attrs}
+         data-live-lane-peak={String(peak)}>
+      {axis}
+      {buckets.map(b => {
+        /* STACKED, BOTTOM-UP, IN THE CARD'S OWN ORDER — so a quarter-hour that
+           turned three people away reads as three red on top of its green
+           rather than as a shorter green column. */
+        let below = 0;
+        const fresh = b.keys.some(k => flash.has(k));
+        const segs = states.map(st => {
+          const v = b.by[st.key] || 0;
+          if (!v) return null;
+          const h = v / peak * 100, y = below;
+          below += h;
+          return (
+            <span key={st.key} className={'lt-col-seg ' + cls(st.key)}
+                  data-live-lane-seg={st.key}
+                  style={{ bottom: y + '%', height: h + '%' }} />
+          );
+        });
+        return (
+          <span key={b.i} className={'lt-col' + (fresh ? ' fresh' : '')}
+                data-live-lane-bucket={String(b.total)}
+                style={{ left: (b.i * bw) + '%', width: bw + '%' }}
+                /* THE COUNT IS THE POINT OF THIS FORM, so it is in the title
+                   as a number rather than left to the bar's height. */
+                title={liveBucketLabel(b, tl)}>
+            {segs}
+          </span>
+        );
+      })}
+      {/* THE SCALE, NAMED. A column chart with no number on it says "busier
+          here than there" and nothing else; the peak is what turns it into a
+          count. One label, at the top of the tallest bar's own scale. */}
+      <span className="lt-peak" data-live-lane-peaklabel={String(peak)}>{peak}</span>
+    </div>
+  );
+}
+
+/* The hover text for a column: the quarter-hour it covers and how many landed
+   in it. Built from the bucket index rather than from a timestamp, because the
+   bucket IS the axis position and re-deriving a clock from a mark would let
+   the label disagree with the bar it sits on. */
+function liveBucketLabel(b, tl) {
+  const mins = b.i * (1440 / LIVE_LANE_BUCKETS);
+  const h = Math.floor(mins / 60), m = mins % 60;
+  const ampm = h < 12 ? 'a' : 'p';
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  const at = h12 + ':' + String(m).padStart(2, '0') + ampm;
+  const parts = Object.keys(b.by).map(k => b.by[k] + ' ' + k);
+  return at + ' \u00b7 ' + b.total + (parts.length > 1 ? ' (' + parts.join(', ') + ')' : '');
 }
 
 /* ── FACILITY BOOKINGS ─────────────────────────────────────────────────────
@@ -3031,6 +3277,7 @@ function liveFacilityTimeline(rows, today) {
     const st = liveFacilityState(r);
     marks.push({
       key: liveFacilityKey(r),
+      at: t,   // see liveTimeline: the column lane buckets off the instant
       left: Math.min(100, Math.max(0, ((t - ax.t0) / ax.span) * 100)),
       lane: n++ % 3,
       state: st,
@@ -3039,7 +3286,11 @@ function liveFacilityTimeline(rows, today) {
              (st === 'canceled' ? ' \u00b7 cancelled' : ''),
     });
   });
-  return { marks, tickLabels: ax.tickLabels, nowLeft: ax.nowLeft };
+  /* THE AXIS TRAVELS WITH THE MARKS. The column form buckets off real instants
+     rather than off `left`, so it needs the same t0 and span the marks were
+     placed against — passing it here is what stops the columns and the dots
+     disagreeing about which quarter-hour something happened in. */
+  return { marks, tickLabels: ax.tickLabels, nowLeft: ax.nowLeft, ax: ax };
 }
 
 /* ── REGISTRATIONS BY PROGRAM ──────────────────────────────────────────────
@@ -3831,21 +4082,13 @@ function LiveRegistrations({ feed, recOrgId }) {
 
       {/* WHEN, not how many. One mark per registration at its own minute,
           coloured by what its money is doing. The right-hand edge is now. */}
-      <div className="live-timeline" data-live-marks={String(tl.marks.length)}
-           title="Every registration today, placed at the time it happened. Green paid, orange part-paid, grey not yet.">
-        {tl.tickLabels.map((d, i) => (
-          <span key={i} className={'lt-day'}
-                style={{left: d.left + '%'}}><i /><em>{d.text}</em></span>
-        ))}
-        {tl.nowLeft == null ? null : <span className="lt-now" style={{left: tl.nowLeft + '%'}} title="Now" />}
-        {tl.marks.map(m => (
-          <span key={m.key}
-                className={'lt-mark ' + m.state + (flash.has(m.key) ? ' fresh' : '')}
-                data-live-mark={m.state}
-                style={{left: m.left + '%', top: (6 + m.lane * 10) + 'px'}}
-                title={m.label} />
-        ))}
-      </div>
+      {/* FOUR STATES, STACKED PAID-FIRST when the day is busy enough to need
+          columns: a 9am quarter-hour that took twenty registrations and
+          collected on six is a different morning from one that collected on
+          all twenty, and the stack is where that shows. */}
+      <LiveLane tl={tl} flash={flash} prefix="live-" cls={st => st}
+                states={LIVE_PAY_STATES}
+                title="Every registration today, placed at the time it happened. Green paid, orange part-paid, grey not yet." />
       {/* A THREE-COLOUR CODE NEEDS NAMING. The dots' own titles say it on
           hover; the legend says it at a glance, which is how this card is
           read. */}
@@ -4314,20 +4557,13 @@ function MembershipCheckins({ feed, recOrgId }) {
         </span>
       </div>
 
-      <div className="live-timeline" data-live-ci-marks={String(tl.marks.length)}
-           title="Every scan today, placed at the time it happened. Green accepted, red turned away.">
-        {tl.tickLabels.map((d, i) => (
-          <span key={i} className="lt-day" style={{left: d.left + '%'}}><i /><em>{d.text}</em></span>
-        ))}
-        {tl.nowLeft == null ? null : <span className="lt-now" style={{left: tl.nowLeft + '%'}} title="Now" />}
-        {tl.marks.map(m => (
-          <span key={m.key}
-                className={'lt-mark ci-' + m.state + (flash.has(m.key) ? ' fresh' : '')}
-                data-live-ci-mark={m.state}
-                style={{left: m.left + '%', top: (6 + m.lane * 10) + 'px'}}
-                title={m.label} />
-        ))}
-      </div>
+      {/* THE CARD THIS WAS BUILT FOR. Apex scans 468 members before three in
+          the afternoon, all of them inside a third of the axis, so this lane
+          is always over the threshold and always columns — and a refusal
+          stacks on top of its quarter-hour rather than shortening it. */}
+      <LiveLane tl={tl} flash={flash} prefix="live-ci-" cls={st => 'ci-' + st}
+                states={LIVE_CI_STATES}
+                title="Every scan today, placed at the time it happened. Green accepted, red turned away." />
       <div className="live-legend" data-live-ci-legend="1">
         <span className="lg-paid"><i />accepted</span>
         <span className="lg-fail"><i />turned away</span>
@@ -4520,20 +4756,9 @@ function FacilityBookings({ feed, recOrgId }) {
         </span>
       </div>
 
-      <div className="live-timeline" data-live-fac-marks={String(tl.marks.length)}
-           title="Every booking made today, placed at the time it was made. Green stands, red cancelled.">
-        {tl.tickLabels.map((d, i) => (
-          <span key={i} className="lt-day" style={{left: d.left + '%'}}><i /><em>{d.text}</em></span>
-        ))}
-        {tl.nowLeft == null ? null : <span className="lt-now" style={{left: tl.nowLeft + '%'}} title="Now" />}
-        {tl.marks.map(m => (
-          <span key={m.key}
-                className={'lt-mark fac-' + m.state + (flash.has(m.key) ? ' fresh' : '')}
-                data-live-fac-mark={m.state}
-                style={{left: m.left + '%', top: (6 + m.lane * 10) + 'px'}}
-                title={m.label} />
-        ))}
-      </div>
+      <LiveLane tl={tl} flash={flash} prefix="live-fac-" cls={st => 'fac-' + st}
+                states={LIVE_FAC_STATES}
+                title="Every booking made today, placed at the time it was made. Green stands, red cancelled." />
       <div className="live-legend" data-live-fac-legend="1">
         <span className="lg-paid"><i />booked</span>
         <span className="lg-fail"><i />cancelled</span>
