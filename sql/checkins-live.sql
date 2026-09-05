@@ -6,17 +6,19 @@
 -- back here. The 17294 mirror was 53 lines stale once and pushing the repo copy
 -- would have silently deleted a whole feature.
 --
--- STATUS 2026-09-04: created and measured, NOT YET WIRED. It needs two things
--- done by hand in Metabase before the dashboard can read it:
---   1. Start Date and End Date flipped to type Date, re-saving until the card
---      registers THREE parameters. An API-created card generates six — three
---      real plus three string/= duplicates — and the app binds by slug, so six
---      means two values per variable and "An error occurred".
---   2. A public link published; its uuid becomes MB_CHECKINS_LIVE_UUID.
--- The widget is absent until then, which is deliberate: the page treats an
--- erroring feed exactly as it treats a missing card, so wiring the uuid BEFORE
--- the flip lets the card complete itself with no redeploy (card 21055 landed
--- exactly this way).
+-- STATUS 2026-09-05: TAGS FLIPPED, WIDGET BUILT, AWAITING THE PUBLIC LINK.
+--   1. DONE — Dan flipped Start Date and End Date to type Date. It came back
+--      CLEAN: three parameters, not six. Worth recording, because this is the
+--      first card in either repo where the flip did not leave string/=
+--      duplicates behind; the six-parameter mess is common but not inevitable.
+--   2. OUTSTANDING — a public link. Its uuid goes into CHECKINS_LIVE_UUID in
+--      server.js and nothing else changes.
+-- The widget is ABSENT until then, deliberately: SHARED_UUIDS omits the key
+-- while the uuid is empty, so `availableReports` has no entry, the route 404s,
+-- the card renders nothing and the hook does not even poll. A confident
+-- "0 check-ins today" on a morning when the desk is scanning people through is
+-- the reading that had to be impossible. Filling in the uuid is the whole
+-- wiring — no redeploy of anything else (card 21055 landed exactly this way).
 --
 -- WHY A SEPARATE CARD FROM 18151. Card 18151 is the Memberships Check-In
 -- REPORT: it returns every check-in in a window (apex: 23,525 rows in 22.3s)

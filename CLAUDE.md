@@ -1,5 +1,145 @@
 # Project notes for Claude
 
+## The Membership Check-Ins live widget (2026-09-05)
+
+Dan: *"a membership check in card — showing the last XX membership checkins,
+similar to this Facility Insights view"*, and then on the shape: *"I'd prefer a
+similar line chart or graph, with a small section underneath of the users who've
+checked in. And add their tiny photos, orgs love that."*
+
+Card **21517**, its own feed, sitting beside the two enrollment cards.
+
+### IT IS ABSENT UNTIL SOMEBODY PUBLISHES THE LINK, and that is the design
+
+`CHECKINS_LIVE_UUID` is a literal in server.js and `SHARED_UUIDS` **omits the
+key entirely while it is empty**. So `availableReports` has no entry, the route
+404s, the card renders nothing, the section hides it — and, the part worth
+noting, **the hook does not even poll**. Polling a 404 every sixty seconds for
+every org without a link is a self-inflicted error rate that reads exactly like
+a broken feed in the logs.
+
+A confident *"0 check-ins today"* on a morning when the desk is scanning people
+through is the reading that had to be impossible. Filling in the uuid is the
+whole wiring; nothing else changes.
+
+**The tag flip came back CLEAN — three parameters, not six.** Worth recording,
+because this is the first card in either repo where an API-created card's flip
+did not leave `string/=` duplicates behind. The six-parameter mess is common,
+not inevitable.
+
+### A DENIAL IS NOT ATTENDANCE
+
+`liveCheckinState(r)` is the one predicate, at module scope so the spec can RUN
+it. The headline counts **accepted scans only**: a card that folded refusals in
+would report a member the desk turned away as having come in — the facility
+Summary counting invoice fee lines as bookings, one report over.
+
+- **A ROW WITH NO `Status` IS AN ACCEPTED SCAN.** Testing `=== 'Checked In'`
+  instead would make every row of a pre-column feed — including every warm
+  cache entry — read as a refusal, and the card would report the whole day as
+  turned away. Same rule as `ciIsFailed` on the check-ins report.
+- **Refusals are shown, not hidden.** They are the interesting rows. They are
+  counted separately, named on screen, and marked red in the lane.
+- **NO REASON IS INVENTED, and none can be.** `attendance_event.side_effects` is
+  empty on all 58 denials platform-wide, and of 52 membership refusals only 5
+  had an expired, unstarted or cancelled membership — so a "Reason" column would
+  be a confident sentence sitting beside real rows. The spec fails if one
+  appears.
+
+### ONE AXIS, TWO LANES
+
+`liveDayAxis(today)` is extracted from `liveTimeline` and read by both cards.
+They sit one above the other, so **a noon that is not in the same place on both
+is a defect a reader sees immediately**, and two copies of that arithmetic is
+how it happens. The MARKS are deliberately not shared: a signup is coloured by
+what its money is doing, a scan by whether it was accepted.
+
+An accepted scan is the **same green** as a paid signup — both mean "this went
+through", and a second green across two adjacent cards would read as a third
+state. A refusal is **red**, not the registrations card's grey: grey there means
+"no money yet", which is ordinary and waits.
+
+The render case compares the rendered tick POSITIONS of the two lanes, which is
+the only thing that can catch them drifting apart.
+
+### INITIALS ARE THE DESIGN AND THE PHOTO SLOTS INTO THEM
+
+Measured before building, over the 33,239 members who checked in with a
+membership or pass in 90 days: **7.5% have an image**, and it is bimodal rather
+than merely thin — Clarkstown 94.7%, Euclid 93.5%, Douglas County 22.9%, Norman
+16.9%, **Apex 2.2%**. So a photo-first row is a delight at two orgs and a wall
+of holes at the rest.
+
+The photo is absolutely positioned **over** the initials in the same box, so
+both cases are the same shape and the row never goes ragged. A broken image URL
+hides itself and the initials are simply already there.
+
+**The link takes `User ID`, the uuid.** `Member ID` is `users.rec_id`, the
+six-character code staff read out at a desk — it looks identical in a link and
+404s. A row without a uuid renders as plain text; a link to nowhere is worse
+than none.
+
+### NO SOUND ON THIS CARD
+
+The chime says *"somebody just gave you money"*. A beep every time the front
+desk scans a card would be unbearable in a busy gym and would train people to
+mute the whole section — taking the registrations chime with it.
+
+### TWO FEEDS, AND THE THING THAT MUST NOT DRIFT
+
+The check-ins card reads a **different Metabase card**, so it cannot share the
+enrollments feed. Each card is gated on its own verdict and the SECTION hides
+only when both are gone — one feed failing must not blank the other.
+
+What must not drift is the poll behaviour, which had just been fixed on the
+other hook: the spec counts **two** `visibilitychange` listeners, **two**
+`setInterval(load, LIVE_POLL_MS)` and **two** removals. A stale-serving or
+tab-sleeping feed is exactly the bug Dan reported, and it would be invisible if
+only one of the two carried the fix.
+
+### Guards
+
+`live-widgets.spec.js` 273 → **307 assertions**, lifting and RUNNING
+`liveCheckinState`, `liveInitials`, `liveCheckinKey`, `liveDayAxis` and
+`liveCheckinTimeline`. Plus **12 `ci-check-render.js` cases** over a fixture
+where every number is different on purpose — **17 rows · 16 today · 14 accepted
+· 2 turned away · 13 people** — because a fixture where the row count and the
+accepted count coincide cannot tell a correct card from one reading the wrong
+set. Ada scans twice so `people < accepted`; one row carries a photo and one
+carries no uuid, the two branches a source assertion cannot separate.
+
+**Two brittle literals had to be generalised**, both the shape already recorded
+for `SLACK_NOTIFY` and an `ALLOWED` array: the `LIVE_REPORT_TTL_MS` assertion
+pinned the whole object and broke when a second live feed was added, and the
+`every bolt is animated` case pinned `"2of2"` and broke when a third card
+appeared. Both test the property now — membership, and the RATIO with a floor
+of two so a page rendering no bolts cannot pass as `0of0`.
+
+**A spec that DIED instead of failing, sixth instance.** `liveCheckinTimeline`
+calls `liveAt`, which was not in the lift, so the spec threw a bare
+`ReferenceError` at call time naming nothing rather than failing by name. The
+lift block's try/catch only covers lift time, not call time.
+
+### AND THE REPORT-GOES-LAST TRAP BIT AGAIN — the spec printed a clean pass over two real failures
+
+The check-ins block was appended BELOW the `if (failures.length)` reporter. So
+all 34 of its assertions ran, incremented `pass`, recorded two genuine failures
+under a mutation — and the spec printed **"✓ 305 assertions passed"** and
+exited 0. The mutation (`liveCheckinState` inverted, so a row with no `Status`
+reads as a refusal) SURVIVED, and the only visible symptom was the pass count
+dropping by two.
+
+This file already carried a comment warning about exactly this, from the first
+time it happened. **A rule written in a comment did not stop the second
+instance**, so the fix is structural: the reporter is a `process.on('exit')`
+handler now, which cannot be appended past, using `process.exitCode` rather
+than `process.exit` so it is allowed to finish writing. Verified both ways —
+the mutated run exits 1 and names both assertions, the clean run exits 0.
+
+Generalise it: *when a rule about where code goes has failed twice, stop
+restating the rule and remove the position from the design.*
+
+
 ## THE LIVE CARD WAS A MINUTE BEHIND, AND REFRESH ONLY LOOKED LIKE THE FIX (2026-09-05)
 
 Dan: *"seems like the larger orgs are lagging a bit on the live cards? Not

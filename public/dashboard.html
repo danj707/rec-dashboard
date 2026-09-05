@@ -220,6 +220,49 @@ body { font-family: var(--font-body); background: var(--bg-page); color: var(--t
                  margin-right: 4px; vertical-align: middle; background: var(--border); }
 .live-legend .lg-paid i { background: #16a34a; }
 .live-legend .lg-part i { background: #f59e0b; }
+.live-legend .lg-fail i { background: #dc2626; }
+
+/* ── MEMBERSHIP CHECK-INS ──────────────────────────────────────────────────
+   AN ACCEPTED SCAN IS THE SAME GREEN AS A PAID SIGNUP — both mean "this went
+   through" and the two cards sit one above the other, so a second green would
+   read as a third state. A refusal is RED rather than the registrations card's
+   grey: grey there means "no money yet", which is ordinary and waits; red here
+   means somebody was turned away at the desk, which is not. */
+.live-timeline .lt-mark.ci-ok   { background: #16a34a; box-shadow: 0 0 0 2px rgba(22,163,74,.18); }
+.live-timeline .lt-mark.ci-failed { background: #dc2626; box-shadow: 0 0 0 2px rgba(220,38,38,.20); }
+
+.live-ci-fail { color: #dc2626; font-weight: 600; }
+
+/* A ROW OF FACES, WRAPPING. Not a table: the ask was to SEE who came in, and a
+   name-and-time table is what the check-ins report already is. */
+.live-ci-people { display: flex; flex-wrap: wrap; gap: 10px 12px; margin: 2px 0 6px; }
+.ci-person { display: flex; flex-direction: column; align-items: center; width: 46px;
+             text-align: center; }
+.ci-person a { text-decoration: none; }
+.ci-person b { font-size: 10px; font-weight: 600; color: var(--text-primary);
+               max-width: 46px; overflow: hidden; text-overflow: ellipsis;
+               white-space: nowrap; margin-top: 3px; }
+.ci-person i { font-size: 9px; font-style: normal; color: var(--text-muted); }
+
+/* THE PHOTO SITS ON TOP OF THE INITIALS, in the same box, so a member with an
+   image and one without are the same shape and the row does not go ragged at
+   the 92.5% of orgs where most people have neither. An image that fails to
+   load hides itself and the initials are simply already there. */
+.ci-face { position: relative; display: block; width: 34px; height: 34px; border-radius: 50%;
+           overflow: hidden; background: var(--border); }
+.ci-face img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
+               z-index: 1; }
+.ci-face em { position: absolute; inset: 0; display: flex; align-items: center;
+              justify-content: center; font-style: normal; font-size: 12px; font-weight: 700;
+              color: #fff; letter-spacing: .3px; }
+.ci-face.ci-ok     { background: #16a34a; }
+/* A REFUSED SCAN IS RINGED, not just tinted: the ring survives a photo sitting
+   on top of it, and a photo is exactly the case where a background colour says
+   nothing at all. */
+.ci-face.ci-failed { background: #dc2626; box-shadow: 0 0 0 2px #fff, 0 0 0 4px #dc2626; }
+@media (prefers-reduced-motion: no-preference) {
+  .ci-person.live-new .ci-face { animation: liveMarkIn 10s ease-out both; }
+}
 @media (prefers-reduced-motion: no-preference) {
   .live-timeline .lt-mark.fresh { animation: liveMarkIn 10s ease-out both; }
   @keyframes liveMarkIn {
@@ -2879,10 +2922,8 @@ function liveTimeline(rows, today) {
   // TODAY IS THE FEED'S DAY, passed in by the caller, never `new Date()`. The
   // card stamps each signup in the ORG's timezone, so a viewer in another zone
   // must not be shown a different day from the person in the rec centre.
-  const p = today.split('-');
-  const t0 = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2])).getTime();
-  const t1 = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]) + 1).getTime();
-  const span = t1 - t0 || 1;
+  const ax = liveDayAxis(today);
+  const t0 = ax.t0, span = ax.span;
   const marks = [];
   let n = 0;
   (rows || []).forEach(r => {
@@ -2904,10 +2945,29 @@ function liveTimeline(rows, today) {
              : 'not yet paid'),
     });
   });
-  // A FIXED 24-HOUR AXIS, deliberately, rather than one fitted to the marks:
-  // on a widget that refreshes every minute a fitted axis would slide every
-  // signup sideways as the day fills, which is disorienting on something whose
-  // whole job is to be watched.
+  return { marks, tickLabels: ax.tickLabels, nowLeft: ax.nowLeft };
+}
+
+/* ONE AXIS, TWO LANES. The registrations card and the check-ins card sit one
+   above the other, so a noon that is not in the same place on both is a defect
+   a reader sees immediately — and two copies of this arithmetic is how that
+   happens. The MARKS are not shared: a signup is coloured by what its money is
+   doing and a scan by whether it was accepted, which are different questions
+   about different rows.
+
+   A FIXED 24-HOUR AXIS, deliberately, rather than one fitted to the marks: on
+   a widget that refreshes every minute a fitted axis would slide every mark
+   sideways as the day fills, which is disorienting on something whose whole
+   job is to be watched.
+
+   TODAY IS THE FEED'S DAY, passed in by the caller, never `new Date()`, and
+   built from PARTS — `new Date("2026-09-05")` is UTC midnight and lands on the
+   previous day west of UTC. */
+function liveDayAxis(today) {
+  const p = String(today || '').split('-');
+  const t0 = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2])).getTime();
+  const t1 = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]) + 1).getTime();
+  const span = t1 - t0 || 1;
   const tickLabels = [];
   for (let h = 0; h < 24; h += 4) {
     const ap = h >= 12 ? 'p' : 'a', h12 = h % 12 === 0 ? 12 : h % 12;
@@ -2918,7 +2978,78 @@ function liveTimeline(rows, today) {
   // being drawn; past the end of it, it would pin to the right edge and imply
   // the day is still running.
   const nowLeft = now >= t0 && now <= t1 ? ((now - t0) / span) * 100 : null;
-  return { marks, tickLabels, nowLeft };
+  return { t0, t1, span, tickLabels, nowLeft };
+}
+
+/* ── MEMBERSHIP CHECK-INS ──────────────────────────────────────────────────
+   Dan: "a membership check in card — showing the last XX membership checkins",
+   and then on the shape: "a similar line chart or graph, with a small section
+   underneath of the users who've checked in. And add their tiny photos, orgs
+   love that."
+
+   Card 21517, its own feed and its own poll. Deliberately NOT folded into the
+   enrollments hook: they are different cards answering different questions and
+   an org can have one card without the other, so one feed failing must not
+   take the other down with it. What IS shared is the axis (liveDayAxis) and
+   the header, because those are the things a reader would notice disagreeing
+   between two cards sitting one above the other. */
+
+/* A SCAN'S IDENTITY. The feed carries no event id, so the key is the four
+   things that together cannot collide: the second it happened, who scanned,
+   at which desk, on what. Two rows matching all four ARE the same scan — and
+   a household of five scanning together really does produce same-second rows,
+   which is why the desk and product are in the key rather than just a time. */
+function liveCheckinKey(r) {
+  return [r['Checked In At'], r['User ID'] || r['Member'], r['Desk Location'], r['Product']].join('\u0000');
+}
+
+/* ACCEPTED OR TURNED AWAY. A DENIAL IS NOT ATTENDANCE — a card that counts a
+   refused scan as a visit reports a member who was turned away at the desk as
+   having come in, which is the facility Summary counting invoice fee lines as
+   bookings, one report over. Anything that COUNTS must filter on this.
+
+   At module scope so the spec can RUN it: a regex over a comparison passes on
+   an inverted one. */
+function liveCheckinState(r) {
+  return String(r && r['Status']) === 'Failed' ? 'failed' : 'ok';
+}
+
+/* INITIALS ARE THE DESIGN AND THE PHOTO SLOTS INTO THEM. Measured over the
+   33,239 members who checked in with a membership or pass in 90 days, only
+   7.5% have an image — and it is bimodal rather than thin: Clarkstown 94.7%,
+   Euclid 93.5%, Douglas County 22.9%, Apex 2.2%. So a photo-first row is a
+   wall of holes at most orgs and a delight at two, and initials under the
+   photo make it the same row either way. */
+function liveInitials(name) {
+  const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return '?';
+  if (parts.length === 1) return parts[0].slice(0, 1).toUpperCase();
+  return (parts[0].slice(0, 1) + parts[parts.length - 1].slice(0, 1)).toUpperCase();
+}
+
+/* The same one-day lane as the registrations card, off the SAME axis, with its
+   own marks: a scan is coloured by whether it was accepted, not by money. */
+function liveCheckinTimeline(rows, today) {
+  if (!today) return { marks: [], tickLabels: [], nowLeft: null };
+  const ax = liveDayAxis(today);
+  const marks = [];
+  let n = 0;
+  (rows || []).forEach(r => {
+    if (liveDay(r['Checked In At']) !== today) return;
+    const t = liveAt(r['Checked In At']);
+    if (t == null) return;
+    const st = liveCheckinState(r);
+    marks.push({
+      key: liveCheckinKey(r),
+      left: Math.min(100, Math.max(0, ((t - ax.t0) / ax.span) * 100)),
+      lane: n++ % 3,
+      state: st,
+      label: liveClock(r['Checked In At']) + ' \u00b7 ' + (r['Member'] || '') +
+             ' \u00b7 ' + (r['Product'] || '') +
+             (st === 'failed' ? ' \u00b7 turned away' : ''),
+    });
+  });
+  return { marks, tickLabels: ax.tickLabels, nowLeft: ax.nowLeft };
 }
 
 /* ── REGISTRATIONS BY PROGRAM ──────────────────────────────────────────────
@@ -3711,7 +3842,215 @@ function ProgramsLive({ feed, recOrgId }) {
   );
 }
 
-function LiveSection({ reportingBaseUrl, recOrgId }) {
+const LIVE_CHECKIN_ROWS = 12;
+
+/* ITS OWN FEED AND ITS OWN POLL. Same cadence and the same two rules the
+   registrations feed just had fixed — pause stops the clock, and coming back
+   to the tab refetches, because a 60-second interval in a hidden tab is not a
+   60-second interval. The spec requires BOTH hooks to carry those, which is
+   the mechanical guard against the pair drifting.
+
+   NO SOUND. The chime says "somebody just gave you money"; a beep every time
+   the front desk scans a card would be unbearable in a busy gym and would
+   train people to mute the whole section, taking the registrations chime with
+   it. */
+function useLiveCheckins(onAvailable, enabled) {
+  const [rows, setRows] = useState(null);
+  const [err, setErr]   = useState(false);
+  const [at, setAt]     = useState(null);
+  const [paused, setPaused] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [flash, setFlash] = useState(new Set());
+  const seenRef = React.useRef(null);
+  const timerRef = React.useRef(null);
+  const pausedRef = React.useRef(paused);
+
+  const load = React.useCallback(() => {
+    /* NO CARD, NO REQUEST. Without a public link the route 404s, and polling it
+       every sixty seconds for every org that does not have it would be a
+       self-inflicted error rate that looks exactly like a broken feed in the
+       logs. The caller knows from `availableReports`; the hook is told. */
+    if (!enabled) { setLoading(false); if (onAvailable) onAvailable(false); return; }
+    const w = liveWindow(1);   // TODAY. "Who is in the building" is a question about now.
+    const qs = new URLSearchParams({ start: w.start, end: w.end });
+    const url = IS_SHARE
+      ? `/share/${SHARE_TOKEN}/data/checkins-live?${qs}`
+      : `/${ORG_SLUG}/api/data/checkins-live?token=${TOKEN}&${qs}`;
+    setLoading(true);
+    fetch(url)
+      .then(r => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then(j => {
+        if (!j || !Array.isArray(j.rows)) throw new Error('shape');
+        const keys = j.rows.map(liveCheckinKey);
+        const seen = seenRef.current;
+        /* THE FIRST LOAD HIGHLIGHTS NOTHING, same rule as the registrations
+           card: opening the dashboard mid-afternoon must not flash four
+           hundred rows as though everyone just walked in. */
+        if (seen) {
+          const fresh = keys.filter(k => !seen.has(k));
+          if (fresh.length) {
+            setFlash(new Set(fresh));
+            clearTimeout(timerRef.current);
+            timerRef.current = setTimeout(() => setFlash(new Set()), LIVE_FLASH_MS);
+          }
+        }
+        seenRef.current = new Set(keys);
+        setRows(j.rows); setErr(false); setAt(new Date()); setLoading(false);
+        if (onAvailable) onAvailable(true);
+      })
+      .catch(() => { setErr(true); setLoading(false); if (onAvailable) onAvailable(false); });
+  }, [onAvailable, enabled]);
+
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    const wasPaused = pausedRef.current;
+    pausedRef.current = paused;
+    if (paused || !enabled) return;
+    if (wasPaused) load();
+    const t = setInterval(load, LIVE_POLL_MS);
+    return () => clearInterval(t);
+  }, [load, paused, enabled]);
+  useEffect(() => {
+    const onVis = () => {
+      if (document.visibilityState === 'visible' && !pausedRef.current) load();
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, [load]);
+  useEffect(() => () => clearTimeout(timerRef.current), []);
+
+  return { rows, err, at, paused, setPaused, flash, loading, refresh: load };
+}
+
+function MembershipCheckins({ feed, recOrgId }) {
+  const { rows, err, flash } = feed;
+
+  /* ABSENT, NEVER A CONFIDENT ZERO. A feed that has not answered is not a desk
+     nobody walked through — and "0 check-ins today" on a busy morning is the
+     reading that had to be impossible. The section hides itself when its
+     widgets do. */
+  if (err) return null;
+  if (!rows) {
+    return (
+      <div className="widget-card widget-md live-card" data-live-checkins="loading">
+        <LiveCardHeader icon={'\u{1F6C2}'} title="Membership Check-Ins" feed={feed}
+                        sub="Members and passes as they scan in \u00b7 today" />
+        <div className="live-empty">Loading\u2026</div>
+      </div>
+    );
+  }
+
+  const today = rows.length ? liveDay(rows[0]['Checked In At']) : '';
+  const todayRows = rows.filter(r => liveDay(r['Checked In At']) === today);
+  /* THE HEADLINE COUNTS ACCEPTED SCANS ONLY. A denial is not attendance. The
+     refusals are still on screen — they are the interesting rows — but they
+     are counted separately and said out loud rather than folded in. */
+  const okRows   = todayRows.filter(r => liveCheckinState(r) === 'ok');
+  const failed   = todayRows.length - okRows.length;
+  const people   = new Set(okRows.map(r => r['User ID'] || r['Member'])).size;
+  const tl = liveCheckinTimeline(rows, today);
+
+  return (
+    <div className="widget-card widget-md live-card" data-live-checkins={String(rows.length)}>
+      <LiveCardHeader icon={'\u{1F6C2}'} title="Membership Check-Ins" feed={feed}
+                      sub="Members and passes as they scan in \u00b7 today" />
+
+      <div className="live-count">
+        <span className="live-n" data-live-ci-today={String(okRows.length)}>{okRows.length}</span>
+        <span className="live-u">
+          {okRows.length === 1 ? 'check-in' : 'check-ins'} today
+          {people && people !== okRows.length ? ' \u00b7 ' + people + (people === 1 ? ' member' : ' members') : ''}
+          {/* A REFUSAL COUNT WITH NO REASON BESIDE IT, because the log records
+              none: attendance_event.side_effects is empty on all 58 denials
+              platform-wide, and of 52 membership refusals only 5 had an
+              expired, unstarted or cancelled membership. Inventing a "why"
+              would be a confident sentence sitting beside real rows. */}
+          {failed ? <span className="live-ci-fail" data-live-ci-failed={String(failed)}
+                          title="Scans the desk turned away. The log records no reason, so none is shown."
+                    >{' \u00b7 ' + failed + ' turned away'}</span> : null}
+        </span>
+      </div>
+
+      <div className="live-timeline" data-live-ci-marks={String(tl.marks.length)}
+           title="Every scan today, placed at the time it happened. Green accepted, red turned away.">
+        {tl.tickLabels.map((d, i) => (
+          <span key={i} className="lt-day" style={{left: d.left + '%'}}><i /><em>{d.text}</em></span>
+        ))}
+        {tl.nowLeft == null ? null : <span className="lt-now" style={{left: tl.nowLeft + '%'}} title="Now" />}
+        {tl.marks.map(m => (
+          <span key={m.key}
+                className={'lt-mark ci-' + m.state + (flash.has(m.key) ? ' fresh' : '')}
+                data-live-ci-mark={m.state}
+                style={{left: m.left + '%', top: (6 + m.lane * 10) + 'px'}}
+                title={m.label} />
+        ))}
+      </div>
+      <div className="live-legend" data-live-ci-legend="1">
+        <span className="lg-paid"><i />accepted</span>
+        <span className="lg-fail"><i />turned away</span>
+      </div>
+
+      {/* WHO. The ask was for the people, not only the count — the same
+          dead-end this repo keeps writing down, where a number has nowhere to
+          go. Newest first, capped, and the cap SAYS SO rather than trailing
+          off. */}
+      {todayRows.length === 0 ? (
+        <div className="live-empty">No membership or pass check-ins today yet.</div>
+      ) : (
+        <React.Fragment>
+          {/* TODAY'S ROWS, the same set the headline counts. Reading `rows`
+              here would put a scan from another day among the faces under a
+              number that excluded it — one card disagreeing with itself. */}
+          <div className="live-ci-people" data-live-ci-people={String(Math.min(todayRows.length, LIVE_CHECKIN_ROWS))}>
+            {todayRows.slice(0, LIVE_CHECKIN_ROWS).map(r => {
+              const st = liveCheckinState(r);
+              const u  = liveUserUrl(recOrgId, r['User ID']);
+              const nm = r['Member'] || '(no name)';
+              const face = (
+                <span className={'ci-face ci-' + st} data-live-ci-face={r['Photo'] ? 'photo' : 'initials'}>
+                  {/* THE PHOTO IS A BONUS, NOT THE LAYOUT. Initials sit
+                      underneath it, so a 2%-coverage org gets a full row of
+                      faces rather than a row of holes — and a broken image URL
+                      falls back to them rather than to a torn-page glyph. */}
+                  {r['Photo']
+                    ? <img src={r['Photo']} alt="" loading="lazy"
+                           onError={e => { e.target.style.display = 'none'; }} />
+                    : null}
+                  <em>{liveInitials(nm)}</em>
+                </span>
+              );
+              return (
+                <span key={liveCheckinKey(r)}
+                      className={'ci-person' + (flash.has(liveCheckinKey(r)) ? ' live-new' : '')}
+                      data-live-ci-person={nm} data-live-ci-status={st}
+                      title={liveClock(r['Checked In At']) + ' \u00b7 ' + nm + ' \u00b7 ' +
+                             (r['Product'] || '') + ' \u00b7 ' + (r['Desk Location'] || '') +
+                             (st === 'failed' ? ' \u00b7 turned away' : '')}>
+                  {/* A LINK ONLY WHERE THERE IS AN ID. "User ID" is users.id,
+                      the uuid the admin URL takes — never "Member ID", the
+                      six-character desk code, which looks identical in a link
+                      and 404s. No id, plain text: a link to nowhere is worse
+                      than none. */}
+                  {u ? <a href={u} target="_blank" rel="noopener noreferrer"
+                          data-live-ci-link={r['User ID']}>{face}</a> : face}
+                  <b>{nm.split(/\s+/)[0]}</b>
+                  <i>{liveClock(r['Checked In At'])}</i>
+                </span>
+              );
+            })}
+          </div>
+          {todayRows.length > LIVE_CHECKIN_ROWS
+            ? <div className="live-more" data-live-ci-more={String(todayRows.length - LIVE_CHECKIN_ROWS)}>
+                {'+' + (todayRows.length - LIVE_CHECKIN_ROWS) + ' more today'}
+              </div>
+            : null}
+        </React.Fragment>
+      )}
+    </div>
+  );
+}
+
+function LiveSection({ reportingBaseUrl, recOrgId, hasCheckins }) {
   const sec = SECTIONS.live;
   /* THE SECTION HIDES WITH ITS WIDGETS. The counter renders nothing when the
      feed cannot answer — that is the absence rule — but a header and an empty
@@ -3720,8 +4059,15 @@ function LiveSection({ reportingBaseUrl, recOrgId }) {
      so the section does not flash out and back in on a slow first fetch; it
      hides only once a fetch has actually FAILED. */
   const [alive, setAlive] = useState(true);
-  const feed = useLiveEnrollments(setAlive);
-  if (!alive) return null;
+  /* TWO FEEDS, TWO VERDICTS. The check-ins card is a different card on a
+     different Metabase question, so one of them failing must not take the
+     other off the page — and the SECTION hides only when there is nothing left
+     to show in it. Optimistic on mount for the same reason as above. */
+  const [ciAlive, setCiAlive] = useState(!!hasCheckins);
+  const feed   = useLiveEnrollments(setAlive);
+  const ciFeed = useLiveCheckins(setCiAlive, !!hasCheckins);
+  const showCi = !!hasCheckins && ciAlive;
+  if (!alive && !showCi) return null;
   return (
     <div className="dashboard-section" data-live-section="1">
       <div className="section-header">
@@ -3731,8 +4077,9 @@ function LiveSection({ reportingBaseUrl, recOrgId }) {
         <div className="section-line" />
       </div>
       <div className="widget-grid">
-        <LiveRegistrations feed={feed} recOrgId={recOrgId} />
-        <ProgramsLive feed={feed} recOrgId={recOrgId} />
+        {alive ? <LiveRegistrations feed={feed} recOrgId={recOrgId} /> : null}
+        {alive ? <ProgramsLive feed={feed} recOrgId={recOrgId} /> : null}
+        {showCi ? <MembershipCheckins feed={ciFeed} recOrgId={recOrgId} /> : null}
       </div>
     </div>
   );
@@ -5424,8 +5771,10 @@ function DashboardApp() {
             absent until the card has a public link), and never in print — a
             printed "right now" is a lie the moment the paper leaves the
             printer. */}
-        {!IS_PRINT && activeTab === 'dashboard' && availableReports.enrollments && (
-          <LiveSection reportingBaseUrl={orgMeta.reportingBaseUrl || ''} recOrgId={orgMeta.recOrgId || ''} />
+        {!IS_PRINT && activeTab === 'dashboard'
+          && (availableReports.enrollments || availableReports['checkins-live']) && (
+          <LiveSection reportingBaseUrl={orgMeta.reportingBaseUrl || ''} recOrgId={orgMeta.recOrgId || ''}
+                       hasCheckins={!!availableReports['checkins-live']} />
         )}
         {(IS_PRINT || activeTab === 'dashboard' || !availableReports.support) && displaySections.map((sec, i) => (
           <SectionBlock key={sec.id+i+theme} sectionId={sec.id} widgetIds={sec.widgets} reportData={reportData} loading={loading} freshRts={freshRts} priorReportData={priorReportData}

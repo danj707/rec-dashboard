@@ -314,6 +314,11 @@ setTimeout(() => { reconcileWithReporting().catch(e => console.warn('[reporting]
 setInterval(() => { reconcileWithReporting().catch(() => {}); }, REPORTING_RECONCILE_MS);
 
 // Reports available to ALL orgs via shared Metabase cards (need org_id param)
+/* Set this to card 21517's public UUID once the link exists. Empty until then:
+   see the note on the 'checkins-live' key below for why an absent key is the
+   right shape rather than a placeholder. */
+const CHECKINS_LIVE_UUID = '';
+
 const SHARED_UUIDS = {
   facility: 'f6787f45-3a36-4501-8a5f-b0f647451a85',
   programs: 'e35f2b47-87c9-40e3-8507-3d9b56f9ce62',
@@ -349,7 +354,23 @@ const SHARED_UUIDS = {
 
      Verified live before wiring: shrewsbury, 7-day window, 126 rows in 20.7s
      through the public endpoint with the app's own date/single parameters. */
-  enrollments: 'e663ecfb-71b4-4de1-b984-13c69beab005'
+  enrollments: 'e663ecfb-71b4-4de1-b984-13c69beab005',
+  /* Card 21517 "✅ Membership Check-Ins Live" — newest membership and pass
+     scans first, behind the Membership Check-Ins widget. Mirrored at
+     sql/checkins-live.sql; the live card is the source of truth.
+
+     A LITERAL, like every other card here — the env-var version of this lasted
+     about an hour on the enrollments card (Dan: "what is MB_ENROLLMENTS_UUID
+     lol") and bought nothing, because the absence rule is enforced where it
+     belongs rather than by a deploy step.
+
+     THE KEY IS OMITTED WHILE THE UUID IS EMPTY, and that is the absence rule:
+     `availableReports` is built from this map, so an absent key hides the
+     widget, the route 404s, and the section hides itself when its widgets do.
+     A confident "0 check-ins today" on a morning when the desk is scanning
+     people through is the reading that had to be impossible. Filling this in
+     is the whole wiring — no other change is needed. */
+  ...(CHECKINS_LIVE_UUID ? { 'checkins-live': CHECKINS_LIVE_UUID } : {})
 };
 
 /* A LIVE WIDGET NEEDS ITS OWN CLOCK. Everything else here is a dashboard of a
@@ -358,7 +379,7 @@ const SHARED_UUIDS = {
    also what the page polls at, so most ticks are served from this cache and
    the card is queried about once a minute per org rather than once per
    viewer. */
-const LIVE_REPORT_TTL_MS = { enrollments: 60 * 1000 };
+const LIVE_REPORT_TTL_MS = { enrollments: 60 * 1000, 'checkins-live': 60 * 1000 };
 
 // Reports that don't accept date parameters
 const NO_DATE_REPORTS = new Set([
