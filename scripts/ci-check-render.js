@@ -932,7 +932,10 @@ const CASES = [
         const rings  = window.__liveChimeRings  || 0;
         const voiced = window.__liveChimeVoiced || 0;
         const audio = !!(window.AudioContext || window.webkitAudioContext);
-        return (rings === n && voiced === n && audio && n === 4)
+        /* n >= 4, not === 4: the claim is that EVERY sound in the menu plays,
+           and a literal count turns adding one into a failing test rather than
+           a passing one. The floor still catches a menu that silently emptied. */
+        return (rings === n && voiced === n && audio && n >= 4)
           ? 'ok' : ('rings=' + rings + ' voiced=' + voiced + ' of ' + n + ' audio=' + audio);
       }, names.length);
       await page.evaluate(v => document.body.setAttribute('data-chime-all', v), out);
@@ -978,7 +981,7 @@ const CASES = [
         if (broke.length) return 'these sounds threw in a burst: ' + broke.join(', ');
         const want = names.length * plan.length;
         const rings = window.__liveChimeRings, voiced = window.__liveChimeVoiced;
-        return (rings === want && voiced === want && names.length === 4)
+        return (rings === want && voiced === want && names.length >= 4)
           ? 'ok' : ('rings=' + rings + ' voiced=' + voiced + ' of ' + want +
                     ' across ' + names.length + ' sounds');
       });

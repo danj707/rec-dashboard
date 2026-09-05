@@ -2351,6 +2351,7 @@ const LIVE_CHIMES = [
   ['chaching', 'Cha-ching'],
   ['arcade',   'Arcade'],
   ['bell',     'Bell'],
+  ['airhorn',  'Airhorn'],
 ];
 const LIVE_CHIME_DEFAULT = 'coin';
 /* HOW MANY RING FOR ONE BATCH — AND WHY IT IS NOT THREE ANY MORE. Dan, on a
@@ -2497,6 +2498,29 @@ const LIVE_CHIME_VOICES = {
   bell(ctx, t) {
     liveTone(ctx, { type: 'sine', freq: 1318.5, at: t, dur: 0.70, gain: 0.18, decay: true });
     liveTone(ctx, { type: 'sine', freq: 2637.0, at: t, dur: 0.35, gain: 0.05, decay: true });
+  },
+  /* AN AIRHORN. Dan: "add an airhorn sound too."
+     
+     BUILT FROM THE SAME PRIMITIVE AS THE OTHER FOUR, deliberately. The glide,
+     lowpass and noise buffer a "proper" horn would want were deleted from this
+     file when the animal sounds went, and reinstating three helpers for one
+     voice is how dead code comes back. Stacked SAWTOOTHS get there instead:
+     a saw is already a full harmonic series, which is the buzz.
+     
+     A TWO-TONE HORN IS A MINOR THIRD, and that interval is what makes it read
+     as an airhorn rather than as a rude noise — Bb3 against Db4, with the
+     octave above adding the cut that carries. Tuned, not felt, for the same
+     reason the coin's B5/E6 is.
+     
+     NO `decay`, unlike the bell: a horn holds flat and stops. An exponential
+     tail would make it a synth pad. And the gains are deliberately low — three
+     sawtooths sum to far more harmonic energy than two sines, so matching the
+     others' 0.15 by eye would make this one voice roughly twice as loud as the
+     rest and blow the burst ducking's assumptions. */
+  airhorn(ctx, t) {
+    liveTone(ctx, { type: 'sawtooth', freq: 233.08, at: t,        dur: 0.52, gain: 0.075 });
+    liveTone(ctx, { type: 'sawtooth', freq: 277.18, at: t + 0.02, dur: 0.50, gain: 0.070 });
+    liveTone(ctx, { type: 'sawtooth', freq: 466.16, at: t + 0.02, dur: 0.50, gain: 0.045 });
   },
 };
 
@@ -3361,10 +3385,15 @@ function useLiveEnrollments(onAvailable, feed) {
   useEffect(() => {
     if (feed !== 'light') { setRollup(null); return; }
     let dead = false;
-    const qs = new URLSearchParams({ days: String(LIVE_DAYS - 1) });
+    /* NO `days` PARAMETER. The card's window is six complete days, hardcoded in
+       its own SQL, because Metabase registered the tag as date/single whatever
+       the cast said and there is no value the app could have sent that it
+       would accept (every type probed: 400 or 500). LIVE_DAYS is still the
+       page's authority on the window it EXPECTS, and the spec pins it against
+       the card's literal, so the two cannot drift apart silently. */
     const url = IS_SHARE
-      ? `/share/${SHARE_TOKEN}/data/enrollments-rollup?${qs}`
-      : `/${ORG_SLUG}/api/data/enrollments-rollup?token=${TOKEN}&${qs}`;
+      ? `/share/${SHARE_TOKEN}/data/enrollments-rollup`
+      : `/${ORG_SLUG}/api/data/enrollments-rollup?token=${TOKEN}`;
     fetch(url)
       .then(r => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
       .then(j => { if (!dead && j && Array.isArray(j.rows)) setRollup(j.rows); })
@@ -4032,7 +4061,7 @@ function MembershipCheckins({ feed, recOrgId }) {
       <div className="widget-card widget-md live-card" data-live-checkins="loading">
         <LiveCardHeader icon={'\u{1F6C2}'} title="Membership Check-Ins" feed={feed} card="checkins" sound={sound}
                         sub={'Members and passes as they scan in \u00b7 today'} />
-        <div className="live-empty">Loading\u2026</div>
+        <div className="live-empty">{'Loading\u2026'}</div>
       </div>
     );
   }

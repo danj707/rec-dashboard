@@ -69,7 +69,35 @@ WITH cfg AS (
             'America/New_York'
          ) AS tz
   FROM organization o
-  WHERE o.id = {{org_id}}::uuid
+  WHERE o.id = {{org_id}}::uuid),
+/* THE DAY AS AN INSTANT RANGE, resolved once.
+
+   THIS IS THE WHOLE PERFORMANCE STORY, and it is not the row count. The first
+   version of this card wrote the obvious thing —
+
+       (b.created_at AT TIME ZONE cfg.tz)::date = (NOW() AT TIME ZONE cfg.tz)::date
+
+   — which WRAPS THE COLUMN, so no index on created_at can be used and Postgres
+   reads the org's entire history to throw almost all of it away. Measured on
+   attendance_event at apex, EXPLAIN (ANALYZE, BUFFERS), same 399 rows out:
+
+       wrapped column   221,313 rows read, 220,914 discarded, 19,148 blocks,
+                        7,258ms of I/O, 7,815ms total
+       instant range          409 rows read,       7 discarded,    190 blocks,
+                            3.9ms of I/O,     4.5ms total
+
+   Turning the org's day into a timestamptz range leaves the column bare, and
+   the planner picks up an index that already existed and was simply
+   unreachable. Same lesson the sibling repo records for the Tyler export:
+   never wrap the column being filtered.
+
+   MATERIALIZED so the bounds are computed once and land as InitPlan constants
+   rather than being re-derived per row — verified in the plan. */
+win AS MATERIALIZED (
+  SELECT org_id, tz,
+         ((NOW() AT TIME ZONE tz)::date)::timestamp        AT TIME ZONE tz AS t0,
+         (((NOW() AT TIME ZONE tz)::date + 1)::timestamp)  AT TIME ZONE tz AS t1
+  FROM cfg
 ),
 -- TODAY, IN THE ORG'S OWN TIMEZONE, resolved once and reused. `bk` is the same
 -- shape as card 21286's so everything downstream is line-for-line the same
@@ -81,7 +109,8 @@ bk AS (
   JOIN booking b ON b.organization_id = cfg.org_id AND b.deleted_at IS NULL
   WHERE b.type = 'section'
     AND b.status = 'confirmed'
-    AND (b.created_at AT TIME ZONE cfg.tz)::date = (NOW() AT TIME ZONE cfg.tz)::date
+    AND b.created_at >= (SELECT t0 FROM win)
+    AND b.created_at <  (SELECT t1 FROM win)
 ),
 money AS (
   SELECT oi.booking_id,

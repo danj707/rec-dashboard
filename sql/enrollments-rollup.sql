@@ -27,19 +27,31 @@
 --     cached for half an hour instead of sixty seconds. That is where the load
 --     actually goes: the expensive half stops being asked once a minute.
 --
--- `{{days}}` is how many complete days to return, ending yesterday. The page
--- asks for six, which with today makes the seven the leaderboard advertises
--- and the six the trend needs (three against three). It is a NUMBER parameter,
--- not a date one — see enrollments-today.sql on why this card family carries
--- no date tags and therefore never needs a flip after a push.
+-- THE WINDOW IS SIX COMPLETE DAYS, HARDCODED, and that is a correction rather
+-- than a shortcut. It was a `{{days}}` template tag first, so the page's own
+-- constants could govern it — and Metabase registered that tag as
+-- **date/single** whatever the SQL cast said. Probed through the public
+-- endpoint against every type the app could send:
+--
+--     days as category     -> 500   days as number/= -> 400
+--     days as date/single  -> 500   days as string/= -> 400
+--
+-- There is no value this card could have been given. Six is what the page needs
+-- (LIVE_DAYS 7 minus today, which is also the six the trend arrow's three
+-- against three consumes), so it lives here instead — and the spec pins the
+-- page's constant AGAINST this literal, because two numbers for one window is
+-- how a trend arrow quietly starts comparing three days against two.
+--
+-- Losing the parameter also leaves this card with `org_id` alone, which is the
+-- shape the rest of the family has: no date tag, so no flip after a push, ever.
 --
 -- A day with no signups has no row, which is correct: the page tallies by day
 -- key and a missing key reads as zero. Emitting an empty row per day would
 -- make an org that ran no registrations look like one this card could not
 -- answer for.
 --
--- Params: org_id (uuid), days (number). Mirrored here; THE LIVE CARD IS THE
--- SOURCE OF TRUTH.
+-- Params: org_id (uuid) ONLY. Mirrored here; THE LIVE CARD IS THE SOURCE OF
+-- TRUTH.
 WITH cfg AS (
   SELECT o.id AS org_id,
          COALESCE(
@@ -54,7 +66,35 @@ WITH cfg AS (
             'America/New_York'
          ) AS tz
   FROM organization o
-  WHERE o.id = {{org_id}}::uuid
+  WHERE o.id = {{org_id}}::uuid),
+/* THE DAY AS AN INSTANT RANGE, resolved once.
+
+   THIS IS THE WHOLE PERFORMANCE STORY, and it is not the row count. The first
+   version of this card wrote the obvious thing —
+
+       (b.created_at AT TIME ZONE cfg.tz)::date = (NOW() AT TIME ZONE cfg.tz)::date
+
+   — which WRAPS THE COLUMN, so no index on created_at can be used and Postgres
+   reads the org's entire history to throw almost all of it away. Measured on
+   attendance_event at apex, EXPLAIN (ANALYZE, BUFFERS), same 399 rows out:
+
+       wrapped column   221,313 rows read, 220,914 discarded, 19,148 blocks,
+                        7,258ms of I/O, 7,815ms total
+       instant range          409 rows read,       7 discarded,    190 blocks,
+                            3.9ms of I/O,     4.5ms total
+
+   Turning the org's day into a timestamptz range leaves the column bare, and
+   the planner picks up an index that already existed and was simply
+   unreachable. Same lesson the sibling repo records for the Tyler export:
+   never wrap the column being filtered.
+
+   MATERIALIZED so the bounds are computed once and land as InitPlan constants
+   rather than being re-derived per row — verified in the plan. */
+win AS MATERIALIZED (
+  SELECT org_id, tz,
+         (((NOW() AT TIME ZONE tz)::date - 6)::timestamp)  AT TIME ZONE tz AS t0,
+         ((NOW() AT TIME ZONE tz)::date)::timestamp        AT TIME ZONE tz AS t1
+  FROM cfg
 ),
 -- COMPLETE DAYS ONLY: from `days` back, up to and including YESTERDAY in the
 -- org's own timezone. Today is deliberately outside this window.
@@ -65,10 +105,8 @@ bk AS (
   JOIN booking b ON b.organization_id = cfg.org_id AND b.deleted_at IS NULL
   WHERE b.type = 'section'
     AND b.status = 'confirmed'
-    AND (b.created_at AT TIME ZONE cfg.tz)::date
-          >= (NOW() AT TIME ZONE cfg.tz)::date - ({{days}}::int)
-    AND (b.created_at AT TIME ZONE cfg.tz)::date
-          <  (NOW() AT TIME ZONE cfg.tz)::date
+    AND b.created_at >= (SELECT t0 FROM win)
+    AND b.created_at <  (SELECT t1 FROM win)
 ),
 money AS (
   SELECT oi.booking_id,

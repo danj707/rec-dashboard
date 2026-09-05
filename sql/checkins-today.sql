@@ -30,7 +30,35 @@ WITH org_tz AS (
   SELECT COALESCE(MODE() WITHIN GROUP (ORDER BY timezone), 'America/Chicago') AS tz
   FROM location
   WHERE organization_id = {{org_id}}::uuid
-    AND timezone IS NOT NULL AND timezone <> ''
+    AND timezone IS NOT NULL AND timezone <> ''),
+/* THE DAY AS AN INSTANT RANGE, resolved once.
+
+   THIS IS THE WHOLE PERFORMANCE STORY, and it is not the row count. The first
+   version of this card wrote the obvious thing —
+
+       (b.created_at AT TIME ZONE cfg.tz)::date = (NOW() AT TIME ZONE cfg.tz)::date
+
+   — which WRAPS THE COLUMN, so no index on created_at can be used and Postgres
+   reads the org's entire history to throw almost all of it away. Measured on
+   attendance_event at apex, EXPLAIN (ANALYZE, BUFFERS), same 399 rows out:
+
+       wrapped column   221,313 rows read, 220,914 discarded, 19,148 blocks,
+                        7,258ms of I/O, 7,815ms total
+       instant range          409 rows read,       7 discarded,    190 blocks,
+                            3.9ms of I/O,     4.5ms total
+
+   Turning the org's day into a timestamptz range leaves the column bare, and
+   the planner picks up an index that already existed and was simply
+   unreachable. Same lesson the sibling repo records for the Tyler export:
+   never wrap the column being filtered.
+
+   MATERIALIZED so the bounds are computed once and land as InitPlan constants
+   rather than being re-derived per row — verified in the plan. */
+win AS MATERIALIZED (
+  SELECT tz,
+         ((NOW() AT TIME ZONE tz)::date)::timestamp        AT TIME ZONE tz AS t0,
+         (((NOW() AT TIME ZONE tz)::date + 1)::timestamp)  AT TIME ZONE tz AS t1
+  FROM org_tz
 ),
 -- THE WINDOWED EVENTS, resolved before any of the per-scan joins below, so the
 -- product and desk lookups run over a day of scans rather than the org's whole
@@ -43,9 +71,10 @@ ev AS (
   WHERE ae.organization_id = {{org_id}}::uuid
     AND ae.type IN ('check_in', 'check_in_denied')
     AND ae.check_in_method_type IN ('membership', 'pass')
-    -- TODAY, IN THE ORG'S OWN TIMEZONE. No date parameters at all — see the
-    -- header for why, and what asking for two days used to cost.
-    AND (ae.created_at AT TIME ZONE otz.tz)::date = (NOW() AT TIME ZONE otz.tz)::date
+    -- TODAY, IN THE ORG'S OWN TIMEZONE, as an INSTANT RANGE — see the `win`
+    -- CTE for the 7,815ms -> 4.5ms this is worth. No date parameters at all.
+    AND ae.created_at >= (SELECT t0 FROM win)
+    AND ae.created_at <  (SELECT t1 FROM win)
 )
 SELECT
   -- A bare local wall-clock string, already converted to the ORG's timezone, so

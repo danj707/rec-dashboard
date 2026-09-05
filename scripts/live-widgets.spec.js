@@ -743,6 +743,32 @@ if (H.liveBySection) {
   ok(/liveBySection\(rows, today, rollup\)/.test(code),
      'the widget calls the shared model rather than aggregating inline, and hands it the history');
 
+/* ── NO UNRENDERED ESCAPES IN JSX TEXT ────────────────────────────────────
+   Dan, on the deployed Membership Check-Ins card: a screenshot reading
+   "Loading\\u2026" in plain sight.
+
+   `\\u2026` inside a JSX *string literal* is an ellipsis; inside JSX **text** it
+   is six characters on screen. The render check already sweeps for this, and it
+   could not see this one: the loading state is gone by the time a case runs, so
+   the only surface that ever showed it was a real dashboard on a slow fetch.
+
+   Source-level, therefore, and over the whole file rather than this widget —
+   the same mistake has now shipped three times across these two repos
+   (\\uD83D\\uDD01 on the Auto-Renew tab, \\u2014 and \\u2026 in the Retention copy).
+   Escapes are legal everywhere EXCEPT bare text between tags. */
+{
+  const bad = [];
+  code.split('\n').forEach((line, i) => {
+    /* Between a > and a <, with no brace in the way — a {'\u2026'} expression
+       is correct and must not be flagged. */
+    const m = line.match(/>[^<>{}]*\\u[0-9a-fA-F]{4}[^<>{}]*</);
+    if (m) bad.push((i + 1) + ': ' + m[0].trim().slice(0, 60));
+  });
+  ok(bad.length === 0,
+     'no \\uXXXX escape sits in bare JSX text, where it renders literally' +
+     (bad.length ? ' — found ' + bad.join(' | ') : ''));
+}
+
 /* ── THE SINGLE-DAY CARDS ──────────────────────────────────────────────────
    Dan: "if building super lightweight reports to fuel these live widgets is a
    better fit, consider that. since each is only pulling a single day's worth of
@@ -802,8 +828,27 @@ if (H.liveBySection) {
      for the same rows. That is the entire saving. */
   ok(!/setInterval\([^)]*rollup/i.test(code),
      'the rollup is never put on the poll interval');
-  ok(/days: String\(LIVE_DAYS - 1\)/.test(code),
-     'it asks for the complete days only — LIVE_DAYS includes today, and today belongs to the detail feed');
+  /* THE WINDOW IS PINNED ACROSS THE SPLIT, because the card owns it now.
+     `{{days}}` could not be made to work — Metabase registered the tag as
+     date/single whatever the SQL cast said, and every type the app can send
+     was refused — so six complete days are written into the card's own text.
+     That leaves two numbers for one window in two files, which is precisely
+     how a trend arrow starts comparing three days against two, so the page's
+     constant is asserted AGAINST the card's literal rather than beside it. */
+  const rollupSql = fs.readFileSync(
+    path.join(__dirname, '..', 'sql', 'enrollments-rollup.sql'), 'utf8');
+  const pageDays = /const LIVE_DAYS\s*=\s*(\d+)/.exec(code);
+  ok(pageDays, "the page's LIVE_DAYS is readable — without it this pin is vacuous");
+  const cardDays = /::date - (\d+)\)::timestamp\)?\s+AT TIME ZONE tz AS t0/.exec(
+    rollupSql.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*--.*$/gm, ''));
+  ok(cardDays, "the rollup card's own lower bound is readable — without it this pin is vacuous");
+  eq(cardDays && pageDays ? Number(cardDays[1]) : NaN,
+     pageDays ? Number(pageDays[1]) - 1 : NaN,
+     "the card's hardcoded window is exactly the complete days the page expects (LIVE_DAYS minus today)");
+  ok(!/enrollments-rollup[^`]*days=/.test(code) && !/days: String\(LIVE_DAYS/.test(code),
+     'the page sends no days parameter — the card does not register one, so sending it is a 400 waiting to happen');
+  ok(!/template-tag', 'days'/.test(srv),
+     '...and neither does the server');
 
   /* THE SERVER MUST NOT SEND DATES EITHER, or the cards would take a window
      they do not declare and Metabase would refuse the parameter outright. */
@@ -1233,12 +1278,22 @@ if (H.liveBySection) {
   ok(/LIVE_CHIME_VOICES\[kind\] \|\| LIVE_CHIME_VOICES\[LIVE_CHIME_DEFAULT\]/.test(code),
      '...and an unknown stored name rings the default rather than nothing');
 
-  /* FOUR SOUNDS, AND THE FIVE ANIMALS ARE GONE. Dan asked for a car horn, a
-     chicken, a cow, a sheep and a foghorn, heard them, and asked for them out
-     again — so this pins the ABSENCE, which is the thing a later "let's add a
-     few more" would quietly undo. */
-  ok(LIVE_CHIME_NAMES.length === 4,
-     'the menu is four sounds (it is ' + LIVE_CHIME_NAMES.length + ')');
+  /* THE ANIMALS ARE GONE, AND THAT IS WHAT THIS PINS. Dan asked for a car horn,
+     a chicken, a cow, a sheep and a foghorn, heard them, and asked for them out
+     again — so the assertion is the ABSENCE, which is the thing a later "let's
+     add a few more" would quietly undo.
+
+     IT USED TO BE A COUNT (`=== 4`), and a count is the wrong shape for that
+     claim: adding the airhorn Dan then asked for broke it while the animals
+     were still absent, and the fix would have been to type 5 — which is the
+     assertion agreeing to whatever the menu says. The SET is what carries the
+     intent, and it fails just as loudly if a sheep comes back. */
+  const menu = LIVE_CHIME_NAMES.slice().sort().join(',');
+  ok(menu === 'airhorn,arcade,bell,chaching,coin',
+     'the menu is exactly the intended sounds (it is ' + menu + ')');
+  ['horn', 'chicken', 'cow', 'sheep', 'foghorn'].forEach(a => {
+    ok(LIVE_CHIME_NAMES.indexOf(a) < 0, 'the ' + a + ' is still gone from the menu');
+  });
   ['horn', 'chicken', 'cow', 'sheep', 'foghorn'].forEach(n => {
     ok(!LIVE_CHIME_NAMES.includes(n), 'the menu does NOT offer ' + n);
   });

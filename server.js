@@ -343,16 +343,26 @@ const CHECKINS_LIVE_UUID = 'd9891f69-897e-4d60-985c-50b31ad6d280';
    register text tags only.
 
    EMPTY HERE MEANS ABSENT, and the page falls back to the wide-window feeds it
-   uses today. A Metabase card is not readable by this app until someone opens
-   it and creates a public link, which is a UI action — so these stay empty
-   until that is done, and filling them in is the whole wiring.
+   used before. A Metabase card is not readable by this app until someone opens
+   it and creates a public link, which is a UI action; Dan did that on
+   2026-09-05 and these are the links.
+
+   SIGNED OFF THROUGH THE PUBLIC ENDPOINT with the app's own parameter shape,
+   run with nothing else in flight:
+
+       21550 enrollments today   apex  11 rows   538ms    smyrna  4 rows  488ms
+       21551 enrollments rollup  apex 435 rows  1158ms    smyrna 331 rows 2209ms
+       21552 check-ins today     apex 402 rows   602ms    smyrna 45 rows  450ms
+
+   Against 8.3s and 25.6s for the feeds they replace. Row counts match what the
+   cards returned before the sargable rewrite, so the values are unchanged.
 
      21550  https://rec.metabaseapp.com/question/21550
      21551  https://rec.metabaseapp.com/question/21551
      21552  https://rec.metabaseapp.com/question/21552 */
-const ENROLLMENTS_TODAY_UUID  = '';
-const ENROLLMENTS_ROLLUP_UUID = '';
-const CHECKINS_TODAY_UUID     = '';
+const ENROLLMENTS_TODAY_UUID  = '970ce23a-d275-475d-a191-4fef9d07855f';
+const ENROLLMENTS_ROLLUP_UUID = '3ecb1e84-a2f0-4580-9d98-eb24e53bdde9';
+const CHECKINS_TODAY_UUID     = '6c43be44-5b83-4db3-be86-ebef472f6a56';
 
 const SHARED_UUIDS = {
   facility: 'f6787f45-3a36-4501-8a5f-b0f647451a85',
@@ -516,21 +526,15 @@ function buildMetabaseParams(reportType, query) {
     if (start) params.push({ type: dateType, target: ['variable', ['template-tag', 'start_date']], value: start });
     if (end) params.push({ type: dateType, target: ['variable', ['template-tag', 'end_date']], value: end });
   }
-  /* THE ROLLUP'S WINDOW, IN COMPLETE DAYS. It is the PAGE's constant, not the
-     server's — LIVE_DAYS and LIVE_TREND_DAYS live there, and a second copy here
-     would drift the first time either moved, which is how a trend arrow starts
-     comparing three days against two. Sent as 'category' because the card's
-     tag is plain text (it casts with ::int), the same reason revstreams' params
-     are; a date/single against a text tag 400s.
-
-     CLAMPED, because it reaches a query. A missing or unparseable value falls
-     back to six rather than to zero: six is what the page asks for, and a zero
-     would quietly empty the leaderboard's history while looking like a working
-     feed. */
-  if (reportType === 'enrollments-rollup') {
-    const d = Math.max(1, Math.min(31, parseInt(query.days, 10) || 6));
-    params.push({ type: 'category', target: ['variable', ['template-tag', 'days']], value: String(d) });
-  }
+  /* NO `days` PARAMETER FOR THE ROLLUP, and this is a fact about Metabase
+     rather than a simplification. The card had a `{{days}}` tag so the page's
+     own LIVE_DAYS could govern its window; Metabase registered that tag as
+     date/single whatever the SQL cast said, and every type the app can send
+     was probed against the live public card — category 500, date/single 500,
+     number/= 400, string/= 400. There is no value it would accept, so the six
+     complete days live in the card's SQL and the spec pins the page's constant
+     against that literal. Sending a parameter the card does not register is
+     how this comes back as a 400 the first time Metabase tightens. */
   return params;
 }
 
