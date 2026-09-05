@@ -115,6 +115,8 @@ try {
     liftFn(src, 'liveClock') + '\n' + liftFn(src, 'liveMoney') + '\n' +
     liftFn(src, 'liveKey') + '\n' + liftFn(src, 'liveSectionKey') + '\n' +
     liftFn(src, 'liveBySection') + '\n' +
+    liftFn(src, 'liveFeedChoice') + '\n' + liftFn(src, 'liveHasEnrollments') + '\n' +
+    liftFn(src, 'liveHasCheckins') + '\n' +
     liftFn(src, 'livePlanOn') + '\n' + liftFn(src, 'livePlanProgress') + '\n' +
     liftFn(src, 'liveMoneyZ') + '\n' + liftFn(src, 'livePayPhrase') + '\n' +
     liftFn(src, 'liveMarkState') + '\n' + liftFn(src, 'liveChimeWorthy') + '\n' +
@@ -141,6 +143,7 @@ try {
     'return { liveWindow, liveDay, liveClock, liveMoney, liveKey, liveSectionKey, liveBySection, liveMarkState, liveTodayFor,' +
     ' liveChimeWorthy, livePriceCell, liveParticipant, liveDayShift, liveProgramTrend, liveChimeBurst,' +
     ' livePlanOn, livePlanProgress, liveMoneyZ, livePayPhrase,' +
+    ' liveFeedChoice, liveHasEnrollments, liveHasCheckins,' +
     ' liveCheckinKey, liveCheckinState, liveInitials, liveDayAxis, liveCheckinTimeline,' +
     ' LIVE_CHIME_MAX, LIVE_CHIME_GAP_MS, LIVE_CHIME_JITTER_MS, LIVE_CHIME_RING_MS };')();
   pass++;
@@ -207,7 +210,11 @@ if (H.liveWindow) {
   ok(/if \(!rows\) \{[\s\S]{0,900}?skeleton skeleton-chart/.test(code),
      '...and a feed that has not answered YET shows a skeleton, the way every other widget here does');
   ok(/data-live-loading="1"/.test(code), 'the loading card is distinguishable from the loaded one');
-  ok(/\(availableReports\.enrollments \|\| availableReports\['checkins-live'\]\) && \(/.test(code),
+  /* THROUGH THE PRESENCE HELPERS, not a spelled-out test. There are two card
+     shapes now (the wide feeds and the single-day ones), so a gate written out
+     by hand is a gate that can miss a pair — and the failure is silent: the
+     widget simply never renders for the orgs that only have the new cards. */
+  ok(/\(liveHasEnrollments\(availableReports\) \|\| liveHasCheckins\(availableReports\)\) && \(/.test(code),
      'and the section renders only where a feed exists at all');
   /* THE SECTION HIDES WITH ITS WIDGETS. This was an env gate for about an hour
      (Dan: "what is MB_ENROLLMENTS_UUID lol"), which put a deploy step between
@@ -315,7 +322,7 @@ if (H.liveWindow) {
      '...which is persisted with the layout rather than dropped on the floor');
   /* EITHER card is enough to render the section: an org with a check-ins link
      and no enrollments one would otherwise lose a widget it has. */
-  ok(/availableReports\.enrollments \|\| availableReports\['checkins-live'\]/.test(code),
+  ok(/liveHasEnrollments\(availableReports\) \|\| liveHasCheckins\(availableReports\)/.test(code),
      '...and either feed being available is enough to render it');
   const live = code.indexOf('<LiveSection');
   const rest = code.indexOf('displaySections.map');
@@ -733,8 +740,144 @@ if (H.liveBySection) {
   ok(!/no programme/.test(code),
      'and it is spelled Program, on screen and in the fallback (Dan: "not \'programmes\', \'Programs\'")');
 
-  ok(/liveBySection\(rows, today\)/.test(code),
-     'the widget calls the shared model rather than aggregating inline');
+  ok(/liveBySection\(rows, today, rollup\)/.test(code),
+     'the widget calls the shared model rather than aggregating inline, and hands it the history');
+
+/* ── THE SINGLE-DAY CARDS ──────────────────────────────────────────────────
+   Dan: "if building super lightweight reports to fuel these live widgets is a
+   better fit, consider that. since each is only pulling a single day's worth of
+   data for a specific org, maybe that's smarter?"
+
+   Measured, on feeds polled every 60 seconds: apex enrollments 741 rows / 8.3s
+   / 345KB for seven days against 5 rows / 1.9s / 2KB for one; apex check-ins
+   1,314 rows / 9.8s / 319KB for two days against 164 / 0.7s for one. */
+{
+  if (H.liveFeedChoice) {
+    /* BOTH ENROLLMENT CARDS OR NEITHER. The rollup is not optional on the light
+       path: without it the leaderboard would rank on today alone under a header
+       saying seven days, and the trend arrow would have no history to compare —
+       a panel that looks right and answers a different question. */
+    eq(H.liveFeedChoice({ 'enrollments-today': 1, 'enrollments-rollup': 1 }).enrollments, 'light',
+       'both new enrollment cards present takes the light path');
+    eq(H.liveFeedChoice({ 'enrollments-today': 1 }).enrollments, 'wide',
+       'the detail card WITHOUT the rollup falls back — a leaderboard with no history is not a smaller answer, it is a wrong one');
+    eq(H.liveFeedChoice({ 'enrollments-rollup': 1 }).enrollments, 'wide',
+       '...and the rollup without the detail card likewise');
+    eq(H.liveFeedChoice({}).enrollments, 'wide',
+       'nothing present is the shape that shipped first');
+    eq(H.liveFeedChoice({ 'checkins-today': 1 }).checkins, 'light',
+       'the check-ins card stands alone — it has no history half');
+    eq(H.liveFeedChoice({}).checkins, 'wide', '...and falls back on its own');
+    eq(H.liveFeedChoice(null).enrollments, 'wide',
+       'a missing availability map is not a licence to guess');
+  } else {
+    ok(false, 'liveFeedChoice should be liftable — it decides which cards every live widget reads');
+  }
+
+  if (H.liveHasEnrollments) {
+    /* PRESENCE IS A DIFFERENT QUESTION FROM CHOICE, and the widget gates ask
+       this one. An org holding only the new cards must still get the section. */
+    ok(H.liveHasEnrollments({ enrollments: 1 }) === true, 'the old card alone still renders the widgets');
+    ok(H.liveHasEnrollments({ 'enrollments-today': 1, 'enrollments-rollup': 1 }) === true,
+       '...and so does the new pair, which is the case a hand-written gate drops');
+    ok(H.liveHasEnrollments({ 'enrollments-today': 1 }) === false,
+       'but half the new pair is not a feed — it would render a leaderboard with no history');
+    ok(H.liveHasEnrollments({}) === false, 'and nothing is nothing');
+    ok(H.liveHasCheckins({ 'checkins-today': 1 }) === true, 'the new check-ins card renders the widget');
+    ok(H.liveHasCheckins({ 'checkins-live': 1 }) === true, '...and so does the old one');
+    ok(H.liveHasCheckins({}) === false, 'and nothing is nothing');
+  }
+
+  /* THE LIGHT PATH SENDS NO DATES. That is the correctness half rather than the
+     speed half: the card resolves the org's own today in SQL, so a window from
+     this browser would be the viewer's opinion about a day the org is the
+     authority on — the exact bug the card removes. */
+  ok(/const light = feed === 'light';[\s\S]{0,400}?new URLSearchParams\(light \? \{\} : \{ start: w\.start, end: w\.end \}\)/.test(code),
+     'the enrollments hook sends a window only on the wide path');
+  ok((code.match(/new URLSearchParams\(light \? \{\} : \{ start: w\.start, end: w\.end \}\)/g) || []).length === 2,
+     '...and so does the check-ins hook — counted, because one of the two silently keeping its window is exactly how this half-ships');
+
+  /* THE ROLLUP IS NOT POLLED. It covers complete days only, so within a day its
+     answer cannot change and asking once a minute would be asking sixty times
+     for the same rows. That is the entire saving. */
+  ok(!/setInterval\([^)]*rollup/i.test(code),
+     'the rollup is never put on the poll interval');
+  ok(/days: String\(LIVE_DAYS - 1\)/.test(code),
+     'it asks for the complete days only — LIVE_DAYS includes today, and today belongs to the detail feed');
+
+  /* THE SERVER MUST NOT SEND DATES EITHER, or the cards would take a window
+     they do not declare and Metabase would refuse the parameter outright. */
+  ok(/'enrollments-today', 'checkins-today', 'enrollments-rollup'/.test(srv),
+     'all three new cards are registered as date-less on the server');
+  ok(/'enrollments-rollup': 30 \* 60 \* 1000/.test(srv),
+     'the rollup caches for half an hour rather than sixty seconds — the point of splitting it out');
+  ok(/'enrollments-today': 60 \* 1000/.test(srv) && /'checkins-today': 60 \* 1000/.test(srv),
+     '...while the two today feeds stay live');
+}
+
+/* ── liveBySection MERGES THE HISTORY ─────────────────────────────────────── */
+{
+  const today = '2026-09-05';
+  const rows = [
+    { 'Signed Up At': today + 'T09:00:00', 'Section Id': 'sec-a', 'Section': 'Swim', 'Program': 'Aquatics', 'Price': 50, 'Paid': 50 },
+    { 'Signed Up At': today + 'T10:00:00', 'Section Id': 'sec-a', 'Section': 'Swim', 'Program': 'Aquatics', 'Price': 50, 'Paid': 50 }
+  ];
+  const rollup = [
+    { Day: '2026-09-04', 'Section Id': 'sec-a', Section: 'Swim',  Program: 'Aquatics', Signups: 3, Charged: 150, Paid: 120, 'Last At': '2026-09-04T18:00:00' },
+    { Day: '2026-09-03', 'Section Id': 'sec-a', Section: 'Swim',  Program: 'Aquatics', Signups: 1, Charged: 50,  Paid: 50,  'Last At': '2026-09-03T11:00:00' },
+    /* A SECTION WITH HISTORY AND NOTHING TODAY. It has to appear — a
+       leaderboard headed "last 7 days" that silently drops every section
+       nobody joined this morning is not ranking seven days. */
+    { Day: '2026-09-02', 'Section Id': 'sec-b', Section: 'Tennis', Program: 'Racket', Signups: 4, Charged: 400, Paid: 400, 'Last At': '2026-09-02T13:00:00' }
+  ];
+  if (H.liveBySection) {
+    const merged = H.liveBySection(rows, today, rollup);
+    const a = merged.find(g => g.sectionId === 'sec-a');
+    const b = merged.find(g => g.sectionId === 'sec-b');
+    eq(merged.length, 2, 'a section with history but no signup today still makes the board');
+    eq(a.signups, 6, 'today and the history are added, not chosen between (2 + 3 + 1)');
+    eq(a.paid, 270, '...and so is the money: today 50 + 50, history 120 + 50');
+    eq(a.charged, 300, '...both columns: today 50 + 50, history 150 + 50');
+    /* TODAY'S COUNT COMES ONLY FROM THE DETAIL ROWS, which is what keeps this
+       panel and the live list beside it from disagreeing about today. */
+    eq(a.todaySignups, 2, "today's count is the detail feed's alone");
+    eq(b.todaySignups, 0, '...and is zero for a section that only has history');
+    eq(a.dayCounts['2026-09-04'], 3, 'the per-day tally the trend arrow reads is filled from the rollup');
+    eq(a.dayCounts[today], 2, '...and today from the rows');
+    /* WITHOUT A ROLLUP IT IS THE OLD FUNCTION, EXACTLY. The wide path passes
+       null and must behave as it did before the split. */
+    const wide = H.liveBySection(rows, today, null);
+    eq(wide.length, 1, 'no rollup means no history — the wide feed carries it inside `rows` instead');
+    eq(wide[0].signups, 2, '...and the figures are the detail rows alone');
+    /* A ROLLUP ROW DATED TODAY IS REFUSED. The card cannot emit one, and if a
+       future edit ever made it, adding it would double the busiest day on the
+       panel. Cheap to assert, catastrophic to omit. */
+    const poisoned = H.liveBySection(rows, today, rollup.concat([
+      { Day: today, 'Section Id': 'sec-a', Section: 'Swim', Program: 'Aquatics', Signups: 99, Charged: 999, Paid: 999, 'Last At': today + 'T23:00:00' }
+    ]));
+    eq(poisoned.find(g => g.sectionId === 'sec-a').signups, 6,
+       'a rollup row dated TODAY is ignored — the two windows must not overlap');
+  }
+}
+
+/* ── `Org Today` IS THE AUTHORITY ─────────────────────────────────────────── */
+{
+  if (H.liveTodayFor) {
+    /* The residual timezone gap this file recorded — a viewer WEST of the org
+       shown an org-tomorrow that had barely started — is closed by the card
+       emitting the org's own day. Where it is present nothing else is read. */
+    eq(H.liveTodayFor([{ 'Org Today': '2026-01-02', 'Signed Up At': '2026-01-02T08:00:00' }], 'Signed Up At'),
+       '2026-01-02', "the card's own day wins over the viewer's clock");
+    eq(H.liveTodayFor([{ 'Org Today': '2030-06-01', 'Signed Up At': '2030-06-01T08:00:00' }], 'Signed Up At'),
+       '2030-06-01', '...even when it is nowhere near this machine\'s today');
+    /* AND AN EMPTY FEED STILL ANSWERS. No rows means no column to read, and the
+       figure being labelled is zero either way. */
+    const t = H.liveTodayFor([], 'Signed Up At');
+    ok(/^\d{4}-\d{2}-\d{2}$/.test(t), 'an empty feed falls back to a real calendar day rather than nothing');
+  }
+  ok(/const stamped = \(rows \|\| \[\]\)\.find/.test(code),
+     'the org day is read before the clock is touched, so a wrong viewer timezone cannot influence it');
+}
   ok(/function useLiveEnrollments/.test(code) && /const feed   = useLiveEnrollments/.test(code),
      'ONE feed for both ENROLLMENT widgets — two polls would double the query and let the cards disagree about the same minute');
   /* The check-ins card is the exception, and deliberately: it reads a
@@ -1527,7 +1670,11 @@ process.on('exit', () => {
     const ringers = (code.match(/useLiveSound\('[a-z]+', feed\.freshRows/g) || []).length;
     ok(ringers === 3, 'all three live cards ring off their feed\'s freshRows');
 
-    const returns = (code.match(/return \{ rows, err, at, paused, setPaused, flash, freshRows, loading/g) || []).length;
+    /* `rollup` rides on the enrollments hook's return and not the check-ins
+     one, so the shapes are no longer identical — the CONTRACT being pinned
+     is freshRows, and the pattern says so rather than spelling out a field
+     list that has to be edited every time either hook grows. */
+  const returns = (code.match(/return \{ rows,[^}]*freshRows, loading/g) || []).length;
     ok(returns === 2, 'BOTH live feed hooks return freshRows — the check-ins one did not, and its card was silent');
 
     ok((code.match(/setFreshRows\(fresh\.map\(k => j\.rows\[keys\.indexOf\(k\)\]\)\.filter\(Boolean\)\);/g) || []).length === 2,

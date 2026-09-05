@@ -149,7 +149,31 @@ missing data).
 was asserted to be `unpaid`, described as *"a $0 row has nothing to arrive"*.
 Second instance in one afternoon.
 
-## PAYMENT PLANS ARE INVISIBLE TO THE FEED — needs a card column (2026-09-05)
+## PAYMENT PLANS ARE INVISIBLE TO THE FEED — FIXED, card 21286 v4 (2026-09-05)
+
+**Done.** v4 adds `On Plan`, `Plan Installments` and `Plan Installments Paid`,
+the tags were flipped, and the page renders an orange dot with `$0 / $5`. The
+diagnosis below is kept because what it RULED OUT is the useful part — the two
+shapes really are arithmetically identical and no client-side rule could ever
+have separated them.
+
+**The plan test is the UNION of two signals and neither alone is enough.**
+Measured over 287,575 order items across 30 days: `order_item.payment_plan` is
+set on 6,794, installments exist on 6,712, and they **disagree on 110** — 96
+with a plan whose schedule has not been written yet, 14 the other way.
+
+**Three things the client side had to get right**, all guarded and
+mutation-tested: the cell prints its zero through `liveMoneyZ` (`liveMoney`
+suppresses zeros on purpose, because `$0 / $325` on an ordinary unpaid row reads
+as a refund); the **chime stays on money, not on the colour**, or turning these
+rows orange would have quietly started ringing for registrations where nothing
+arrived; and a pre-v4 feed degrades to the old behaviour rather than guessing,
+because `undefined` falls through to false — which is why there is deliberately
+no presence gate here, unlike columns where a missing one renders a confident
+zero.
+
+### The original diagnosis
+
 
 Dan, on Harper McKibben at Essex Junction: *"it's a payment plan, we need a
 colored dot for that and an associated colored text when they pay. Shouldn't
@@ -178,6 +202,155 @@ a plan, at every stage) lands the moment the column exists.
 
 **Do not fake it from `Price > 0 && Paid === 0`** — that is also every genuinely
 unpaid registration, and the two need opposite reactions from an admin.
+
+## THE LIVE WIDGETS GET THEIR OWN CARDS (2026-09-05)
+
+Dan: *"if building super lightweight reports to fuel these live widgets is a
+better fit, consider that. since each is only pulling a single day's worth of
+data for a specific org, maybe that's smarter?"*
+
+It is. **But not one of them was pulling a single day**, and that is the part
+worth knowing before touching this again.
+
+### THE MEASUREMENT
+
+Cache-independent, through the public endpoint, on feeds the page polls **every
+60 seconds**:
+
+| feed | window | rows | time | payload |
+|---|---|---|---|---|
+| enrollments 21286, apex | 7 days | 741 | **8.3s** | 345KB |
+| | 1 day | 5 | 1.9s | 2KB |
+| enrollments 21286, smyrna | 7 days | 748 | 6.8s | 332KB |
+| | 1 day | 1 | 0.9s | 0KB |
+| check-ins 21517, apex | 2 days | 1,314 | **9.8s** | 319KB |
+| | 1 day | 164 | 0.7s | 39KB |
+
+### THE WIDER WINDOWS WERE NOT WASTE, so this is a SPLIT and not a narrowing
+
+Narrowing to one day would have silently killed two features, and this is the
+whole reason the obvious version of Dan's idea is wrong:
+
+* **the enrollments feed carries seven days** because the Programs Live
+  leaderboard ranks sections over seven and its trend arrow compares three
+  complete days against the three before them;
+* **the check-ins feed carries two** because the page works out what the org's
+  "today" is by reading the newest row's stamp.
+
+**But every figure the leaderboard reads is an AGGREGATE.** Read out of
+`liveBySection` rather than assumed: signups, today's signups, charged, paid,
+the newest stamp, a per-day tally. Not one name, email, participant, card detail
+or plan column is ever touched for that panel. So the history goes to its own
+card at **(day × section)** grain: smyrna 748 booking rows collapse to 332, apex
+741 to 440, menifee 674 to 136, each dropping twelve wide columns for eight
+narrow ones.
+
+And the check-ins second day answers a question **Postgres can answer directly**
+— `(NOW() AT TIME ZONE tz)::date` — so it costs nothing to buy back.
+
+### THREE CARDS, AND NONE OF THEM HAS A DATE PARAMETER
+
+| card | what it returns |
+|---|---|
+| **21550** ✅ Enrollments Live — Today | the org's own today, full detail |
+| **21551** ✅ Enrollments Live — Daily Rollup | the COMPLETE days before it, (day × section) |
+| **21552** ✅ Membership Check-Ins — Today | the org's own today |
+
+**NO DATE TAGS IS AN OPERATIONAL PROPERTY, not a tidiness one.** The whole
+push→flip dance in these repos exists because an API push regenerates DATE tags
+as Text and the card 400s until a human re-types them. `org_id` and `days` are
+text tags and survive a push unchanged — verified on creation, all three
+register text tags only — so **a live card can be corrected at any hour without
+taking a widget down.** That is the property a live card most wants, and it is
+worth copying to the next one.
+
+**It also closes a gap this file recorded rather than guessed at.** `Org Today`
+rides on every row of the two today cards, so the day is decided by Postgres in
+the ORG's timezone and `liveTodayFor` reads it before touching the clock — the
+viewer-west-of-the-org case is simply gone on the light feeds.
+
+### THE ROLLUP COVERS COMPLETE DAYS ONLY, NEVER TODAY
+
+Load-bearing twice, and the second one is where the saving actually is:
+
+1. **Today's figures on the leaderboard come from the same feed as the live list
+   beside it**, so the two panels cannot disagree about today. `todaySignups`
+   and `lastAt` take no rollup contribution for exactly this reason.
+2. **A set of complete days is immutable within the day**, so it caches for
+   **30 minutes** instead of 60 seconds and is fetched once on mount rather than
+   on every poll. The expensive half stops being polled at all.
+
+`liveBySection` **refuses a rollup row dated today**. The card cannot emit one;
+if a future edit ever made it, adding it would double the busiest day on the
+panel. Cheap to assert, catastrophic to omit — and it is one of the eight
+mutations.
+
+### PROVEN EQUIVALENT BEFORE ANY WIRING
+
+The two enrollment cards added together per section over seven days, against
+card 21286's own seven-day window:
+
+| org | sections | only in split | only in one-card | signup diffs | charged diffs | paid diffs |
+|---|---|---|---|---|---|---|
+| apex | 288 | 0 | 0 | 0 | 0 | 0 |
+| menifee | 75 | 0 | 0 | 0 | 0 | 0 |
+| smyrna | 176 | 0 | 0 | 0 | 0 | 0 |
+
+### ABSENT MEANS "CARRY ON EXACTLY AS BEFORE"
+
+A Metabase card is not readable by this app until somebody creates a **public
+link**, which is a UI action — so the three UUID literals ship **empty** and
+`liveFeedChoice` returns `wide`, the shape that already works. Filling them in
+is the whole switch.
+
+**BOTH ENROLLMENT CARDS OR NEITHER.** The rollup is not optional on the light
+path: without it the leaderboard would rank on today alone under a header saying
+seven days, and the trend arrow would have no history — a panel that looks right
+and answers a different question.
+
+### Guards
+
+`live-widgets.spec.js` 370 → **406 assertions**, lifting and RUNNING
+`liveFeedChoice`, `liveHasEnrollments`, `liveHasCheckins`, and driving the real
+`liveBySection` merge. Mutation-tested eight ways, all failing by name: the
+light path taken with only half the pair, the rollup's today guard removed,
+rollup rows bumping `todaySignups`, `Org Today` ignored, the light path sending
+a window anyway, the rollup put back on the 60s poll, the new cards not
+registered date-less, and the widget gate spelled out by hand (which drops the
+orgs that only have the new cards).
+
+Plus three `ci-check-render.js` cases over a `lightFeeds` config variant, keyed
+on the printed signup count — 1 today + the rollup's 7 + 3 = **11**, so a board
+that lost its history reads 1 and one that double-counted reads more. All three
+mutation-tested in a browser.
+
+**TWO HARNESS TRAPS, both of which cost a wrong "it passes":**
+
+* **`ci-check-render.js` loads the page ONCE** and runs every case against it,
+  so a case needing a different `availableReports` must reload — my first draft
+  sat mid-list and silently tested the WIDE path while passing. Tracing which
+  stub was hit is what found it. The light cases go **last** and each reloads,
+  because a reload leaves the page on the light config for everything after it.
+* **`data-live-prog` carries the section NAME, not its id**, and the board is
+  capped at the top ten by revenue — so a fixture section that sorts eleventh
+  never renders. That trap is already recorded one case over and it caught me
+  again; the history-only fixture row is priced high enough to rank, or "it was
+  dropped" and "it sorted out of view" look identical.
+
+### Two spec assertions were CORRECTED rather than deleted
+
+Both pinned literal forms that the split changed: the section gate now goes
+through `liveHasEnrollments`/`liveHasCheckins` (a hand-written four-way test is
+how one card shape ends up missing), and the `freshRows` contract now matches on
+the field rather than a full field list, because `rollup` rides on one hook's
+return and not the other's.
+
+### NOT DONE
+
+The three UUIDs need public links — **https://rec.metabaseapp.com/question/21550**,
+**/21551**, **/21552** → Sharing → Create a public link — and then pasting into
+`ENROLLMENTS_TODAY_UUID`, `ENROLLMENTS_ROLLUP_UUID`, `CHECKINS_TODAY_UUID` in
+server.js. Nothing else is needed; there is no tag flip and no downtime.
 
 ## Live widgets, round three — seven fixes from Dan (2026-09-05)
 

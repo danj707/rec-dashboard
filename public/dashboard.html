@@ -2616,12 +2616,24 @@ function liveDay(ts)  { return String(ts || '').slice(0, 10); }
    today is proof of that; the reverse is not proof of anything, so nothing is
    inferred in the other direction.
 
-   THE RESIDUAL GAP, stated rather than papered over: a viewer WEST of the org,
-   late in their own day, is shown an org-tomorrow that has barely started.
-   Closing it properly means the card emitting `(now() AT TIME ZONE cfg.tz)::date`
-   — one column on card 21286, whose cfg CTE already resolves that timezone — and
-   that is a push and a tag flip, so it is written down rather than guessed at. */
+   THAT RESIDUAL GAP IS NOW CLOSED ON THE LIGHT FEEDS. It was written down here
+   rather than guessed at — a viewer WEST of the org, late in their own day, was
+   shown an org-tomorrow that had barely started — and the fix was always going
+   to be the card emitting `(NOW() AT TIME ZONE cfg.tz)::date`. Cards 21550 and
+   21552 do exactly that, as `Org Today` on every row, so where it is present it
+   is the ANSWER and none of the reasoning below applies: Postgres decided the
+   day in the org's own timezone and no clock on this machine is consulted.
+
+   The derivation survives underneath it for the wide feeds, which carry no such
+   column — and for the case no column can help with, a day whose rows are all
+   still to come: an empty feed has nothing to carry `Org Today` on, so the
+   viewer's calendar day labels a figure that is zero either way. */
 function liveTodayFor(rows, key) {
+  /* THE ORG'S OWN ANSWER FIRST. One row is enough — every row of a light feed
+     carries the same value by construction — and it is taken before the clock
+     is read at all, so a wrong viewer timezone cannot influence it. */
+  const stamped = (rows || []).find(function (r) { return r && r['Org Today']; });
+  if (stamped) return liveDay(stamped['Org Today']);
   const now = new Date();
   let day = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0')
           + '-' + String(now.getDate()).padStart(2, '0');
@@ -2858,6 +2870,52 @@ function liveCheckinTimeline(rows, today) {
    quietly slides back one day and loses a complete day of data — the
    conservative direction, and the alternative is trusting the viewer's clock
    about a day the feed has not confirmed. */
+/* WHICH FEEDS THIS ORG'S LIVE CARDS SHOULD READ.
+
+   There are two shapes and the page supports both, because a Metabase card is
+   not readable by this app until somebody creates a public link for it — a UI
+   action. So the light cards are ABSENT until that happens, and absent has to
+   keep meaning "carry on exactly as before" rather than "render nothing".
+
+     light  cards 21550 + 21551 + 21552. One day of detail, plus a (day x
+            section) rollup of the complete days before it. No date parameters
+            at all: each card resolves the ORG's own today in SQL.
+     wide   cards 21286 + 21517, asked for seven days and two. What shipped
+            first, and still the fallback.
+
+   MEASURED, on feeds polled every 60 seconds (2026-09-05, through the public
+   endpoint so no cache could flatter it): apex enrollments 741 rows / 8.3s /
+   345KB for seven days against 5 rows / 1.9s / 2KB for one; apex check-ins
+   1,314 rows / 9.8s / 319KB for two days against 164 / 0.7s for one.
+
+   THE ROLLUP IS REQUIRED FOR THE LIGHT PATH, not optional. Without it the
+   leaderboard would rank on today alone while its header says seven days, and
+   the trend arrow would have no history to compare — a panel that looks right
+   and answers a different question. So both enrollments cards must be present
+   or neither is used. At module scope so a spec can RUN it; a regex over a
+   condition passes on an inverted one. */
+/* IS THERE A FEED AT ALL, either shape. Separate from the choice because
+   "which cards" and "any cards" are different questions and every caller that
+   gates a widget asks the second one — spelling out a four-way test at each
+   gate is how one of them ends up missing a card and a widget silently never
+   renders for the orgs that only have the new ones. */
+function liveHasEnrollments(a) {
+  a = a || {};
+  return !!(a.enrollments || (a['enrollments-today'] && a['enrollments-rollup']));
+}
+function liveHasCheckins(a) {
+  a = a || {};
+  return !!(a['checkins-live'] || a['checkins-today']);
+}
+
+function liveFeedChoice(available) {
+  const a = available || {};
+  return {
+    enrollments: (a['enrollments-today'] && a['enrollments-rollup']) ? 'light' : 'wide',
+    checkins:     a['checkins-today'] ? 'light' : 'wide'
+  };
+}
+
 const LIVE_TREND_DAYS = 3;   // each half of the comparison
 /* A FLOOR, because a direction is not a trend. One signup against zero is
    "up 100%" and means nothing; under this the arrow is absent rather than
@@ -2908,7 +2966,23 @@ function liveSectionKey(r) {
   return prog + '\u0000' + sec;
 }
 
-function liveBySection(rows, today) {
+/* THE LEADERBOARD, FROM ONE OR TWO SOURCES.
+
+   `rows` is always today's detail. `rollup` is the (day x section) history of
+   the COMPLETE days before it, and is null on the wide feed — where the same
+   history arrives inside `rows` and this function behaves exactly as it did
+   before the split.
+
+   THE TWO SOURCES CANNOT OVERLAP, which is what makes adding them sound rather
+   than a double count: card 21551's window ends at YESTERDAY in the org's own
+   timezone, and card 21550's is today in that same timezone. One boundary,
+   drawn once, in the same place, by the same Postgres expression.
+
+   Only the aggregate fields take rollup contributions. `todaySignups` and
+   `lastAt` are deliberately left to the detail rows: today's figures on this
+   panel then come from the same feed as the live list beside it and the two
+   cannot disagree about today, which is the trap this repo keeps recording. */
+function liveBySection(rows, today, rollup) {
   if (!today) return [];
   const by = new Map();
   (rows || []).forEach(r => {
@@ -2955,6 +3029,38 @@ function liveBySection(rows, today) {
     if (ts > g.lastAt) g.lastAt = ts;
     by.set(key, g);
   });
+  /* THE HISTORY, FOLDED IN THROUGH THE SAME KEY. `liveSectionKey` is handed a
+     rollup row shaped like a detail row for exactly this reason — one
+     definition of "which section is this", so a section present in both halves
+     lands in one group rather than two. */
+  (rollup || []).forEach(r => {
+    const day = liveDay(r['Day']);
+    if (!day) return;
+    /* NEVER TODAY. The card cannot emit it, and if a future edit ever made it,
+       adding it here would double every figure on the panel for the busiest
+       day of the week. Cheap to assert, catastrophic to omit. */
+    if (day === today) return;
+    const key = liveSectionKey(r);
+    let g = by.get(key);
+    if (!g) g = { key: key, section: String(r['Section'] || '').trim() || '(no section)',
+                  program: String(r['Program'] || '').trim(),
+                  sectionId: String(r['Section Id'] || ''), signups: 0, todaySignups: 0,
+                  charged: null, paid: null, lastAt: '', dayCounts: {}, trend: null };
+    const n = Number(r['Signups']);
+    g.signups += Number.isFinite(n) ? n : 0;
+    g.dayCounts[day] = (g.dayCounts[day] || 0) + (Number.isFinite(n) ? n : 0);
+    const pr = r['Charged'], pd = r['Paid'];
+    if (pr != null && Number.isFinite(Number(pr))) g.charged = (g.charged || 0) + Number(pr);
+    if (pd != null && Number.isFinite(Number(pd))) g.paid    = (g.paid    || 0) + Number(pd);
+    /* `lastAt` still moves, because a section with history and no signup today
+       would otherwise sort as though it had never been touched. `todaySignups`
+       does NOT: no rollup row is today, so incrementing it here could only ever
+       be wrong. */
+    const ts = String(r['Last At'] || '');
+    if (ts > g.lastAt) g.lastAt = ts;
+    by.set(key, g);
+  });
+
   /* RANKED ON WHAT THE COLUMN SHOWS — money RECEIVED, not money charged. */
   return [...by.values()]
     .map(g => Object.assign(g, { trend: liveProgramTrend(g.dayCounts, today) }))
@@ -3163,8 +3269,12 @@ function liveKey(r) {
    which on a pair of cards sitting side by side is the one thing that would
    make a viewer stop trusting either. Same rule as the reporting project's
    progAutopayCell going through progAutopayShare rather than its own maths. */
-function useLiveEnrollments(onAvailable) {
+function useLiveEnrollments(onAvailable, feed) {
   const [rows, setRows] = useState(null);
+  /* THE HISTORY, ON ITS OWN CLOCK. Null on the wide feed, where it arrives
+     inside `rows` instead — and null is exactly what liveBySection wants there,
+     so nothing downstream has to know which path it is on. */
+  const [rollup, setRollup] = useState(null);
   const [err, setErr]   = useState(false);
   const [at, setAt]     = useState(null);
   const [paused, setPaused] = useState(false);
@@ -3188,11 +3298,17 @@ function useLiveEnrollments(onAvailable) {
   const [freshRows, setFreshRows] = useState(null);
 
   const load = React.useCallback(() => {
+    /* THE LIGHT PATH SENDS NO DATES AT ALL. The card resolves the org's own
+       today in SQL, so a window here would be this browser's opinion about a
+       day the org is the authority on — which is the bug the card removes.
+       The wide path is unchanged: seven days, exactly as it shipped. */
+    const light = feed === 'light';
+    const report = light ? 'enrollments-today' : 'enrollments';
     const w = liveWindow(LIVE_DAYS);
-    const qs = new URLSearchParams({ start: w.start, end: w.end });
+    const qs = new URLSearchParams(light ? {} : { start: w.start, end: w.end });
     const url = IS_SHARE
-      ? `/share/${SHARE_TOKEN}/data/enrollments?${qs}`
-      : `/${ORG_SLUG}/api/data/enrollments?token=${TOKEN}&${qs}`;
+      ? `/share/${SHARE_TOKEN}/data/${report}?${qs}`
+      : `/${ORG_SLUG}/api/data/${report}?token=${TOKEN}&${qs}`;
     setLoading(true);
     fetch(url)
       .then(r => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
@@ -3229,7 +3345,32 @@ function useLiveEnrollments(onAvailable) {
         if (onAvailable) onAvailable(true);
       })
       .catch(() => { setErr(true); setLoading(false); if (onAvailable) onAvailable(false); });
-  }, [onAvailable]);
+  }, [onAvailable, feed]);
+
+  /* THE ROLLUP IS FETCHED SEPARATELY AND RARELY, which is the whole saving. It
+     covers complete days only, so within a day its answer cannot change; the
+     server caches it half an hour and this asks once on mount rather than on
+     every 60-second poll. `LIVE_DAYS - 1` because the seventh day is today,
+     and today belongs to the detail feed.
+
+     A FAILED ROLLUP LEAVES IT NULL, never an empty array. Null means "no
+     history here" and the leaderboard renders today alone; [] would mean the
+     same thing to liveBySection but would also silence any future presence
+     test, and these two states are worth keeping apart — the panel is telling
+     the truth about a smaller window, not about a broken one. */
+  useEffect(() => {
+    if (feed !== 'light') { setRollup(null); return; }
+    let dead = false;
+    const qs = new URLSearchParams({ days: String(LIVE_DAYS - 1) });
+    const url = IS_SHARE
+      ? `/share/${SHARE_TOKEN}/data/enrollments-rollup?${qs}`
+      : `/${ORG_SLUG}/api/data/enrollments-rollup?token=${TOKEN}&${qs}`;
+    fetch(url)
+      .then(r => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then(j => { if (!dead && j && Array.isArray(j.rows)) setRollup(j.rows); })
+      .catch(() => { if (!dead) setRollup(null); });
+    return () => { dead = true; };
+  }, [feed]);
 
   useEffect(() => { load(); }, [load]);
   /* It refreshes, because a list of names that has not moved since breakfast
@@ -3269,7 +3410,7 @@ function useLiveEnrollments(onAvailable) {
   /* REFRESHING DOES NOT UNPAUSE. Pausing says "stop moving while I read"; a
      manual refresh says "move once, now". Conflating them would make the
      button a second, hidden un-pause. */
-  return { rows, err, at, paused, setPaused, flash, freshRows, loading, refresh: load };
+  return { rows, rollup, err, at, paused, setPaused, flash, freshRows, loading, refresh: load };
 }
 
 /* A CARD'S SOUND: whether it is muted, which sound it makes, and the ringing
@@ -3559,7 +3700,7 @@ function LiveRegistrations({ feed, recOrgId }) {
 
 function ProgramsLive({ feed, recOrgId }) {
   const sound = useLiveSound('programs', feed.freshRows, liveChimeWorthy);
-  const { rows, err, at, paused, flash } = feed;
+  const { rows, rollup, err, at, paused, flash } = feed;
 
   // Same three states as the counter, and for the same reasons: absence is for
   // a feed that FAILED, a skeleton is for one that has not answered yet, and a
@@ -3579,7 +3720,7 @@ function ProgramsLive({ feed, recOrgId }) {
      count had the identical defect — on a quiet morning it counted yesterday's
      signups as today's, in a column headed today. */
   const today = liveTodayFor(rows, 'Signed Up At');
-  const progs = liveBySection(rows, today);
+  const progs = liveBySection(rows, today, rollup);
   // A row is fresh if any registration behind it is one of the arrivals the
   // shared feed just diffed — so a program lights up when it takes a signup,
   // which is the whole point of watching this card.
@@ -3774,7 +3915,7 @@ const LIVE_CHECKIN_ROWS = 12;
    the front desk scans a card would be unbearable in a busy gym and would
    train people to mute the whole section, taking the registrations chime with
    it. */
-function useLiveCheckins(onAvailable, enabled) {
+function useLiveCheckins(onAvailable, enabled, feed) {
   const [rows, setRows] = useState(null);
   const [err, setErr]   = useState(false);
   const [at, setAt]     = useState(null);
@@ -3809,11 +3950,18 @@ function useLiveCheckins(onAvailable, enabled) {
        every zone, because `today` below is derived from the newest row's own
        org-timezone stamp rather than from the viewer's clock. Same shape as
        the registrations card, which absorbs this by asking for seven. */
+    /* THE LIGHT PATH ASKS FOR NOTHING BUT THE ORG. Card 21552 resolves the
+       org's own today in SQL, so the second day this hook used to ask for —
+       whose only job was to let the page work out what that day WAS — is not
+       needed at all. Measured at apex: 1,314 rows / 9.8s / 319KB for two days
+       against 164 rows / 0.7s for one, every sixty seconds. */
+    const light = feed === 'light';
+    const report = light ? 'checkins-today' : 'checkins-live';
     const w = liveWindow(2);
-    const qs = new URLSearchParams({ start: w.start, end: w.end });
+    const qs = new URLSearchParams(light ? {} : { start: w.start, end: w.end });
     const url = IS_SHARE
-      ? `/share/${SHARE_TOKEN}/data/checkins-live?${qs}`
-      : `/${ORG_SLUG}/api/data/checkins-live?token=${TOKEN}&${qs}`;
+      ? `/share/${SHARE_TOKEN}/data/${report}?${qs}`
+      : `/${ORG_SLUG}/api/data/${report}?token=${TOKEN}&${qs}`;
     setLoading(true);
     fetch(url)
       .then(r => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
@@ -3844,7 +3992,7 @@ function useLiveCheckins(onAvailable, enabled) {
         if (onAvailable) onAvailable(true);
       })
       .catch(() => { setErr(true); setLoading(false); if (onAvailable) onAvailable(false); });
-  }, [onAvailable, enabled]);
+  }, [onAvailable, enabled, feed]);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
@@ -3999,7 +4147,7 @@ function MembershipCheckins({ feed, recOrgId }) {
   );
 }
 
-function LiveSection({ reportingBaseUrl, recOrgId, hasCheckins }) {
+function LiveSection({ reportingBaseUrl, recOrgId, hasCheckins, availableReports }) {
   const sec = SECTIONS.live;
   /* THE SECTION HIDES WITH ITS WIDGETS. The counter renders nothing when the
      feed cannot answer — that is the absence rule — but a header and an empty
@@ -4013,8 +4161,12 @@ function LiveSection({ reportingBaseUrl, recOrgId, hasCheckins }) {
      other off the page — and the SECTION hides only when there is nothing left
      to show in it. Optimistic on mount for the same reason as above. */
   const [ciAlive, setCiAlive] = useState(!!hasCheckins);
-  const feed   = useLiveEnrollments(setAlive);
-  const ciFeed = useLiveCheckins(setCiAlive, !!hasCheckins);
+  /* WHICH CARDS THIS ORG HAS. Resolved once, here, and handed down — so the
+     two hooks and the leaderboard cannot end up on different opinions about
+     which feed they are reading. */
+  const choice = liveFeedChoice(availableReports);
+  const feed   = useLiveEnrollments(setAlive, choice.enrollments);
+  const ciFeed = useLiveCheckins(setCiAlive, !!hasCheckins, choice.checkins);
   const showCi = !!hasCheckins && ciAlive;
   if (!alive && !showCi) return null;
   return (
@@ -4429,7 +4581,7 @@ function EditModal({ sections, onSave, onClose, availableReports, toggles, focus
               have produced a duplicate section that renders nothing. Same
               shape as the Support row below it, and FIRST, because that is
               where the section itself sits on the page. */}
-          {(availableReports.enrollments || availableReports['checkins-live']) && (
+          {(liveHasEnrollments(availableReports) || liveHasCheckins(availableReports)) && (
             <div className="edit-section" data-edit-live={live ? 'on' : 'off'}>
               <label style={{display:'flex',alignItems:'center',gap:10,padding:'12px 14px',cursor:'pointer'}}
                 title="Live cards refresh themselves every minute and ignore the date range above.">
@@ -5372,9 +5524,10 @@ function DashboardApp() {
             Dashboard has no value saved, and absent has to keep meaning ON or
             the whole section would disappear for everyone the day this shipped. */}
         {!IS_PRINT && config.liveWidgets !== false
-          && (availableReports.enrollments || availableReports['checkins-live']) && (
+          && (liveHasEnrollments(availableReports) || liveHasCheckins(availableReports)) && (
           <LiveSection reportingBaseUrl={orgMeta.reportingBaseUrl || ''} recOrgId={orgMeta.recOrgId || ''}
-                       hasCheckins={!!availableReports['checkins-live']} />
+                       hasCheckins={liveHasCheckins(availableReports)}
+                       availableReports={availableReports} />
         )}
         {displaySections.map((sec, i) => (
           <SectionBlock key={sec.id+i+theme} sectionId={sec.id} widgetIds={sec.widgets} reportData={reportData} loading={loading} freshRts={freshRts} priorReportData={priorReportData}

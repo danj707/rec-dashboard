@@ -308,6 +308,52 @@ setInterval(() => { reconcileWithReporting().catch(() => {}); }, REPORTING_RECON
    Empty here means the widget is absent — see the 'checkins-live' key below. */
 const CHECKINS_LIVE_UUID = 'd9891f69-897e-4d60-985c-50b31ad6d280';
 
+/* ── THE SINGLE-DAY LIVE CARDS ───────────────────────────────────────────────
+   Dan: "if building super lightweight reports to fuel these live widgets is a
+   better fit, consider that. since each is only pulling a single day's worth of
+   data for a specific org, maybe that's smarter?"
+
+   It is. Measured cache-independently through the public endpoint, 2026-09-05,
+   on feeds the page polls EVERY 60 SECONDS:
+
+     enrollments (21286)  apex  7 days  741 rows  8.3s  345KB
+                                1 day     5 rows  1.9s    2KB
+     checkins    (21517)  apex  2 days 1,314 rows 9.8s  319KB
+                                1 day   164 rows  0.7s   39KB
+
+   The wider windows were not waste, which is why this is a SPLIT rather than a
+   narrowing. The enrollments feed carries seven days because the Programs Live
+   leaderboard ranks over seven and its trend arrow compares three complete days
+   against the three before them; the check-ins feed carries two because the
+   page works out the org's "today" from the newest row's stamp. So:
+
+     * card 21550 returns the ORG'S OWN today in full detail — the list, the
+       dots, the prices, the chime;
+     * card 21551 returns the six COMPLETE days before it at (day x section)
+       grain, which is every figure the leaderboard actually reads and none of
+       the twelve wide columns it never touches;
+     * card 21552 does for check-ins what 21550 does for signups.
+
+   NONE OF THE THREE HAS A DATE PARAMETER. That is the operational point as
+   much as the performance one: the push->flip dance in these repos exists
+   because an API push regenerates DATE tags as Text and the card 400s until a
+   human re-types them. `org_id` and `days` are text tags and survive a push
+   unchanged, so these can be corrected at any hour without taking a widget
+   down — the property a LIVE card most wants. Verified on creation: all three
+   register text tags only.
+
+   EMPTY HERE MEANS ABSENT, and the page falls back to the wide-window feeds it
+   uses today. A Metabase card is not readable by this app until someone opens
+   it and creates a public link, which is a UI action — so these stay empty
+   until that is done, and filling them in is the whole wiring.
+
+     21550  https://rec.metabaseapp.com/question/21550
+     21551  https://rec.metabaseapp.com/question/21551
+     21552  https://rec.metabaseapp.com/question/21552 */
+const ENROLLMENTS_TODAY_UUID  = '';
+const ENROLLMENTS_ROLLUP_UUID = '';
+const CHECKINS_TODAY_UUID     = '';
+
 const SHARED_UUIDS = {
   facility: 'f6787f45-3a36-4501-8a5f-b0f647451a85',
   programs: 'e35f2b47-87c9-40e3-8507-3d9b56f9ce62',
@@ -359,7 +405,13 @@ const SHARED_UUIDS = {
      A confident "0 check-ins today" on a morning when the desk is scanning
      people through is the reading that had to be impossible. Filling this in
      is the whole wiring — no other change is needed. */
-  ...(CHECKINS_LIVE_UUID ? { 'checkins-live': CHECKINS_LIVE_UUID } : {})
+  ...(CHECKINS_LIVE_UUID ? { 'checkins-live': CHECKINS_LIVE_UUID } : {}),
+  /* The single-day cards, each absent until it has a public link. The page
+     tests for these by name and falls back to the wide-window feeds above, so
+     an absent key costs nothing and a present one is the whole switch. */
+  ...(ENROLLMENTS_TODAY_UUID  ? { 'enrollments-today':  ENROLLMENTS_TODAY_UUID }  : {}),
+  ...(ENROLLMENTS_ROLLUP_UUID ? { 'enrollments-rollup': ENROLLMENTS_ROLLUP_UUID } : {}),
+  ...(CHECKINS_TODAY_UUID     ? { 'checkins-today':     CHECKINS_TODAY_UUID }     : {})
 };
 
 /* A LIVE WIDGET NEEDS ITS OWN CLOCK. Everything else here is a dashboard of a
@@ -368,11 +420,26 @@ const SHARED_UUIDS = {
    also what the page polls at, so most ticks are served from this cache and
    the card is queried about once a minute per org rather than once per
    viewer. */
-const LIVE_REPORT_TTL_MS = { enrollments: 60 * 1000, 'checkins-live': 60 * 1000 };
+const LIVE_REPORT_TTL_MS = {
+  enrollments: 60 * 1000, 'checkins-live': 60 * 1000,
+  'enrollments-today': 60 * 1000, 'checkins-today': 60 * 1000,
+  /* THE ROLLUP IS NOT A LIVE FEED, and that is the point of it. It covers
+     COMPLETE days only — never today — so within a day its answer cannot
+     change, and asking for it once a minute would be asking sixty times for
+     the same rows. Thirty minutes is the whole saving: the expensive half of
+     the split stops being polled. It stays in this map rather than taking the
+     org's configured TTL because, like its siblings, its refresh cadence is a
+     property of the FEED and not of an org's preference. */
+  'enrollments-rollup': 30 * 60 * 1000
+};
 
 // Reports that don't accept date parameters
 const NO_DATE_REPORTS = new Set([
-  'program-demographics', 'memberships', 'users', 'retention', 'checkins', 'fasttrack'
+  'program-demographics', 'memberships', 'users', 'retention', 'checkins', 'fasttrack',
+  /* The single-day live cards resolve the org's own today in SQL, so sending
+     them a window would be sending the viewer's opinion about a day the org is
+     the authority on. That is the bug they exist to remove. */
+  'enrollments-today', 'checkins-today', 'enrollments-rollup'
 ]);
 
 // ═══════════════════════════════════════════
@@ -448,6 +515,21 @@ function buildMetabaseParams(reportType, query) {
     const dateType = reportType === 'revstreams' ? 'category' : 'date/single';
     if (start) params.push({ type: dateType, target: ['variable', ['template-tag', 'start_date']], value: start });
     if (end) params.push({ type: dateType, target: ['variable', ['template-tag', 'end_date']], value: end });
+  }
+  /* THE ROLLUP'S WINDOW, IN COMPLETE DAYS. It is the PAGE's constant, not the
+     server's — LIVE_DAYS and LIVE_TREND_DAYS live there, and a second copy here
+     would drift the first time either moved, which is how a trend arrow starts
+     comparing three days against two. Sent as 'category' because the card's
+     tag is plain text (it casts with ::int), the same reason revstreams' params
+     are; a date/single against a text tag 400s.
+
+     CLAMPED, because it reaches a query. A missing or unparseable value falls
+     back to six rather than to zero: six is what the page asks for, and a zero
+     would quietly empty the leaderboard's history while looking like a working
+     feed. */
+  if (reportType === 'enrollments-rollup') {
+    const d = Math.max(1, Math.min(31, parseInt(query.days, 10) || 6));
+    params.push({ type: 'category', target: ['variable', ['template-tag', 'days']], value: String(d) });
   }
   return params;
 }

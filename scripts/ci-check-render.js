@@ -232,6 +232,34 @@ const ENROLLMENTS = [
   })),
 ];
 
+/* THE HISTORY THE ROLLUP CARD RETURNS — one row per (day x section), COMPLETE
+   days only. Built so the merge is observable rather than plausible:
+
+     * "SBA Travel Teams AM" has both history AND signups today, so its board
+       row proves the two halves are ADDED rather than one chosen over the other;
+     * "Long Gone" has history and NOTHING today, so it proves a section is not
+       dropped from a board headed "last 7 days" merely because nobody joined
+       this morning — the failure a today-only leaderboard would show;
+     * every Day is in the past, because the card cannot emit today and a
+       fixture that broke that rule would be testing something the feed can
+       never produce. */
+const ROLLUP = [
+  /* ONTO `sec-swim`, WHICH ALREADY HAS A ROW TODAY — the same section id the
+     detail fixture carries, so the two halves land in one group through
+     liveSectionKey and the addition is what the board prints. Swim also ranks:
+     the card shows the top ten by revenue, and a fixture section that sorts
+     eleventh never renders, which is a trap this file has already been caught
+     by once. */
+  { Day: liveIso(1, '00:00:00').slice(0, 10), 'Section Id': 'sec-swim', Section: 'Swim Lessons AM',
+    Program: 'Swim Lessons', Signups: 7, Charged: 700, Paid: 700, 'Last At': liveIso(1, '18:00:00') },
+  { Day: liveIso(2, '00:00:00').slice(0, 10), 'Section Id': 'sec-swim', Section: 'Swim Lessons AM',
+    Program: 'Swim Lessons', Signups: 3, Charged: 300, Paid: 300, 'Last At': liveIso(2, '12:00:00') },
+  /* HISTORY AND NOTHING TODAY, priced high enough to rank — otherwise "it was
+     dropped" and "it sorted out of the top ten" look identical. */
+  { Day: liveIso(3, '00:00:00').slice(0, 10), 'Section Id': 'sec-gone', Section: 'Long Gone',
+    Program: 'Long Gone', Signups: 5, Charged: 5000, Paid: 5000, 'Last At': liveIso(3, '09:00:00') },
+];
+
 /* THE SECOND POLL BRINGS ONE MORE. A widget that highlights arrivals can only
    be tested against a feed that CHANGES — with a constant payload the
    highlight is indistinguishable from no highlight at all. This row is newest,
@@ -352,6 +380,15 @@ const server = http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': TYPES[path.extname(p)] || 'text/plain' });
   res.end(fs.readFileSync(p));
 });
+
+/* A PAGE RELOAD ONTO THE LIGHT-FEED CONFIG. `currentCase` is already set when
+   a case's act() runs, so the /api/config stub serves the light availability
+   map on this fetch — which is the only way to exercise the single-day cards
+   in a harness that loads the page once. */
+async function loadLight(page) {
+  await page.reload({ waitUntil: 'networkidle2', timeout: 60000 });
+  await page.waitForSelector('[data-live-section="1"]', { timeout: 20000 });
+}
 
 const CASES = [
   { name: 'dashboard renders', needs: '.widget-card' },
@@ -1241,6 +1278,50 @@ const CASES = [
         if (a && b && a !== b) document.body.setAttribute('data-lb-tinted', '1');
       });
     } },
+  /* ── THE SINGLE-DAY CARDS ────────────────────────────────────────────────
+     Dan: "since each is only pulling a single day's worth of data for a
+     specific org, maybe that's smarter?" It is, and the risk of the split is
+     entirely in the MERGE: no source assertion can tell a leaderboard that
+     folded its history in from one that quietly lost it, because both render a
+     perfectly plausible table. These drive the light feeds in a browser.
+
+     THEY GO LAST, AND EACH ONE RELOADS. This harness loads the page ONCE and
+     then runs every case against it, so a case that needs a different
+     `availableReports` has to fetch it — and a reload leaves the page on the
+     light config for everything after it, which is why nothing follows. The
+     first draft of these sat mid-list and silently tested the WIDE path: they
+     passed, and the trace showed the wide feed being requested. Cases are not
+     independent here; that is recorded once already and it caught me again. */
+  { name: 'live · the light feeds render all three cards',
+    lightFeeds: true, needs: '[data-live-section="1"] [data-live-regs]',
+    act: loadLight },
+  { name: 'live · ...including the check-ins card, off its own one-day feed',
+    lightFeeds: true, needs: '[data-live-section="1"] [data-live-checkins]',
+    act: loadLight },
+  /* THE MERGE ITSELF. The rollup gives Swim 7 + 3 signups across two past days
+     and the today feed gives it one; a board that dropped the history would
+     show 1, and one that double-counted today would show more than 11. Keyed
+     on the printed number rather than on the row existing. */
+  { name: 'live · the leaderboard adds the history to today',
+    lightFeeds: true, needs: '[data-live-prog-signups]',
+    act: async page => {
+      await loadLight(page);
+      await page.waitForSelector('[data-live-prog-signups]', { timeout: 20000 });
+      const got = await page.evaluate(() => {
+        const out = {};
+        document.querySelectorAll('[data-live-prog]').forEach(el => {
+          out[el.getAttribute('data-live-prog')] = Number(el.getAttribute('data-live-prog-signups'));
+        });
+        return out;
+      });
+      /* KEYED ON THE SECTION NAME, which is what data-live-prog carries. */
+      const swim = got['Swim Lessons AM'];
+      if (swim == null) throw new Error('Swim is not on the board at all: ' + JSON.stringify(got));
+      if (swim !== 11) throw new Error('Swim reads ' + swim + ', want 11 (1 today + the rollup\'s 7 + 3)');
+      if (!('Long Gone' in got)) throw new Error('a section with history and nothing today was dropped from a 7-day board');
+      if (got['Long Gone'] !== 5) throw new Error('history-only section reads ' + got['Long Gone'] + ', want 5');
+    } },
+
 ];
 
 (async () => {
@@ -1275,6 +1356,15 @@ const CASES = [
            does NOT rewrite them — the page has to survive ids it no longer
            knows. Serving the retired shape here is the only way to prove that;
            a source assertion about guard clauses cannot. */
+        /* AN ORG ON THE SINGLE-DAY CARDS. Only the availability map changes —
+           the same three widgets have to render, from a today feed plus a
+           rollup instead of one seven-day pull, and no source assertion can
+           tell a working merge from a leaderboard that quietly lost its
+           history. */
+        if (currentCase.lightFeeds) {
+          return json({ ...CONFIG, availableReports: { memberships: true,
+            'enrollments-today': true, 'enrollments-rollup': true, 'checkins-today': true } });
+        }
         if (currentCase.retiredSupport) {
           /* TWO different guards have to hold, and an earlier version of this
              fixture only reached one: a whole unknown SECTION is dropped before
@@ -1294,6 +1384,26 @@ const CASES = [
       if (rt === 'enrollments') {
         enrollCalls++;
         return json({ rows: [...enrollArrivals(), ...ENROLLMENTS] });
+      }
+      /* THE LIGHT FEEDS. `enrollments-today` is the same fixture narrowed to
+         today and stamped with the card's own `Org Today`, which is what makes
+         it the authority on the day; `enrollments-rollup` carries the history
+         those rows no longer include. Deliberately NOT the same rows twice:
+         if the rollup echoed today, the merge would double it, and a fixture
+         that cannot express that bug cannot catch it. */
+      if (rt === 'enrollments-today') {
+        enrollCalls++;
+        const today = liveIso(0, '00:00:00').slice(0, 10);
+        return json({ rows: [...enrollArrivals(), ...ENROLLMENTS]
+          .filter(r => String(r['Signed Up At']).slice(0, 10) === today)
+          .map(r => ({ ...r, 'Org Today': today })) });
+      }
+      if (rt === 'enrollments-rollup') return json({ rows: ROLLUP });
+      if (rt === 'checkins-today') {
+        const today = liveIso(0, '00:00:00').slice(0, 10);
+        return json({ rows: (FIXTURES['checkins-live'] || [])
+          .filter(r => String(r['Checked In At']).slice(0, 10) === today)
+          .map(r => ({ ...r, 'Org Today': today })) });
       }
       return json({ rows: (rt && FIXTURES[rt]) || [] });
     }
