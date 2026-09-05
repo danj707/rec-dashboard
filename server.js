@@ -308,6 +308,71 @@ setInterval(() => { reconcileWithReporting().catch(() => {}); }, REPORTING_RECON
    Empty here means the widget is absent — see the 'checkins-live' key below. */
 const CHECKINS_LIVE_UUID = 'd9891f69-897e-4d60-985c-50b31ad6d280';
 
+/* ── THE SINGLE-DAY LIVE CARDS ───────────────────────────────────────────────
+   Dan: "if building super lightweight reports to fuel these live widgets is a
+   better fit, consider that. since each is only pulling a single day's worth of
+   data for a specific org, maybe that's smarter?"
+
+   It is. Measured cache-independently through the public endpoint, 2026-09-05,
+   on feeds the page polls EVERY 60 SECONDS:
+
+     enrollments (21286)  apex  7 days  741 rows  8.3s  345KB
+                                1 day     5 rows  1.9s    2KB
+     checkins    (21517)  apex  2 days 1,314 rows 9.8s  319KB
+                                1 day   164 rows  0.7s   39KB
+
+   The wider windows were not waste, which is why this is a SPLIT rather than a
+   narrowing. The enrollments feed carries seven days because the Programs Live
+   leaderboard ranks over seven and its trend arrow compares three complete days
+   against the three before them; the check-ins feed carries two because the
+   page works out the org's "today" from the newest row's stamp. So:
+
+     * card 21550 returns the ORG'S OWN today in full detail — the list, the
+       dots, the prices, the chime;
+     * card 21551 returns the six COMPLETE days before it at (day x section)
+       grain, which is every figure the leaderboard actually reads and none of
+       the twelve wide columns it never touches;
+     * card 21552 does for check-ins what 21550 does for signups.
+
+   NONE OF THE THREE HAS A DATE PARAMETER. That is the operational point as
+   much as the performance one: the push->flip dance in these repos exists
+   because an API push regenerates DATE tags as Text and the card 400s until a
+   human re-types them. `org_id` and `days` are text tags and survive a push
+   unchanged, so these can be corrected at any hour without taking a widget
+   down — the property a LIVE card most wants. Verified on creation: all three
+   register text tags only.
+
+   EMPTY HERE MEANS ABSENT, and the page falls back to the wide-window feeds it
+   used before. A Metabase card is not readable by this app until someone opens
+   it and creates a public link, which is a UI action; Dan did that on
+   2026-09-05 and these are the links.
+
+   SIGNED OFF THROUGH THE PUBLIC ENDPOINT with the app's own parameter shape,
+   run with nothing else in flight:
+
+       21550 enrollments today   apex  11 rows   538ms    smyrna  4 rows  488ms
+       21551 enrollments rollup  apex 435 rows  1158ms    smyrna 331 rows 2209ms
+       21552 check-ins today     apex 402 rows   602ms    smyrna 45 rows  450ms
+
+   Against 8.3s and 25.6s for the feeds they replace. Row counts match what the
+   cards returned before the sargable rewrite, so the values are unchanged.
+
+     21550  https://rec.metabaseapp.com/question/21550
+     21551  https://rec.metabaseapp.com/question/21551
+     21552  https://rec.metabaseapp.com/question/21552 */
+const ENROLLMENTS_TODAY_UUID  = '970ce23a-d275-475d-a191-4fef9d07855f';
+const ENROLLMENTS_ROLLUP_UUID = '3ecb1e84-a2f0-4580-9d98-eb24e53bdde9';
+const CHECKINS_TODAY_UUID     = '6c43be44-5b83-4db3-be86-ebef472f6a56';
+/* ✅ Facility Bookings Live — Today (card 21583). The fourth live widget, and
+   the only one whose stream was CHOSEN by measurement rather than by which
+   report already existed: per org over 90 days the median org's biggest hour
+   of programme registrations is 44 signups against 185 facility bookings, and
+   facility reaches 96 orgs against programmes' 93. Empty until somebody
+   creates the public link — which hides the widget rather than rendering a
+   confident zero, the same absence rule as its three siblings.
+   https://rec.metabaseapp.com/question/21583 */
+const FACILITY_TODAY_UUID     = '';
+
 const SHARED_UUIDS = {
   facility: 'f6787f45-3a36-4501-8a5f-b0f647451a85',
   programs: 'e35f2b47-87c9-40e3-8507-3d9b56f9ce62',
@@ -359,7 +424,14 @@ const SHARED_UUIDS = {
      A confident "0 check-ins today" on a morning when the desk is scanning
      people through is the reading that had to be impossible. Filling this in
      is the whole wiring — no other change is needed. */
-  ...(CHECKINS_LIVE_UUID ? { 'checkins-live': CHECKINS_LIVE_UUID } : {})
+  ...(CHECKINS_LIVE_UUID ? { 'checkins-live': CHECKINS_LIVE_UUID } : {}),
+  /* The single-day cards, each absent until it has a public link. The page
+     tests for these by name and falls back to the wide-window feeds above, so
+     an absent key costs nothing and a present one is the whole switch. */
+  ...(ENROLLMENTS_TODAY_UUID  ? { 'enrollments-today':  ENROLLMENTS_TODAY_UUID }  : {}),
+  ...(ENROLLMENTS_ROLLUP_UUID ? { 'enrollments-rollup': ENROLLMENTS_ROLLUP_UUID } : {}),
+  ...(CHECKINS_TODAY_UUID     ? { 'checkins-today':     CHECKINS_TODAY_UUID }     : {}),
+  ...(FACILITY_TODAY_UUID     ? { 'facility-today':     FACILITY_TODAY_UUID }     : {})
 };
 
 /* A LIVE WIDGET NEEDS ITS OWN CLOCK. Everything else here is a dashboard of a
@@ -368,11 +440,27 @@ const SHARED_UUIDS = {
    also what the page polls at, so most ticks are served from this cache and
    the card is queried about once a minute per org rather than once per
    viewer. */
-const LIVE_REPORT_TTL_MS = { enrollments: 60 * 1000, 'checkins-live': 60 * 1000 };
+const LIVE_REPORT_TTL_MS = {
+  enrollments: 60 * 1000, 'checkins-live': 60 * 1000,
+  'enrollments-today': 60 * 1000, 'checkins-today': 60 * 1000,
+  'facility-today': 60 * 1000,
+  /* THE ROLLUP IS NOT A LIVE FEED, and that is the point of it. It covers
+     COMPLETE days only — never today — so within a day its answer cannot
+     change, and asking for it once a minute would be asking sixty times for
+     the same rows. Thirty minutes is the whole saving: the expensive half of
+     the split stops being polled. It stays in this map rather than taking the
+     org's configured TTL because, like its siblings, its refresh cadence is a
+     property of the FEED and not of an org's preference. */
+  'enrollments-rollup': 30 * 60 * 1000
+};
 
 // Reports that don't accept date parameters
 const NO_DATE_REPORTS = new Set([
-  'program-demographics', 'memberships', 'users', 'retention', 'checkins', 'fasttrack'
+  'program-demographics', 'memberships', 'users', 'retention', 'checkins', 'fasttrack',
+  /* The single-day live cards resolve the org's own today in SQL, so sending
+     them a window would be sending the viewer's opinion about a day the org is
+     the authority on. That is the bug they exist to remove. */
+  'enrollments-today', 'checkins-today', 'enrollments-rollup', 'facility-today'
 ]);
 
 // ═══════════════════════════════════════════
@@ -449,6 +537,15 @@ function buildMetabaseParams(reportType, query) {
     if (start) params.push({ type: dateType, target: ['variable', ['template-tag', 'start_date']], value: start });
     if (end) params.push({ type: dateType, target: ['variable', ['template-tag', 'end_date']], value: end });
   }
+  /* NO `days` PARAMETER FOR THE ROLLUP, and this is a fact about Metabase
+     rather than a simplification. The card had a `{{days}}` tag so the page's
+     own LIVE_DAYS could govern its window; Metabase registered that tag as
+     date/single whatever the SQL cast said, and every type the app can send
+     was probed against the live public card — category 500, date/single 500,
+     number/= 400, string/= 400. There is no value it would accept, so the six
+     complete days live in the card's SQL and the spec pins the page's constant
+     against that literal. Sending a parameter the card does not register is
+     how this comes back as a 400 the first time Metabase tightens. */
   return params;
 }
 
