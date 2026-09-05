@@ -371,7 +371,7 @@ const CHECKINS_TODAY_UUID     = '6c43be44-5b83-4db3-be86-ebef472f6a56';
    creates the public link — which hides the widget rather than rendering a
    confident zero, the same absence rule as its three siblings.
    https://rec.metabaseapp.com/question/21583 */
-const FACILITY_TODAY_UUID     = '';
+const FACILITY_TODAY_UUID     = '4e9ff19c-233d-46fa-84f4-008cea53cf0b';
 
 const SHARED_UUIDS = {
   facility: 'f6787f45-3a36-4501-8a5f-b0f647451a85',

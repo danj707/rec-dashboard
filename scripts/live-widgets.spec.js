@@ -1918,6 +1918,55 @@ process.on('exit', () => {
      'a rental with no live slot and no cancellation is a cart, and is dropped rather than rendered as "(No Site)"');
   ok(/ORDER BY f\.created_at DESC, f\.id DESC/.test(facSql),
      'and the trailing ORDER BY is there — the exact thing that silently vanished on card 17300');
+
+  /* EVERY COLUMN A CTE IS ASKED FOR IS A COLUMN IT SELECTS.
+
+     THIS IS HERE BECAUSE THE FIRST VERSION OF THIS CARD SHIPPED BROKEN. The
+     `res` CTE was trimmed while the mirror was being written — `court_id` came
+     out — and the `site` UNION below still read `res.court_id`. The card was
+     created from that text and returned, for every org:
+
+         ERROR: column res.court_id does not exist
+
+     Nothing in this repo could see it. The render check answers every feed
+     from a stub, so the page rendered perfectly; the source assertions all
+     passed, because each one was true of the text in front of it; and the
+     card's own public endpoint reports only `invalid-query` with no column
+     name. It was found by running the card, which is the real guard and the
+     rule this repo already writes down: PROVE THE EXACT TEXT YOU ARE PUSHING,
+     not the draft you developed. This assertion is the cheap half of that —
+     it catches a reference to a column the CTE does not produce, without a
+     database. */
+  {
+    const cte = (name) => {
+      const m = new RegExp('\\n' + name + ' AS( MATERIALIZED)? \\(([\\s\\S]*?)\\n\\),').exec(facCode);
+      return m ? m[2] : null;
+    };
+    const resBody = cte('res');
+    ok(resBody, "the `res` CTE is readable — without it this pin is vacuous");
+    if (resBody) {
+      /* Its own SELECT list, up to the FROM. `x AS y` exposes `y`. */
+      const selectList = /SELECT([\s\S]*?)\n\s*FROM/.exec(resBody);
+      const exposed = new Set(
+        (selectList ? selectList[1] : '')
+          .split(',')
+          .map(part => {
+            const as = /\bAS\s+([A-Za-z_][A-Za-z0-9_]*)\s*$/i.exec(part.trim());
+            if (as) return as[1].toLowerCase();
+            const dotted = /([A-Za-z_][A-Za-z0-9_]*)\s*$/.exec(part.trim());
+            return dotted ? dotted[1].toLowerCase() : '';
+          })
+          .filter(Boolean));
+      /* Every `res.<col>` anywhere else in the card. */
+      const wanted = new Set((facCode.match(/\bres\.([A-Za-z_][A-Za-z0-9_]*)/g) || [])
+        .map(r => r.split('.')[1].toLowerCase()));
+      const missing = [...wanted].filter(c => !exposed.has(c));
+      ok(missing.length === 0,
+         'every column the card reads off `res` is one `res` actually selects — missing: ' + missing.join(', '));
+      ok(wanted.size >= 2 && exposed.size >= 2,
+         '...checked over a real set of both, so the comparison is not vacuous');
+    }
+  }
 }
 
 /* ── THE FACE HOLD, AND THE FOUR-ON-A-SCREEN BLOCK ────────────────────────*/

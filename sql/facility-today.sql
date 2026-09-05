@@ -39,16 +39,16 @@
 --     canceled      instant     1,071   1,071   (100%)
 --     canceled      managed        73      73   (100%)
 --
--- Two things follow. **Cancelling a rental cancels its slots** — 1,144 of
--- 1,144, no exceptions — so a cancelled rental has nothing to show: no site,
--- no time, no hours. It is still worth COUNTING, exactly as a refused scan is
--- on the check-ins card, so it comes back with Status 'Canceled' and the page
--- puts it in a counter rather than in the list. And the 524 non-cancelled
--- rentals with no live slot are carts and re-entries — a staff member starting
--- a booking and redoing it (both halves are visible in apex's own day: one
--- "Ball Machine" at 09:20 with nothing on it, another at 09:25 with a court
--- and $10). Those are not bookings and are dropped here rather than rendered
--- as a row reading "(No Site)".
+-- Two things follow. Cancelling a rental cancels its slots — 1,144 of 1,144,
+-- no exceptions — so a cancelled rental has nothing to show: no site, no time,
+-- no hours. It is still worth COUNTING, exactly as a refused scan is on the
+-- check-ins card, so it comes back with Status 'Canceled' and the page puts it
+-- in a counter rather than in the list. And the 524 non-cancelled rentals with
+-- no live slot are carts and re-entries — a staff member starting a booking
+-- and redoing it (both halves are visible in apex's own day: one "Ball
+-- Machine" at 09:20 with nothing on it, another at 09:25 with a court and
+-- $10). Those are not bookings and are dropped here rather than rendered as a
+-- row reading "(No Site)".
 --
 -- `in-progress` IS NOT AN UNPAID CART. It is managed-only and 1,912 of 2,179
 -- carry live slots; at apex those rows have real courts, real times and money
@@ -70,8 +70,9 @@
 -- wants, since it can then be corrected at any hour without taking the widget
 -- down. `org_id` is a text tag and survives an API push unchanged.
 --
--- Params: org_id (uuid). Mirrored here; THE LIVE CARD IS THE SOURCE OF TRUTH.
--- Live card: 21583 — https://rec.metabaseapp.com/question/21583
+-- Params: org_id (uuid). Mirrored in the repo at sql/facility-today.sql.
+-- Live card 21583 — https://rec.metabaseapp.com/question/21583 — IS THE SOURCE
+-- OF TRUTH; read it before writing to it.
 WITH org_tz AS (
   SELECT COALESCE(MODE() WITHIN GROUP (ORDER BY timezone), 'America/Chicago') AS tz
   FROM location
@@ -103,7 +104,11 @@ fr AS (
 -- alive (one night dropped from a recurring stay), so this is per-slot and not
 -- per-rental — and it is what "at least one live slot" is counted from.
 res AS (
-  SELECT r.id, r.facility_rental_id AS rental_id, r.starts_at, r.ends_at
+  -- `court_id` is carried even though only the `site` UNION below reads it:
+  -- dropping it is how the first version of this card shipped a
+  -- `column res.court_id does not exist`, which no source assertion and no
+  -- render stub can see.
+  SELECT r.id, r.facility_rental_id AS rental_id, r.starts_at, r.ends_at, r.court_id
   FROM reservation r
   JOIN fr ON fr.id = r.facility_rental_id
   WHERE r.deleted_at IS NULL AND r.canceled_at IS NULL
