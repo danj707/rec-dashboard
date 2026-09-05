@@ -332,6 +332,88 @@ CHECKINS.push({ 'Checked In At': liveIso(1, '19:00:00'), Member: 'Yesterday Pers
   'User ID': 'user-yp', 'Member ID': 'YP0001', Photo: null, Status: 'Checked In',
   'Desk Location': 'Front Desk', Product: 'Adult Annual' });
 
+/* FACILITY BOOKINGS, shaped so every branch that renders identically to a
+   source assertion is separated by a NUMBER on screen.
+
+     9 rows  ·  8 today  ·  6 booked  ·  2 cancelled  ·  4 self-service
+     $240 booked  ·  9.5 hours
+
+   The rows that carry their weight:
+     - a CANCELLED rental with no site, no hours and no money, which is what a
+       cancellation really looks like (cancelling a rental cancels its slots,
+       1,144 of 1,144 platform-wide) — so a card that counted it as a booking
+       reads 7, not 6;
+     - a STAFF rental with NO customer account, where the person's name is the
+       rental's own name — 926 of 2,179 in-progress rentals platform-wide, and
+       it must render as plain text rather than a link to nowhere;
+     - a RECURRING rental over 12 dates, so "+11" has to appear rather than one
+       date printed as though it were the whole booking;
+     - a rental across TWO courts, so the site cell has to say "+1";
+     - a booking made TODAY for a slot three weeks out, which is the case a
+       card showing only the booking time would hide entirely;
+     - and a YESTERDAY row, so the count and the lane are proven to filter
+       rather than to render whatever arrived. */
+const FACILITY = [
+  { 'Booked At': liveIso(0, '16:40:00'), 'Org Today': null, 'Customer Name': 'Rosalind Franklin',
+    'User ID': 'user-rf', Photo: null, 'Rental Id': 'fr-1', Rental: 'Court Reservation',
+    Site: 'Court 3', 'Site Count': 1, Location: 'Tennis Center', 'Booking Type': 'Instant',
+    Status: 'Confirmed', Dates: 1, Hours: 1.5,
+    'First Slot': liveIso(0, '18:00:00'), 'Last Slot': liveIso(0, '19:30:00'),
+    Attendees: 2, Price: 34, Paid: 34 },
+  /* A CANCELLATION: no site, no time, no money — and it must not be counted. */
+  { 'Booked At': liveIso(0, '15:10:00'), 'Org Today': null, 'Customer Name': 'Gone Away',
+    'User ID': 'user-ga', Photo: null, 'Rental Id': 'fr-2', Rental: 'Court Reservation',
+    Site: null, 'Site Count': 0, Location: null, 'Booking Type': 'Instant',
+    Status: 'Canceled', Dates: 0, Hours: 0,
+    'First Slot': null, 'Last Slot': null, Attendees: null, Price: 0, Paid: 0 },
+  /* NO CUSTOMER ACCOUNT: the name lives in the rental, and there is no id to
+     link to. */
+  { 'Booked At': liveIso(0, '14:20:00'), 'Org Today': null, 'Customer Name': null,
+    'User ID': null, Photo: null, 'Rental Id': 'fr-3', Rental: 'David Herman',
+    Site: 'Court 5', 'Site Count': 1, Location: 'Racquetball Center', 'Booking Type': 'Staff',
+    Status: 'In-Progress', Dates: 1, Hours: 2,
+    'First Slot': liveIso(-19, '10:00:00'), 'Last Slot': liveIso(-19, '12:00:00'),
+    Attendees: null, Price: 32, Paid: 0 },
+  /* TWELVE DATES: a season of Friday nights entered once. */
+  { 'Booked At': liveIso(0, '11:05:00'), 'Org Today': null, 'Customer Name': 'League Organiser',
+    'User ID': 'user-lo', Photo: null, 'Rental Id': 'fr-4', Rental: 'Fall Adult League',
+    Site: 'Field 1', 'Site Count': 1, Location: 'Sports Park', 'Booking Type': 'Staff',
+    Status: 'Confirmed', Dates: 12, Hours: 24,
+    'First Slot': liveIso(-14, '18:00:00'), 'Last Slot': liveIso(-91, '20:00:00'),
+    Attendees: 40, Price: 0, Paid: 0 },
+  /* TWO COURTS on one rental. */
+  { 'Booked At': liveIso(0, '10:30:00'), 'Org Today': null, 'Customer Name': 'Marie Curie',
+    'User ID': 'user-mc', Photo: null, 'Rental Id': 'fr-5', Rental: 'Room Reservation',
+    Site: 'Party Room A', 'Site Count': 2, Location: 'Community Center', 'Booking Type': 'Instant',
+    Status: 'Confirmed', Dates: 1, Hours: 1.5,
+    'First Slot': liveIso(-21, '13:00:00'), 'Last Slot': liveIso(-21, '14:30:00'),
+    Attendees: 40, Price: 140, Paid: 140 },
+  { 'Booked At': liveIso(0, '09:15:00'), 'Org Today': null, 'Customer Name': 'Ada Lovelace',
+    'User ID': 'user-ada', Photo: null, 'Rental Id': 'fr-6', Rental: 'Court Reservation',
+    Site: 'Court 11', 'Site Count': 1, Location: 'Pickleball Courts', 'Booking Type': 'Instant',
+    Status: 'Confirmed', Dates: 1, Hours: 2,
+    'First Slot': liveIso(-2, '08:00:00'), 'Last Slot': liveIso(-2, '10:00:00'),
+    Attendees: 1, Price: 34, Paid: 34 },
+  { 'Booked At': liveIso(0, '08:05:00'), 'Org Today': null, 'Customer Name': 'Second Cancel',
+    'User ID': 'user-sc', Photo: null, 'Rental Id': 'fr-7', Rental: 'Court Reservation',
+    Site: null, 'Site Count': 0, Location: null, 'Booking Type': 'Staff',
+    Status: 'Canceled', Dates: 0, Hours: 0,
+    'First Slot': null, 'Last Slot': null, Attendees: null, Price: 0, Paid: 0 },
+  { 'Booked At': liveIso(0, '07:50:00'), 'Org Today': null, 'Customer Name': 'Grace Hopper',
+    'User ID': 'user-grace', Photo: null, 'Rental Id': 'fr-8', Rental: 'Court Reservation',
+    Site: 'Court 6', 'Site Count': 1, Location: 'Racquetball Center', 'Booking Type': 'Staff',
+    Status: 'Confirmed', Dates: 1, Hours: 0.5,
+    'First Slot': liveIso(-1, '07:00:00'), 'Last Slot': liveIso(-1, '07:30:00'),
+    Attendees: null, Price: 0, Paid: 0 },
+  /* YESTERDAY: proves the headline and the lane filter to today. */
+  { 'Booked At': liveIso(1, '19:00:00'), 'Org Today': null, 'Customer Name': 'Yesterday Booker',
+    'User ID': 'user-yb', Photo: null, 'Rental Id': 'fr-9', Rental: 'Court Reservation',
+    Site: 'Court 1', 'Site Count': 1, Location: 'Tennis Center', 'Booking Type': 'Instant',
+    Status: 'Confirmed', Dates: 1, Hours: 1,
+    'First Slot': liveIso(0, '09:00:00'), 'Last Slot': liveIso(0, '10:00:00'),
+    Attendees: 1, Price: 999, Paid: 999 },
+];
+
 const FIXTURES = {
   memberships: MEMBERSHIPS,
   enrollments: ENROLLMENTS,
@@ -1325,6 +1407,112 @@ const CASES = [
       if (got['Long Gone'] !== 5) throw new Error('history-only section reads ' + got['Long Gone'] + ', want 5');
     } },
 
+  /* ── THE FACILITY CARD ────────────────────────────────────────────────────
+     Keyed on COMPUTED VALUES throughout. "A fourth card rendered" passes on a
+     card that counts cancellations as bookings, prints the first of twelve
+     dates as though it were the whole rental, or links a staff booking with no
+     customer to nowhere — which are the four things that can go wrong here. */
+  { name: 'live · the facility card counts bookings that stand',
+    lightFeeds: true, needs: '[data-live-fac-today]',
+    act: async page => {
+      await loadLight(page);
+      await page.waitForSelector('[data-live-fac-today]', { timeout: 20000 });
+      const got = await page.evaluate(() => ({
+        booked:   document.querySelector('[data-live-fac-today]').getAttribute('data-live-fac-today'),
+        canceled: (document.querySelector('[data-live-fac-canceled]') || {}).getAttribute
+                  ? document.querySelector('[data-live-fac-canceled]').getAttribute('data-live-fac-canceled') : null,
+        instant:  (document.querySelector('[data-live-fac-instant]') || {}).getAttribute
+                  ? document.querySelector('[data-live-fac-instant]').getAttribute('data-live-fac-instant') : null,
+        headline: document.querySelector('[data-live-fac-today]').parentElement.innerText.replace(/\s+/g, ' '),
+      }));
+      /* SIX, not eight: two of today's rows are cancellations and one row is
+         yesterday's. A card folding either in reads 7 or 8. */
+      if (got.booked !== '6') throw new Error('bookings today reads ' + got.booked + ', want 6');
+      if (got.canceled !== '2') throw new Error('cancellations read ' + got.canceled + ', want 2');
+      /* FOUR of the six booked rows are self-service; yesterday's instant row
+         must not be one of them. */
+      /* THREE of the six booked rows are self-service — the fourth Instant row
+         in the fixture is a CANCELLATION, and a card counting it would read 4.
+         (My own first draft of this assertion said 4 and was wrong about its
+         own fixture; the number is worth deriving rather than eyeballing.) */
+      if (got.instant !== '3') throw new Error('self-service reads ' + got.instant + ', want 3');
+      /* THE MONEY IS TODAY'S BOOKED MONEY. Yesterday's $999 row is the one that
+         separates a card reading `rows` from one reading today's. */
+      if (!/\$240/.test(got.headline)) throw new Error('headline money is ' + got.headline + ', want $240');
+      if (/999/.test(got.headline)) throw new Error("yesterday's booking is in today's money: " + got.headline);
+    } },
+
+  { name: 'live · a recurring rental says how many dates',
+    lightFeeds: true, needs: '[data-live-fac-when]',
+    act: async page => {
+      await loadLight(page);
+      await page.waitForSelector('[data-live-fac-when]', { timeout: 20000 });
+      const got = await page.evaluate(() => {
+        const out = {};
+        document.querySelectorAll('[data-live-fac-row]').forEach(tr => {
+          const who  = tr.querySelector('.lp').innerText.trim();
+          out[who] = {
+            when: tr.querySelector('[data-live-fac-when]').getAttribute('data-live-fac-when'),
+            site: tr.querySelector('[data-live-fac-site]').innerText.replace(/\s+/g, ' ').trim(),
+            link: !!tr.querySelector('[data-live-fac-user]'),
+          };
+        });
+        return out;
+      });
+      const league = got['League Organiser'];
+      if (!league) throw new Error('the twelve-date rental is not on the card: ' + JSON.stringify(got));
+      /* +11, NOT ONE DATE PRINTED AS THE ANSWER. */
+      if (!/\+11$/.test(league.when)) throw new Error('a 12-date rental reads "' + league.when + '", want a +11');
+      /* TWO COURTS SAY SO. */
+      const curie = got['Marie Curie'];
+      if (!curie || !/\+1\b/.test(curie.site)) throw new Error('a two-court rental reads "' + (curie||{}).site + '", want a +1');
+      /* A STAFF RENTAL WITH NO CUSTOMER falls back to the rental's own name and
+         is NOT a link — the branch that renders identically in source. */
+      const herman = got['David Herman'];
+      if (!herman) throw new Error('a staff rental with no customer account lost its name: ' + JSON.stringify(got));
+      if (herman.link) throw new Error('a booking with no user id was rendered as a link to nowhere');
+      /* A CANCELLATION SAYS SO rather than leaving an empty cell. */
+      const gone = got['Gone Away'];
+      if (!gone || gone.when !== 'canceled') throw new Error('a cancelled rental reads "' + (gone||{}).when + '"');
+    } },
+
+  /* ── FOUR ON A SCREEN ─────────────────────────────────────────────────────
+     Dan: "lets shrink the cards a bit, ideally we have 4 cards on a screen."
+     A CSS diff cannot prove that; only a browser can measure it, and only over
+     the real fixture, because the height is the rows. Driven at 1400x900 —
+     roughly a 1080p laptop once the browser chrome is off — and the assertion
+     is that the whole live grid fits inside it. */
+  { name: 'live · four cards fit on one screen',
+    lightFeeds: true, needs: '[data-live-fac-today]',
+    viewport: { width: 1400, height: 900 },
+    act: async page => {
+      await loadLight(page);
+      await page.waitForSelector('[data-live-fac-today]', { timeout: 20000 });
+      const m = await page.evaluate(() => {
+        const cards = [...document.querySelectorAll('.widget-card.live-card')];
+        const grid  = cards.length ? cards[0].parentElement.getBoundingClientRect() : null;
+        const sect  = document.querySelector('[data-live-section="1"]');
+        return { n: cards.length, grid: grid ? Math.round(grid.height) : 0,
+                 section: sect ? Math.round(sect.getBoundingClientRect().height) : 0,
+                 viewport: window.innerHeight,
+                 each: cards.map(c => (c.innerText || '').split('\n')[0].slice(0, 22)
+                                      + ' ' + Math.round(c.getBoundingClientRect().height)),
+                 titles: cards.map(c => (c.innerText || '').split('\n')[0].slice(0, 30)) };
+      });
+      if (m.n !== 4) throw new Error('want four live cards, got ' + m.n + ': ' + JSON.stringify(m.titles));
+      /* THE ASSERTION IS THE ACTUAL PROPERTY: the whole live section — its
+         heading included — inside the viewport, with headroom. Before the
+         compact block the four cards were ~500 each and the grid alone was
+         ~1020px, so this fails by a wide margin on the version Dan reported.
+
+         THE HEADROOM IS THE POINT OF THE 40px. Asserting "fits exactly" would
+         pass at 899 of 900 and flip on any future row, which is a guard that
+         reports luck rather than fit. */
+      if (m.section > m.viewport - 40)
+        throw new Error('the live section is ' + m.section + 'px inside a ' + m.viewport + 'px viewport'
+                        + ' \u2014 four cards do not fit \u2014 ' + JSON.stringify(m.each));
+    } },
+
 ];
 
 (async () => {
@@ -1366,7 +1554,8 @@ const CASES = [
            history. */
         if (currentCase.lightFeeds) {
           return json({ ...CONFIG, availableReports: { memberships: true,
-            'enrollments-today': true, 'enrollments-rollup': true, 'checkins-today': true } });
+            'enrollments-today': true, 'enrollments-rollup': true, 'checkins-today': true,
+            'facility-today': true } });
         }
         if (currentCase.retiredSupport) {
           /* TWO different guards have to hold, and an earlier version of this
@@ -1402,6 +1591,10 @@ const CASES = [
           .map(r => ({ ...r, 'Org Today': today })) });
       }
       if (rt === 'enrollments-rollup') return json({ rows: ROLLUP });
+      if (rt === 'facility-today') {
+        const today = liveIso(0, '00:00:00').slice(0, 10);
+        return json({ rows: FACILITY.map(r => ({ ...r, 'Org Today': today })) });
+      }
       if (rt === 'checkins-today') {
         const today = liveIso(0, '00:00:00').slice(0, 10);
         return json({ rows: (FIXTURES['checkins-live'] || [])
@@ -1452,9 +1645,17 @@ const CASES = [
                   ' — a JSX attribute or JSX text is not a string literal');
   }
 
+  const BASE_VIEWPORT = { width: 1400, height: 1400 };
   for (const c of CASES) {
     currentCase = c;
     let bad = null;
+    /* A PER-CASE VIEWPORT, ported from the sibling repo's render check. Some
+       bugs do not exist at the default size — "four cards on a screen" is only
+       a question at a screen's height — and a case that silently ran at 1400px
+       tall would pass on a layout nobody can fit on a laptop. Restored after,
+       in a finally, so a throwing act() cannot leave the next case measuring
+       the wrong box. */
+    if (c.viewport) await page.setViewport(c.viewport);
     /* A per-case `act` hook, ported from the sibling repo's render check. Some
        states only exist after an interaction — the widget editor is behind a
        button, and a computed style has to be READ and stamped before a
@@ -1494,6 +1695,7 @@ const CASES = [
     }
     console.log((bad ? '  ✗ ' : '  ✓ ') + c.name + (bad ? ': ' + bad : ''));
     if (bad) failures.push(c.name + ': ' + bad);
+    if (c.viewport) await page.setViewport(BASE_VIEWPORT);
   }
 
   await browser.close();

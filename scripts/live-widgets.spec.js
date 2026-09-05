@@ -126,6 +126,15 @@ try {
     liftFn(src, 'liveInitials') + '\n' + liftFn(src, 'liveDayAxis') + '\n' +
     liftFn(src, 'liveAt') + '\n' + liftFn(src, 'liveCheckinTimeline') + '\n' +
     liftFn(src, 'liveDayShift') + '\n' + liftFn(src, 'liveProgramTrend') + '\n' +
+    /* THE FACILITY CARD'S OWN FOUR. LIFTED AND RUN rather than regexed: a
+       regex over `=== 'Canceled'` passes on an inverted comparison, and the
+       whole point of liveFacilityState is which side of it a cancellation
+       falls on. LIVE_MONTHS comes with liveShortDay or the lift throws. */
+    'const LIVE_MONTHS = ' + (code.match(/const LIVE_MONTHS = (\[[^\]]*\])/) || [0,'[]'])[1] + ';\n' +
+    liftFn(src, 'liveShortDay') + '\n' +
+    liftFn(src, 'liveHasFacility') + '\n' + liftFn(src, 'liveFacilityKey') + '\n' +
+    liftFn(src, 'liveFacilityState') + '\n' + liftFn(src, 'liveFacilityWho') + '\n' +
+    liftFn(src, 'liveFacilityWhen') + '\n' + liftFn(src, 'liveFacilityTimeline') + '\n' +
     liftFn(src, 'liveChimeBurst') + '\n' +
     'const LIVE_TREND_DAYS = ' + (code.match(/LIVE_TREND_DAYS = (\d+)/) || [0,3])[1] + ';\n' +
     'const LIVE_TREND_MIN = '  + (code.match(/LIVE_TREND_MIN = (\d+)/)  || [0,4])[1] + ';\n' +
@@ -145,6 +154,8 @@ try {
     ' livePlanOn, livePlanProgress, liveMoneyZ, livePayPhrase,' +
     ' liveFeedChoice, liveHasEnrollments, liveHasCheckins,' +
     ' liveCheckinKey, liveCheckinState, liveInitials, liveDayAxis, liveCheckinTimeline,' +
+    ' liveShortDay, liveHasFacility, liveFacilityKey, liveFacilityState, liveFacilityWho,' +
+    ' liveFacilityWhen, liveFacilityTimeline,' +
     ' LIVE_CHIME_MAX, LIVE_CHIME_GAP_MS, LIVE_CHIME_JITTER_MS, LIVE_CHIME_RING_MS };')();
   pass++;
 } catch (e) {
@@ -214,8 +225,8 @@ if (H.liveWindow) {
      shapes now (the wide feeds and the single-day ones), so a gate written out
      by hand is a gate that can miss a pair — and the failure is silent: the
      widget simply never renders for the orgs that only have the new cards. */
-  ok(/\(liveHasEnrollments\(availableReports\) \|\| liveHasCheckins\(availableReports\)\) && \(/.test(code),
-     'and the section renders only where a feed exists at all');
+  ok(/liveHasEnrollments\(availableReports\) \|\| liveHasCheckins\(availableReports\)\s*\n?\s*\|\| liveHasFacility\(availableReports\)\) && \(/.test(code),
+     'and the section renders only where a feed exists at all — all three helpers, so an org with only the facility card still gets it');
   /* THE SECTION HIDES WITH ITS WIDGETS. This was an env gate for about an hour
      (Dan: "what is MB_ENROLLMENTS_UUID lol"), which put a deploy step between
      publishing a card and seeing the widget for no benefit — the rule that had
@@ -226,7 +237,10 @@ if (H.liveWindow) {
      now — registrations and check-ins are different cards on different
      questions — so one of them going down must not take the other off the
      page, and the SECTION goes only when both are gone. */
-  ok(/if \(!alive && !showCi\) return null;/.test(code),
+  /* THREE FEEDS NOW, so the section goes only when all three are gone. A test
+     that still named two would pass on a build where the facility card alone
+     survives and the section hides anyway. */
+  ok(/if \(!alive && !showCi && !showFac\) return null;/.test(code),
      'the Live Widgets section hides itself when its widgets have nothing — a heading over a blank space reads as broken, not as absent');
   ok(/\{alive \? <LiveRegistrations/.test(code) && /\{showCi \? <MembershipCheckins/.test(code),
      '...and each card is gated on ITS OWN feed, so one failing does not blank the other');
@@ -344,8 +358,8 @@ if (H.liveWindow) {
      them is reverted — which is exactly what happened when this was mutated. */
   ok((code.match(/liveTodayFor\(rows, 'Signed Up At'\)/g) || []).length === 2,
      'BOTH cards reading the signup column take their day from liveTodayFor');
-  ok((code.match(/liveTodayFor\(rows, '[^']+'\)/g) || []).length === 3,
-     '...and all three live cards do, counting the check-ins one');
+  ok((code.match(/liveTodayFor\(rows, '[^']+'\)/g) || []).length === 4,
+     '...and all FOUR live cards do, counting the check-ins and facility ones');
   ok(/rows\.filter\(r => liveDay\(r\['Signed Up At'\]\) === today\)/.test(code),
      'and the count is the rows sharing that day');
   /* SCOPED TO THE WIDGET. A file-wide test fails on correct code — other tiles
@@ -1723,19 +1737,23 @@ process.on('exit', () => {
      exactly how this shipped. */
   {
     const ringers = (code.match(/useLiveSound\('[a-z]+', feed\.freshRows/g) || []).length;
-    ok(ringers === 3, 'all three live cards ring off their feed\'s freshRows');
+    ok(ringers === 4, 'all FOUR live cards ring off their feed\'s freshRows');
 
     /* `rollup` rides on the enrollments hook's return and not the check-ins
      one, so the shapes are no longer identical — the CONTRACT being pinned
      is freshRows, and the pattern says so rather than spelling out a field
      list that has to be edited every time either hook grows. */
   const returns = (code.match(/return \{ rows,[^}]*freshRows, loading/g) || []).length;
-    ok(returns === 2, 'BOTH live feed hooks return freshRows — the check-ins one did not, and its card was silent');
+    ok(returns === 3, 'ALL THREE live feed hooks return freshRows — the check-ins one did not, and its card was silent');
 
-    ok((code.match(/setFreshRows\(fresh\.map\(k => j\.rows\[keys\.indexOf\(k\)\]\)\.filter\(Boolean\)\);/g) || []).length === 2,
-       '...and both actually publish the arrivals they already diffed');
-    ok((code.match(/const \[freshRows, setFreshRows\] = useState\(null\);/g) || []).length === 2,
-       '...off state both hooks declare');
+    ok((code.match(/setFreshRows\(fresh\.map\(k => j\.rows\[keys\.indexOf\(k\)\]\)\.filter\(Boolean\)\);/g) || []).length === 3,
+       '...and all three actually publish the arrivals they already diffed');
+    /* THE FACILITY HOOK DECLARES IT AS `[]` RATHER THAN `null`, so this counts
+       the declaration by NAME rather than by its initial value — pinning the
+       literal would have failed on correct code, which is a guard telling the
+       author to write it a particular way rather than telling them it works. */
+    ok((code.match(/const \[freshRows, setFreshRows\] = useState\(/g) || []).length === 3,
+       '...off state all three hooks declare');
 
     /* THE RING IS OFF THE SAME DIFF AS THE HIGHLIGHT, in both hooks — that is
        what stops a card ringing for a row it does not light up, and what keeps
@@ -1748,11 +1766,214 @@ process.on('exit', () => {
      feed that keeps serving a stale answer, or one that sleeps through a
      backgrounded tab, is the bug Dan reported — and it would be invisible if
      only one of the two carried the fix. */
-  ok((code.match(/document\.addEventListener\('visibilitychange', onVis\)/g) || []).length === 2,
-     'BOTH live feeds refetch when the tab becomes visible');
-  ok((code.match(/const t = setInterval\(load, LIVE_POLL_MS\);/g) || []).length === 2,
-     '...and both poll on the same clock');
-  ok((code.match(/document\.removeEventListener\('visibilitychange', onVis\)/g) || []).length === 2,
-     '...and both take the listener off again');
+  ok((code.match(/document\.addEventListener\('visibilitychange', onVis\)/g) || []).length === 3,
+     'ALL THREE live feeds refetch when the tab becomes visible');
+  ok((code.match(/const t = setInterval\(load, LIVE_POLL_MS\);/g) || []).length === 3,
+     '...and all three poll on the same clock');
+  ok((code.match(/document\.removeEventListener\('visibilitychange', onVis\)/g) || []).length === 3,
+     '...and all three take the listener off again');
 }
 
+
+/* ── FACILITY BOOKINGS ────────────────────────────────────────────────────
+   THE FOURTH LIVE WIDGET. Its helpers are LIFTED AND RUN rather than regexed:
+   the whole card turns on which side of a comparison a cancellation falls on,
+   and a regex over `=== 'Canceled'` passes on an inverted one. */
+{
+  if (H.liveFacilityState) {
+    const { liveFacilityState, liveFacilityWho, liveFacilityWhen, liveShortDay,
+            liveHasFacility, liveFacilityKey, liveFacilityTimeline } = H;
+
+    /* A CANCELLATION IS NOT A BOOKING — the same rule as a refused scan one
+       card up, and for the same reason: a card that counted one as the other
+       would report a court as taken when it is free. */
+    eq(liveFacilityState({ Status: 'Canceled' }), 'canceled', 'a cancelled rental is cancelled');
+    eq(liveFacilityState({ Status: 'Confirmed' }), 'booked', 'a confirmed rental is booked');
+    /* `in-progress` IS A REAL BOOKING. It is managed-only, and 1,912 of 2,179
+       platform-wide carry live slots with real courts, times and money — it is
+       where a staff rental sits mid-lifecycle, not an abandoned cart. Filing it
+       as anything else would drop most staff bookings off the card. */
+    eq(liveFacilityState({ Status: 'In-Progress' }), 'booked', 'an in-progress staff rental is a booking, not a cart');
+    eq(liveFacilityState({}), 'booked', 'a row with no status is not assumed cancelled');
+    eq(liveFacilityState(null), 'booked', 'and neither is a missing row');
+
+    /* WHO BOOKED IT. A staff rental often carries no customer account — 926 of
+       2,179 in-progress rentals platform-wide — and the person's name is then
+       the rental's own name. */
+    eq(liveFacilityWho({ 'Customer Name': 'Ada Lovelace', 'User ID': 'u1' }).name, 'Ada Lovelace',
+       'a customer account gives the name');
+    eq(liveFacilityWho({ 'Customer Name': 'Ada Lovelace', 'User ID': 'u1' }).id, 'u1',
+       '...and the id the admin link needs');
+    eq(liveFacilityWho({ 'Customer Name': null, Rental: 'David Herman' }).name, 'David Herman',
+       'a staff rental with no account falls back to the rental name, which is where the person actually is');
+    /* NO ID ON THE FALLBACK, deliberately: there is no user to link to, and a
+       link built from nothing is the dead end this repo keeps recording. */
+    eq(liveFacilityWho({ 'Customer Name': null, Rental: 'David Herman' }).id, '',
+       '...and carries no id, so it cannot render as a link to nowhere');
+    eq(liveFacilityWho({ 'Customer Name': '   ', Rental: '  ' }).name, '(no name)',
+       'neither, and it says so rather than rendering a blank cell');
+
+    /* WHEN THE COURT IS BOOKED FOR, which is not when it was booked. */
+    eq(liveFacilityWhen({ 'First Slot': '2026-09-20T13:00:00', Dates: 1 }), 'Sep 20 1:00p',
+       'one date reads as the date and the time');
+    eq(liveFacilityWhen({ 'First Slot': '2026-09-20T13:00:00', Dates: 12 }), 'Sep 20 +11',
+       'twelve dates say so — printing the first as though it were the whole rental is the half-truth this avoids');
+    eq(liveFacilityWhen({ 'First Slot': null, Dates: 0 }), '',
+       'a rental with no slot left claims nothing');
+
+    /* BUILT FROM PARTS, NEVER new Date(). `new Date("2026-09-20")` is UTC
+       midnight and renders as the 19th west of UTC — recorded five times over
+       in these two repos. The VALUE test below cannot catch that on its own
+       (both implementations agree in UTC, which is what this sandbox and CI
+       run), so the timezone re-exec at the top of this file is what makes it
+       discriminate, and the source assertion after it is the belt. */
+    eq(liveShortDay('2026-01-01'), 'Jan 1', 'the first of January is the first of January');
+    eq(liveShortDay('2026-12-31'), 'Dec 31', '...and the last of December is too');
+    eq(liveShortDay('nonsense'), '', 'an unparseable day is empty rather than "Invalid Date NaN"');
+    ok(!/new Date\(/.test(liveShortDay.toString()),
+       'liveShortDay never goes through new Date() — a bare ISO date is UTC midnight and lands a day early west of UTC');
+    ok(!/new Date\(/.test(liveFacilityWhen.toString()),
+       '...and neither does liveFacilityWhen');
+
+    /* PRESENCE, and only its own key. A four-way test spelled out at each gate
+       is how one of them ends up missing a card. */
+    ok(liveHasFacility({ 'facility-today': 'uuid' }) === true, 'the facility card is present when its uuid is');
+    ok(liveHasFacility({}) === false, '...and absent when it is not — which hides the widget rather than rendering a zero');
+    ok(liveHasFacility(null) === false, '...and a missing map is not a present card');
+    ok(liveHasFacility({ facility: true }) === false,
+       'the REPORT `facility` is not this card — the rental schedule is a different question on a different card');
+
+    /* THE KEY SEPARATES TWO RENTALS MADE IN THE SAME MINUTE. */
+    const a = { 'Booked At': '2026-09-05T09:00:00', 'Rental Id': 'fr-1' };
+    const b = { 'Booked At': '2026-09-05T09:00:00', 'Rental Id': 'fr-2' };
+    ok(liveFacilityKey(a) !== liveFacilityKey(b), 'two rentals in the same minute are two keys');
+    eq(liveFacilityKey(a), liveFacilityKey({ ...a }), '...and one rental is one key across two polls');
+
+    /* THE LANE IS TODAY'S, and it is coloured by whether the booking stands. */
+    const tlRows = [
+      { 'Booked At': '2026-09-05T09:00:00', 'Rental Id': 'x1', Status: 'Confirmed', Site: 'Court 1', 'Customer Name': 'A' },
+      { 'Booked At': '2026-09-05T10:00:00', 'Rental Id': 'x2', Status: 'Canceled',  Site: null,      'Customer Name': 'B' },
+      { 'Booked At': '2026-09-04T10:00:00', 'Rental Id': 'x3', Status: 'Confirmed', Site: 'Court 2', 'Customer Name': 'C' },
+    ];
+    const tl = liveFacilityTimeline(tlRows, '2026-09-05');
+    eq(tl.marks.length, 2, "yesterday's booking is not on today's lane");
+    eq(tl.marks.filter(m => m.state === 'canceled').length, 1, '...and a cancellation is marked as one');
+    eq(liveFacilityTimeline(tlRows, '').marks.length, 0, 'no day, no lane — rather than every row at once');
+  } else {
+    failures.push('the facility helpers could not be lifted — every assertion above is vacuous');
+  }
+
+  /* THE HEADLINE COUNTS BOOKINGS THAT STAND. Source-level, because the
+     component cannot be lifted — and the render cases key on the printed
+     number, which is the half that actually proves it. */
+  ok(/const bookedRows = todayRows\.filter\(r => liveFacilityState\(r\) === 'booked'\)/.test(code),
+     'the facility headline counts bookings, not cancellations');
+  ok(/const canceled\s+= todayRows\.length - bookedRows\.length;/.test(code),
+     '...and the cancellations are counted beside it rather than folded in or dropped');
+  ok(/bookedRows\.reduce\(\(a, r\) => a \+ \(Number\(r\['Price'\]\) \|\| 0\), 0\)/.test(code),
+     '...and so is the money: a cancelled rental contributes none');
+  /* A BOOKING RINGS, A CANCELLATION DOES NOT — the same judgement the
+     check-ins card makes about a refused scan. */
+  ok(/useLiveSound\('facility', feed\.freshRows, r => liveFacilityState\(r\) === 'booked'\)/.test(code),
+     'the facility card rings for a booking and stays quiet for a cancellation');
+  /* ABSENT, NEVER A CONFIDENT ZERO. */
+  ok(/if \(err\) return null;[\s\S]{0,600}?data-live-facility="loading"/.test(code),
+     'a failed facility feed renders nothing, and a pending one renders a loading card');
+
+  /* THE SERVER SIDE. A card wired into the page and not into the server is a
+     widget that 404s its own feed. */
+  ok(/'facility-today':\s+FACILITY_TODAY_UUID/.test(srv),
+     "the facility card is in SHARED_UUIDS — behind its uuid, so it is absent until there is a public link");
+  ok(/FACILITY_TODAY_UUID\s+\?/.test(srv),
+     '...spread conditionally, so an empty uuid omits the key rather than registering a card that cannot answer');
+  ok(/'facility-today': 60 \* 1000/.test(srv),
+     '...and it refreshes on the live clock rather than the org\'s configured TTL');
+  ok(/'enrollments-today', 'checkins-today', 'enrollments-rollup', 'facility-today'/.test(srv),
+     '...and it is date-less: it resolves the org\'s own today in SQL, so sending it a window would send the viewer\'s opinion');
+
+  /* THE CARD MIRROR. */
+  const facSql = fs.readFileSync(path.join(__dirname, '..', 'sql', 'facility-today.sql'), 'utf8');
+  ok(/\{\{org_id\}\}/.test(facSql), 'the mirror takes org_id');
+  ok(!/\{\{start_date\}\}|\{\{end_date\}\}/.test(facSql),
+     '...and no date tags at all, which is what means an API push never needs a tag flip');
+  ok(/win AS MATERIALIZED/.test(facSql),
+     'the day is an instant range in a MATERIALIZED CTE — 7,815ms becomes 4.5ms, and only because the column stays bare');
+  /* OVER THE EXECUTABLE SQL ONLY. The header QUOTES the wrapped form on
+     purpose — it is the before half of the measurement — so a file-wide test
+     fails on correct code. Fifth instance of that in these two repos. */
+  const facCode = facSql.replace(/\/\*[\s\S]*?\*\//g, '')
+                        .split('\n').filter(l => !/^\s*--/.test(l)).join('\n');
+  ok(!/\(f\.created_at AT TIME ZONE [a-z_.]+\)::date =/.test(facCode),
+     '...and the column is never wrapped, which is the whole performance story');
+  ok(/AT TIME ZONE/.test(facCode),
+     '...checked over the executable SQL, which the strip is proven not to have emptied');
+  /* THE GRAIN. Driving off `reservation` instead would count a recurring
+     rental once per date — 2.93 rows each platform-wide — and a live counter
+     that multiplies a season of Friday nights by forty is the lie this card
+     exists not to tell. */
+  ok(/FROM facility_rental f/.test(facSql), 'the card is at RENTAL grain, driven off facility_rental');
+  ok(/UNION\s*\n\s*SELECT res\.rental_id, res\.court_id/.test(facSql),
+     'the site comes from BOTH paths — reservation.court_id is NULL on entire orgs, where reservation_court is the link');
+  ok(/WHERE w\.rental_id IS NOT NULL OR f\.canceled_at IS NOT NULL/.test(facSql),
+     'a rental with no live slot and no cancellation is a cart, and is dropped rather than rendered as "(No Site)"');
+  ok(/ORDER BY f\.created_at DESC, f\.id DESC/.test(facSql),
+     'and the trailing ORDER BY is there — the exact thing that silently vanished on card 17300');
+}
+
+/* ── THE FACE HOLD, AND THE FOUR-ON-A-SCREEN BLOCK ────────────────────────*/
+{
+  /* TWO NUMBERS FOR ONE DURATION, in two files. The class is removed on the JS
+     timer and the ring fades on the CSS animation, so a mismatch either cuts
+     the fade off mid-way or leaves a ring sitting there after it finished —
+     and neither is visible in a diff of one file. Pinned against each other,
+     the same shape as the rollup card's window. */
+  const jsMs  = /const LIVE_FACE_FLASH_MS = (\d+);/.exec(code);
+  const cssS  = /animation: liveFaceIn (\d+)s /.exec(src);
+  ok(jsMs, 'LIVE_FACE_FLASH_MS is readable — without it this pin is vacuous');
+  ok(cssS, "the face's own animation is readable — without it this pin is vacuous");
+  /* ONLY WHEN BOTH ARE READABLE. Comparing two NaNs reports "got null, want
+     null", which names nothing — the two assertions above are what say WHICH
+     half went missing. */
+  if (jsMs && cssS) eq(Number(jsMs[1]), Number(cssS[1]) * 1000,
+     'the face highlight holds for exactly as long as its ring takes to fade');
+
+  /* IT WAS NOT A DURATION PROBLEM. The face used to borrow `liveMarkIn`, whose
+     visible part is over in 8% of its run — so ten nominal seconds were eight
+     hundred visible milliseconds. A longer liveMarkIn would have bought a
+     longer FLAT stretch and nothing else, which is why this asserts the face
+     is on its own animation rather than asserting a bigger number. */
+  ok(/\.ci-person\.live-new \.ci-face \{ animation: liveFaceIn/.test(src),
+     'the face has its own animation, not the timeline mark\'s scale-only pop');
+  ok(/@keyframes liveFaceIn[\s\S]{0,400}?100% \{[^}]*rgba\(22,163,74,0\)/.test(src),
+     '...and it FADES to nothing rather than holding flat, which is what makes the hold visible at all');
+  /* THE OTHER THREE CARDS KEEP THE TEN SECONDS. Moving LIVE_FLASH_MS would
+     have changed the row highlight, the money pop and the timeline marks —
+     three things nobody asked about. */
+  ok((code.match(/setTimeout\(\(\) => setFlash\(new Set\(\)\), LIVE_FLASH_MS\)/g) || []).length === 2,
+     'the registrations and facility cards still clear their highlight on the ten-second clock');
+  ok((code.match(/setTimeout\(\(\) => setFlash\(new Set\(\)\), LIVE_FACE_FLASH_MS\)/g) || []).length === 1,
+     '...and exactly one hook — the check-ins one — holds for the face window');
+
+  /* FOUR ON A SCREEN. The height is chrome, not content: the render check
+     proved that cutting LIVE_ROWS from 8 to 5 moved the grid by zero pixels,
+     because the Programs card's ten rows are what set it — and those ten are
+     Dan's own ask. So the assertion is that the compact block exists and is
+     SCOPED, never that a row count went down. */
+  ok(/\.widget-card\.live-card \{ padding: \d+px \d+px; \}/.test(src),
+     'the live cards are denser than a widget read once');
+  ok(/const LIVE_ROWS = 8;/.test(code),
+     '...and the registration list still shows eight, because shrinking it buys nothing');
+  ok(/const LIVE_PROG_ROWS = 10;/.test(code),
+     '...and the leaderboard still shows the ten Dan asked for');
+  /* EVERY COMPACT RULE IS SCOPED TO `.live-card`. An unscoped one would shrink
+     every widget on the dashboard, which is not what was asked and is not
+     visible in a diff that only reads the added lines. */
+  const compact = /\.widget-card\.live-card \{ padding[\s\S]*?\.live-card \.live-table-progs/.exec(src);
+  ok(compact, 'the compact block is readable — without it this pin is vacuous');
+  if (compact) {
+    const unscoped = compact[0].split('\n')
+      .filter(l => /^\s*\./.test(l) && !/\.live-card/.test(l));
+    ok(unscoped.length === 0,
+       'every compact rule is scoped to .live-card, so no other widget shrinks with them: ' + unscoped.join(' | '));
+  }
+}

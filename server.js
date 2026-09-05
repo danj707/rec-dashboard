@@ -363,6 +363,15 @@ const CHECKINS_LIVE_UUID = 'd9891f69-897e-4d60-985c-50b31ad6d280';
 const ENROLLMENTS_TODAY_UUID  = '970ce23a-d275-475d-a191-4fef9d07855f';
 const ENROLLMENTS_ROLLUP_UUID = '3ecb1e84-a2f0-4580-9d98-eb24e53bdde9';
 const CHECKINS_TODAY_UUID     = '6c43be44-5b83-4db3-be86-ebef472f6a56';
+/* ✅ Facility Bookings Live — Today (card 21583). The fourth live widget, and
+   the only one whose stream was CHOSEN by measurement rather than by which
+   report already existed: per org over 90 days the median org's biggest hour
+   of programme registrations is 44 signups against 185 facility bookings, and
+   facility reaches 96 orgs against programmes' 93. Empty until somebody
+   creates the public link — which hides the widget rather than rendering a
+   confident zero, the same absence rule as its three siblings.
+   https://rec.metabaseapp.com/question/21583 */
+const FACILITY_TODAY_UUID     = '';
 
 const SHARED_UUIDS = {
   facility: 'f6787f45-3a36-4501-8a5f-b0f647451a85',
@@ -421,7 +430,8 @@ const SHARED_UUIDS = {
      an absent key costs nothing and a present one is the whole switch. */
   ...(ENROLLMENTS_TODAY_UUID  ? { 'enrollments-today':  ENROLLMENTS_TODAY_UUID }  : {}),
   ...(ENROLLMENTS_ROLLUP_UUID ? { 'enrollments-rollup': ENROLLMENTS_ROLLUP_UUID } : {}),
-  ...(CHECKINS_TODAY_UUID     ? { 'checkins-today':     CHECKINS_TODAY_UUID }     : {})
+  ...(CHECKINS_TODAY_UUID     ? { 'checkins-today':     CHECKINS_TODAY_UUID }     : {}),
+  ...(FACILITY_TODAY_UUID     ? { 'facility-today':     FACILITY_TODAY_UUID }     : {})
 };
 
 /* A LIVE WIDGET NEEDS ITS OWN CLOCK. Everything else here is a dashboard of a
@@ -433,6 +443,7 @@ const SHARED_UUIDS = {
 const LIVE_REPORT_TTL_MS = {
   enrollments: 60 * 1000, 'checkins-live': 60 * 1000,
   'enrollments-today': 60 * 1000, 'checkins-today': 60 * 1000,
+  'facility-today': 60 * 1000,
   /* THE ROLLUP IS NOT A LIVE FEED, and that is the point of it. It covers
      COMPLETE days only — never today — so within a day its answer cannot
      change, and asking for it once a minute would be asking sixty times for
@@ -449,7 +460,7 @@ const NO_DATE_REPORTS = new Set([
   /* The single-day live cards resolve the org's own today in SQL, so sending
      them a window would be sending the viewer's opinion about a day the org is
      the authority on. That is the bug they exist to remove. */
-  'enrollments-today', 'checkins-today', 'enrollments-rollup'
+  'enrollments-today', 'checkins-today', 'enrollments-rollup', 'facility-today'
 ]);
 
 // ═══════════════════════════════════════════
