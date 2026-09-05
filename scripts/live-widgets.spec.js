@@ -115,11 +115,29 @@ try {
     liftFn(src, 'liveKey') + '\n' + liftFn(src, 'liveSectionKey') + '\n' +
     liftFn(src, 'liveBySection') + '\n' +
     liftFn(src, 'liveMarkState') + '\n' + liftFn(src, 'liveChimeWorthy') + '\n' +
+    liftFn(src, 'livePriceCell') + '\n' +
+    liftFn(src, 'liveCheckinKey') + '\n' + liftFn(src, 'liveCheckinState') + '\n' +
+    liftFn(src, 'liveInitials') + '\n' + liftFn(src, 'liveDayAxis') + '\n' +
+    liftFn(src, 'liveAt') + '\n' + liftFn(src, 'liveCheckinTimeline') + '\n' +
     liftFn(src, 'liveDayShift') + '\n' + liftFn(src, 'liveProgramTrend') + '\n' +
+    liftFn(src, 'liveChimeBurst') + '\n' +
     'const LIVE_TREND_DAYS = ' + (code.match(/LIVE_TREND_DAYS = (\d+)/) || [0,3])[1] + ';\n' +
     'const LIVE_TREND_MIN = '  + (code.match(/LIVE_TREND_MIN = (\d+)/)  || [0,4])[1] + ';\n' +
+    /* THE BURST CONSTANTS ARE READ OUT OF THE PAGE, never transcribed here.
+       Copying `12` into the spec makes it a test of the spec: the page could
+       drop to three and every assertion below would still pass. */
+    ['LIVE_CHIME_MAX', 'LIVE_CHIME_GAP_MS', 'LIVE_CHIME_JITTER_MS',
+     'LIVE_CHIME_DUCK', 'LIVE_CHIME_DETUNE_STEP', 'LIVE_CHIME_DETUNE_STEPS',
+     'LIVE_CHIME_RING_MS']
+      .map(n => {
+        const m = code.match(new RegExp('const ' + n + ' = ([0-9.]+)'));
+        if (!m) throw new Error(n + ' is not declared in the page');
+        return 'const ' + n + ' = ' + m[1] + ';\n';
+      }).join('') +
     'return { liveWindow, liveDay, liveClock, liveMoney, liveKey, liveSectionKey, liveBySection, liveMarkState,' +
-    ' liveChimeWorthy, liveDayShift, liveProgramTrend };')();
+    ' liveChimeWorthy, livePriceCell, liveDayShift, liveProgramTrend, liveChimeBurst,' +
+    ' liveCheckinKey, liveCheckinState, liveInitials, liveDayAxis, liveCheckinTimeline,' +
+    ' LIVE_CHIME_MAX, LIVE_CHIME_GAP_MS, LIVE_CHIME_JITTER_MS, LIVE_CHIME_RING_MS };')();
   pass++;
 } catch (e) {
   // A guard that DIES instead of failing has not told anyone what broke.
@@ -192,8 +210,14 @@ if (H.liveWindow) {
      to hold is that a dead feed can never render a zero, and that lives in the
      component, not in a variable. A header over an empty grid is its own dead
      end, so the section goes too. */
-  ok(/if \(!alive\) return null;/.test(code),
+  /* NOTHING LEFT TO SHOW, not "the first feed failed". There are two feeds
+     now — registrations and check-ins are different cards on different
+     questions — so one of them going down must not take the other off the
+     page, and the SECTION goes only when both are gone. */
+  ok(/if \(!alive && !showCi\) return null;/.test(code),
      'the Live Widgets section hides itself when its widgets have nothing — a heading over a blank space reads as broken, not as absent');
+  ok(/\{alive \? <LiveRegistrations/.test(code) && /\{showCi \? <MembershipCheckins/.test(code),
+     '...and each card is gated on ITS OWN feed, so one failing does not blank the other');
   ok(/const \[alive, setAlive\] = useState\(true\);/.test(code),
      '...optimistically, so a slow first fetch does not flash the section out and back in');
   ok(/\.catch\(\(\) => \{ setErr\(true\);[^}]*onAvailable\(false\); \}\)/.test(code),
@@ -204,7 +228,11 @@ if (H.liveWindow) {
 
 /* ── 5. IT HAS ITS OWN CLOCK ───────────────────────────────────────────────*/
 {
-  ok(/const LIVE_REPORT_TTL_MS = \{ enrollments: 60 \* 1000 \}/.test(srv),
+  /* MEMBERSHIP, NOT THE WHOLE LITERAL. Pinning the exact object broke the day
+     a second live feed was added, with nothing about the enrollments TTL having
+     changed — the same brittleness already recorded twice in the sibling repo
+     for SLACK_NOTIFY and an ALLOWED array. */
+  ok(/const LIVE_REPORT_TTL_MS = \{[^}]*enrollments: 60 \* 1000/.test(srv),
      'the live feed caches for a minute, not the org\'s 15');
   ok(/const ttl = LIVE_REPORT_TTL_MS\[reportType\] \|\| \(orgConfig\?\.cacheTTL \|\| 15\) \* 60 \* 1000;/.test(srv),
      "...and the override wins over the org's own preference: an org that set a 30-minute cache did not ask for a stale \"right now\"");
@@ -213,6 +241,25 @@ if (H.liveWindow) {
      'and Pause STOPS the timer rather than hiding its effect — a list that reorders under the cursor while you read a name is worse than a stale one');
   ok(/return \(\) => clearInterval\(t\);/.test(code),
      'the interval is cleared on unmount, or switching tabs leaves a timer polling forever');
+
+  /* A LIVE FEED NEVER SERVES A STALE ANSWER. Dan: "seems like the live widget
+     is lagging — nothing happens until i click the refresh." Stale-while-
+     revalidate hands the caller the PREVIOUS fetch and refreshes behind it, so
+     with a 60s TTL and a 60s poll the card shows rows one to two minutes old —
+     and clicking Refresh appeared to fix it only because the click landed
+     after the background refresh the poll itself had kicked off. That trade is
+     right for a report of a chosen window and wrong for a widget whose whole
+     claim is "right now". */
+  ok(/const isLive = !!LIVE_REPORT_TTL_MS\[reportType\];/.test(srv),
+     'the fetcher knows which feeds are live');
+  ok(/if \(entry && entry\.stale && isLive\) \{\s*await revalidate\(/.test(srv),
+     '...and a stale LIVE entry is refreshed BEFORE answering, not behind the answer');
+  ok(/if \(entry && entry\.stale && isLive\)[\s\S]{0,400}?if \(entry\) \{\s*if \(entry\.stale\) revalidate\(/.test(srv),
+     '...while everything else still gets stale-while-revalidate — a 30s report must not block a reader');
+  /* AND A FAILED REFRESH STILL ANSWERS. A card that empties itself the first
+     time Metabase hiccups is worse than one a minute behind for a minute. */
+  ok(/return fresh \? fresh\.data : entry\.data;/.test(srv),
+     'a live refresh that failed falls back to the stale rows rather than to nothing');
 }
 
 /* ── 6. IT IGNORES THE DATE PICKER, and says so ────────────────────────────*/
@@ -232,8 +279,12 @@ if (H.liveWindow) {
 
 /* ── 7. NOT IN PRINT, and ABOVE the stored sections ───────────────────────*/
 {
-  ok(/\{!IS_PRINT && activeTab === 'dashboard' && availableReports\.enrollments && \(/.test(code),
+  ok(/\{!IS_PRINT && activeTab === 'dashboard'\s*\n?\s*&& \(availableReports\.enrollments \|\| availableReports\['checkins-live'\]\) && \(/.test(code),
      'the live section is excluded from print — a printed "right now" is a lie the moment the paper leaves the printer');
+  /* EITHER card is enough to render the section: an org with a check-ins link
+     and no enrollments one would otherwise lose a widget it has. */
+  ok(/availableReports\.enrollments \|\| availableReports\['checkins-live'\]/.test(code),
+     '...and either feed being available is enough to render it');
   const live = code.indexOf('<LiveSection');
   const rest = code.indexOf('displaySections.map');
   ok(live > 0 && rest > live,
@@ -569,8 +620,13 @@ if (H.liveBySection) {
 
   ok(/liveBySection\(rows, today\)/.test(code),
      'the widget calls the shared model rather than aggregating inline');
-  ok(/function useLiveEnrollments/.test(code) && /const feed = useLiveEnrollments/.test(code),
-     'ONE feed for both widgets — two polls would double the query and let the cards disagree about the same minute');
+  ok(/function useLiveEnrollments/.test(code) && /const feed   = useLiveEnrollments/.test(code),
+     'ONE feed for both ENROLLMENT widgets — two polls would double the query and let the cards disagree about the same minute');
+  /* The check-ins card is the exception, and deliberately: it reads a
+     DIFFERENT Metabase card, so sharing the enrollments feed is not even
+     possible. What must not drift is the poll behaviour, asserted below. */
+  ok((code.match(/const feed\s+= useLiveEnrollments|const ciFeed = useLiveCheckins/g) || []).length === 2,
+     '...and the check-ins card has its own, because it reads a different card');
   ok(!/function ProgramsLive[\s\S]{0,4000}?fetch\(/.test(code),
      '...and the programmes card does not fetch for itself');
   /* PROGRAM REVENUE IS MONEY RECEIVED (Dan: "Change 'charged' on the programs
@@ -713,6 +769,44 @@ if (H.liveBySection) {
        "...via liveMarkState, not its own arithmetic — one predicate, three readers");
   }
 
+  /* WHAT ARRIVED, OVER WHAT WAS CHARGED. Dan, on a $325 registration with $195
+     paid on a payment plan: "would like to see 195/325 here." Lifted and RUN,
+     because the interesting part is WHICH rows get two figures. */
+  if (H.livePriceCell) {
+    const { livePriceCell } = H;
+    const part = livePriceCell({ Price: 325, Paid: 195 });
+    ok(part.paid === '$195' && part.price === '$325',
+       'a part-paid row shows what arrived over what was charged');
+    ok(livePriceCell({ Price: 325, Paid: 325 }).paid === '',
+       'a fully paid row shows one figure — "$325 / $325" is noise');
+    ok(livePriceCell({ Price: 325, Paid: 325 }).price === '$325',
+       '...and it is the charge');
+    /* AN UNPAID ROW SHOWS NO ZERO. "$0 / $325" reads as a refund rather than
+       as a booking nobody has paid for yet; the grey dot already says it. */
+    ok(livePriceCell({ Price: 325, Paid: 0 }).paid === '',
+       'an unpaid row shows no paid figure');
+    ok(livePriceCell({ Price: 325 }).price === '$325',
+       '...and still prints the charge');
+    ok(livePriceCell({}).price === '\u2014',
+       'a row with no money at all is a dash, not an empty cell');
+    /* THE STATE AND THE CELL CANNOT DISAGREE. Both read liveMarkState, so a
+       row the dots call part-paid is exactly the row that gets two figures. */
+    const rows = [{ Price: 325, Paid: 195 }, { Price: 45, Paid: 45 }, { Price: 50, Paid: 0 }];
+    ok(rows.every(r => (H.liveMarkState(r) === 'part') === !!livePriceCell(r).paid),
+       'two figures appear on exactly the rows the dots call part-paid');
+  }
+
+  /* COMING BACK TO THE TAB REFETCHES. A 60-second interval in a hidden tab is
+     not a 60-second interval — browsers throttle backgrounded timers hard — so
+     a dashboard on a second monitor shows its age the moment somebody looks at
+     it. That is the other half of "nothing happens until i click the refresh". */
+  ok(/visibilitychange/.test(code) && /document\.visibilityState === 'visible'/.test(code),
+     'the feed refetches when the tab becomes visible');
+  ok(/visibilityState === 'visible' && !pausedRef\.current/.test(code),
+     '...but not while paused — a tab switch is not an un-pause');
+  ok(/removeEventListener\('visibilitychange'/.test(code),
+     '...and the listener comes off, or a remount stacks a second fetch on every switch');
+
   /* THE FIRST LOAD IS SILENT, and this is the load-bearing one. The chime
      rides the `fresh` diff, which is empty on the first poll by construction —
      so opening the dashboard on a week holding 61 paid registrations plays
@@ -728,11 +822,90 @@ if (H.liveBySection) {
   ok(/\.filter\(r => r && liveChimeWorthy\(r\)\)/.test(loadFn),
      'the arrivals are filtered to the paid ones before any of them rings');
 
-  /* A BURST IS CAPPED. Twelve arrivals in one poll is one event to somebody
-     listening; twelve overlapping coins is a reason to mute the card for good. */
-  ok(/LIVE_CHIME_MAX\s*=\s*3/.test(code), 'a batch rings at most three times');
-  ok(/\.slice\(0, LIVE_CHIME_MAX\)/.test(loadFn), '...and the cap is applied to the batch, not hoped for');
-  ok(/i \* LIVE_CHIME_GAP_MS/.test(loadFn), '...staggered, so two arrivals read as two');
+  /* A BIG REGISTRATION DAY SOUNDS LIKE ONE. Dan: "When an org has a big
+     registration day, I want it to sound like a las vegas casino." The
+     schedule is LIFTED AND RUN, because the only checkable claim about a burst
+     in a browser with no ears is the shape of it. */
+  ok(/liveChimeBurst\(paid\.length\)/.test(loadFn),
+     'the batch is handed to the burst scheduler whole — the cap lives in one place');
+  ok(/liveChime\(kind, hit\)/.test(loadFn),
+     '...and each ring carries its own level and detune');
+  if (H.liveChimeBurst) {
+    const { liveChimeBurst, LIVE_CHIME_MAX, LIVE_CHIME_GAP_MS, LIVE_CHIME_JITTER_MS } = H;
+    const half = () => 0.5;                  // seeded: no jitter, so delays are exact
+    /* EVERY INDEXED READ GOES THROUGH THIS. Shrinking the cap makes `big[3]`
+       undefined, and reading `.delay` off it kills the process with a
+       TypeError naming nothing — which is how this spec first reacted to the
+       cap being put back to three: it DIED instead of failing by name, the
+       lesson already recorded twice in these repos. */
+    const hit = (b, i) => (b && b[i]) || { delay: null, level: null, detune: null };
+    ok(LIVE_CHIME_MAX >= 8,
+       'a busy poll rings enough times to sound busy (cap is ' + LIVE_CHIME_MAX + ')');
+    ok(liveChimeBurst(0).length === 0, 'nothing arriving rings nothing');
+    ok(liveChimeBurst(1).length === 1, 'one arrival rings once');
+    ok(liveChimeBurst(60).length === LIVE_CHIME_MAX,
+       'a flood is capped, so one poll cannot ring forever');
+
+    /* A LONE ARRIVAL IS UNCHANGED. The duck exists for crowds; applying it to
+       the common case would make every ordinary signup quieter than it was. */
+    ok(hit(liveChimeBurst(1), 0).level === 1, 'a single arrival rings at full level');
+    ok(hit(liveChimeBurst(1), 0).delay === 0, '...and immediately');
+    ok(hit(liveChimeBurst(1), 0).detune === 0, '...and in tune');
+
+    /* DUCKED, BUT NOT TO EQUAL LOUDNESS AND NOT BY THE BATCH SIZE. Rings at
+       full gain clip and crackle, which sounds broken rather than loud — but
+       ducking by the whole batch would divide a forty-ring burst by five times
+       the loudness actually present, since only about eight of them ever sound
+       at once. The biggest morning of the year would ring the quietest. */
+    const big = liveChimeBurst(LIVE_CHIME_MAX, half);
+    ok(big.every(h => h.level === hit(big, 0).level), 'one level across the burst');
+    ok(hit(big, 0).level < 1, 'a burst is ducked, so a peal does not clip');
+    ok(hit(big, 0).level > Math.pow(LIVE_CHIME_MAX, -0.5),
+       '...but LESS than equal-loudness, so a bigger day really is louder');
+    ok(liveChimeBurst(3, half)[0].level < 1, 'even three arrivals duck a little');
+    ok(hit(big, 0).level > 0.25,
+       'a full burst is still clearly audible per ring, not divided into nothing');
+    /* THE DUCK SATURATES. This is the assertion that fails if the level is
+       taken from the batch size again: past the overlap point a longer burst
+       has to be LONGER, not quieter. */
+    const overlap = Math.round(H.LIVE_CHIME_RING_MS / LIVE_CHIME_GAP_MS);
+    ok(overlap > 1 && overlap < LIVE_CHIME_MAX,
+       'the fixture actually spans the overlap point (overlap is ' + overlap + ')');
+    ok(hit(liveChimeBurst(overlap + 1, half), 0).level === hit(big, 0).level,
+       'a longer burst is longer, not quieter — the duck saturates at the overlap');
+
+    /* DETUNED, or twelve identical waveforms sum coherently into ONE louder
+       coin instead of into a crowd. Under a semitone, so the coin's own
+       interval still sounds in tune. */
+    ok(new Set(big.slice(0, 4).map(h => h.detune)).size === 4,
+       'consecutive rings are detuned against each other');
+    ok(big.every(h => Math.abs(h.detune) < 100),
+       '...by less than a semitone, so nothing sounds out of tune');
+
+    /* STAGGERED AND ORDERED. A burst that can schedule a later ring earlier
+       than an earlier one is not a run, it is a smear. */
+    ok(big.every((h, i) => i === 0 || h.delay >= hit(big, i - 1).delay),
+       'the schedule never runs backwards');
+    ok(hit(big, 1).delay === LIVE_CHIME_GAP_MS,
+       'the gap is the configured one when the jitter is centred');
+    ok(big.every(h => h.delay >= 0), 'no ring is scheduled in the past');
+
+    /* THE LEAD RING IS EXACT. It is the one somebody reacts to, and delaying
+       it by up to a jitter for nothing would make the card feel slower. */
+    const jittery = liveChimeBurst(LIVE_CHIME_MAX, () => 0);   // full negative jitter
+    ok(hit(jittery, 0).delay === 0, 'the first ring is never jittered');
+    ok(jittery.every((h, i) => Math.abs(h.delay - i * LIVE_CHIME_GAP_MS) <= LIVE_CHIME_JITTER_MS),
+       'every other ring stays within one jitter of its slot');
+    ok(new Set([hit(liveChimeBurst(6, () => 0), 3).delay,
+                hit(liveChimeBurst(6, () => 1), 3).delay]).size === 2,
+       'the jitter actually moves a ring — an even stagger is a machine gun');
+  }
+
+  /* THE BUS IS RESTORED EVEN IF A VOICE THROWS, or one broken sound mutes
+     every ring after it — the failure mode the ring/voice counter split was
+     added for in the first place. */
+  ok(/finally \{ _liveOut = null; _liveDetune = 0; \}/.test(code),
+     'the output bus and detune are put back in a finally');
 
   /* MUTED BY DEFAULT, and the stored form has to make the DEFAULT the safe one:
      `!== '0'` means an absent key, an unreadable store and a private window all
@@ -914,17 +1087,160 @@ if (H.liveProgramTrend && H.liveDayShift) {
   ok(/\.live-trend-up   \{ color: var\(--text-muted\)/.test(code), '...and up is muted, not a second green');
 }
 
-/* THE REPORT GOES LAST, and this was a real bug for one revision: the block
-   below used to sit ABOVE section 13, so every assertion added after it ran,
-   incremented `pass`, and could never be REPORTED — a failing one exited
-   nowhere and the spec printed a clean 146. One of them was in fact failing.
-   Same family as the guards in the sibling repo that died instead of failing:
-   a check whose result cannot reach the report is not a check. */
-if (failures.length) {
-  console.error('\n✗ live-widgets.spec.js — ' + failures.length + ' failure(s):\n');
-  failures.forEach(f => console.error('  ✗ ' + f));
-  console.error('\n' + pass + ' passed, ' + failures.length + ' failed.\n');
-  process.exit(1);
+
+
+/* THE REPORT RUNS ON EXIT, and that is a structural fix rather than a rule to
+   remember. It used to be a plain `if (failures.length)` near the end, on the
+   understanding that nothing would ever be appended below it — and that
+   understanding failed TWICE. The first time a block sat above it and printed
+   a clean 146 with one assertion failing; the second time (2026-09-05) an
+   appended check-ins block sat BELOW it, so its 34 assertions ran, incremented
+   `pass`, recorded two genuine failures under a mutation, and the spec printed
+   "✓ 305 assertions passed". A mutation that survives because the report never
+   reached the console is worse than no guard at all.
+
+   An exit handler cannot be appended past. `process.exitCode` rather than
+   `process.exit`, so the handler is allowed to finish writing. */
+process.on('exit', () => {
+  if (failures.length) {
+    console.error('\n✗ live-widgets.spec.js — ' + failures.length + ' failure(s):\n');
+    failures.forEach(f => console.error('  ✗ ' + f));
+    console.error('\n' + pass + ' passed, ' + failures.length + ' failed.\n');
+    process.exitCode = 1;
+  } else {
+    console.log('✓ live-widgets.spec.js — ' + pass + ' assertions passed.');
+  }
+});
+
+
+/* ── MEMBERSHIP CHECK-INS ─────────────────────────────────────────────────*/
+{
+  if (H.liveCheckinState) {
+    const { liveCheckinState, liveInitials, liveCheckinKey, liveDayAxis, liveCheckinTimeline } = H;
+
+    /* A DENIAL IS NOT ATTENDANCE. Anything counting attendance must filter on
+       this, or a member the desk turned away is reported as having come in —
+       the facility Summary counting invoice fee lines as bookings, one report
+       over. Lifted and RUN, because a regex passes on an inverted comparison. */
+    ok(liveCheckinState({ Status: 'Failed' })     === 'failed', 'a refused scan reads failed');
+    ok(liveCheckinState({ Status: 'Checked In' }) === 'ok',     'an accepted scan reads ok');
+    /* A ROW WITH NO STATUS IS AN ACCEPTED SCAN, and this is the dangerous one:
+       testing `=== 'Checked In'` instead would make every row of a pre-column
+       feed — including every warm cache entry — read as a refusal, and the
+       card would report the whole day as turned away. Same rule as ciIsFailed
+       in the sibling repo. */
+    ok(liveCheckinState({})                       === 'ok',     'a row with no Status is a check-in, not a refusal');
+    ok(liveCheckinState({ Status: 'failed' })     === 'ok',     '...and the comparison is exact, not case-folded guessing');
+
+    /* THE HEADLINE COUNTS ACCEPTED SCANS ONLY. */
+    ok(/const okRows   = todayRows\.filter\(r => liveCheckinState\(r\) === 'ok'\)/.test(code),
+       'the check-in count is accepted scans, never every row');
+    ok(/data-live-ci-today=\{String\(okRows\.length\)\}/.test(code),
+       '...and that is the number on screen');
+    /* REFUSALS ARE SHOWN, NOT HIDDEN — they are the interesting rows — but
+       counted separately and named. */
+    ok(/turned away/.test(code), 'refusals are named on screen rather than folded into the count');
+    /* AND NO REASON IS INVENTED. side_effects is empty on all 58 denials
+       platform-wide, and of 52 membership refusals only 5 had an expired,
+       unstarted or cancelled membership — so a "Reason" column would be
+       fabrication sitting beside real rows. */
+    ok(!/Reason/.test(code.slice(code.indexOf('function MembershipCheckins'),
+                                 code.indexOf('function LiveSection'))),
+       'no reason for a refusal is invented — the log records none');
+
+    /* INITIALS ARE THE DESIGN AND THE PHOTO SLOTS INTO THEM: only 7.5% of the
+       33,239 members who checked in over 90 days have an image, and it is
+       bimodal (Clarkstown 94.7%, Apex 2.2%), so a photo-first row is a wall of
+       holes at most orgs. */
+    ok(liveInitials('Ada Lovelace')       === 'AL', 'two names give two initials');
+    ok(liveInitials('Prince')             === 'P',  'one name gives one');
+    ok(liveInitials('  ada   b lovelace ')=== 'AL', '...taken from the FIRST and LAST, not the first two');
+    ok(liveInitials('')                   === '?',  'a nameless row still renders a face');
+    ok(liveInitials(null)                 === '?',  '...and so does a null one');
+    ok(/<em>\{liveInitials\(nm\)\}<\/em>/.test(code) && /r\['Photo'\]\s*\n?\s*\?\s*<img/.test(code),
+       'the photo sits OVER the initials rather than replacing them');
+    ok(/onError=\{e => \{ e\.target\.style\.display = 'none'; \}\}/.test(code),
+       'a broken image URL falls back to the initials, not to a torn-page glyph');
+
+    /* THE LINK TAKES THE UUID. "Member ID" is users.rec_id, the six-character
+       code staff read at a desk — it looks identical in a link and 404s. */
+    ok(/liveUserUrl\(recOrgId, r\['User ID'\]\)/.test(code),
+       "the member link is built from User ID, the uuid — never Member ID");
+    ok(!/liveUserUrl\(recOrgId, r\['Member ID'\]\)/.test(code),
+       '...and never from the desk code');
+
+    /* ONE AXIS, TWO LANES. The two cards sit one above the other, so a noon
+       that is not in the same place on both is a defect a reader sees at once
+       — and two copies of the arithmetic is how that happens. */
+    const ax = liveDayAxis('2026-09-05');
+    ok(ax.tickLabels.length === 6, 'the axis is a fixed 24 hours in 4-hour ticks');
+    ok(ax.tickLabels[0].text === '12a' && ax.tickLabels[3].text === '12p',
+       '...labelled in 12-hour clock');
+    ok(ax.span === 24 * 3600 * 1000, '...and one day wide');
+    ok(/const ax = liveDayAxis\(today\);/.test(code.slice(code.indexOf('function liveTimeline'))),
+       'the registrations lane reads the shared axis');
+    ok((code.match(/liveDayAxis\(/g) || []).length >= 3,
+       '...and so does the check-ins lane, off the same function');
+
+    /* A SCAN'S IDENTITY. A household of five scanning together really does
+       produce same-second rows, so a key of time alone would collapse them
+       into one and the card would under-count a family. */
+    const fam = t => ({ 'Checked In At': t, 'User ID': 'u1', 'Desk Location': 'Front', Product: 'Adult' });
+    ok(liveCheckinKey(fam('2026-09-05T09:00:00')) !== liveCheckinKey({ ...fam('2026-09-05T09:00:00'), 'User ID': 'u2' }),
+       'two people scanning in the same second are two rows');
+    ok(liveCheckinKey(fam('2026-09-05T09:00:00')) === liveCheckinKey(fam('2026-09-05T09:00:00')),
+       '...and the same scan read twice is one');
+
+    /* THE LANE DRAWS TODAY ONLY, and colours by acceptance rather than money. */
+    const rows = [
+      { 'Checked In At': '2026-09-05T09:00:00', Member: 'A', Status: 'Checked In', 'User ID': 'a', 'Desk Location': 'F', Product: 'P' },
+      { 'Checked In At': '2026-09-05T18:00:00', Member: 'B', Status: 'Failed',     'User ID': 'b', 'Desk Location': 'F', Product: 'P' },
+      { 'Checked In At': '2026-09-04T09:00:00', Member: 'C', Status: 'Checked In', 'User ID': 'c', 'Desk Location': 'F', Product: 'P' },
+    ];
+    const tl = liveCheckinTimeline(rows, '2026-09-05');
+    ok(tl.marks.length === 2, "yesterday's scans are not drawn on today's lane");
+    ok(tl.marks[0].state === 'ok' && tl.marks[1].state === 'failed',
+       'a refusal is marked as one rather than as an ordinary scan');
+    ok(Math.round(tl.marks[0].left) === 38 && Math.round(tl.marks[1].left) === 75,
+       '...and each sits at its own hour (9am and 6pm)');
+    ok(liveCheckinTimeline(rows, '').marks.length === 0,
+       'no day, no lane — a feed that has not answered draws nothing');
+  }
+
+  /* NO SOUND ON THIS CARD, deliberately: the chime says "somebody just gave
+     you money", and a beep on every desk scan would train a busy gym to mute
+     the section and lose the registrations chime with it. */
+  const ciCard = code.slice(code.indexOf('function MembershipCheckins'), code.indexOf('function LiveSection'));
+  ok(!/sound/.test(ciCard), 'the check-ins card offers no sound');
+
+  /* THE WINDOW IS TWO DAYS, NOT ONE. `liveWindow` builds dates in the VIEWER's
+     zone and the card windows on the ORG's, so a one-day window asks for a
+     date the org has not reached yet once it is tomorrow for the viewer — and
+     the card comes back empty. Measured against the live card: today's window
+     returned 0 rows at apex and el-segundo while the previous day returned
+     1,150 and 198. */
+  ok(/const w = liveWindow\(2\);/.test(code),
+     'the check-ins feed asks for two days, so an org behind the viewer is never empty');
+  ok(/const today = rows\.length \? liveDay\(rows\[0\]\['Checked In At'\]\) : ''/.test(code),
+     "...and TODAY is the newest row's own org-timezone day, never the viewer's clock");
+
+  /* NO CARD, NO REQUEST. Polling a 404 every sixty seconds for every org
+     without a public link is a self-inflicted error rate that reads exactly
+     like a broken feed in the logs. */
+  ok(/if \(!enabled\) \{ setLoading\(false\); if \(onAvailable\) onAvailable\(false\); return; \}/.test(code),
+     'the check-ins feed does not fetch when the org has no such card');
+  ok(/if \(paused \|\| !enabled\) return;/.test(code),
+     '...and does not start a poll clock either');
+
+  /* THE TWO HOOKS MUST NOT DRIFT on the two things that were just fixed. A
+     feed that keeps serving a stale answer, or one that sleeps through a
+     backgrounded tab, is the bug Dan reported — and it would be invisible if
+     only one of the two carried the fix. */
+  ok((code.match(/document\.addEventListener\('visibilitychange', onVis\)/g) || []).length === 2,
+     'BOTH live feeds refetch when the tab becomes visible');
+  ok((code.match(/const t = setInterval\(load, LIVE_POLL_MS\);/g) || []).length === 2,
+     '...and both poll on the same clock');
+  ok((code.match(/document\.removeEventListener\('visibilitychange', onVis\)/g) || []).length === 2,
+     '...and both take the listener off again');
 }
 
-console.log('✓ live-widgets.spec.js — ' + pass + ' assertions passed.');

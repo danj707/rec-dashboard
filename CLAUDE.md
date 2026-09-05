@@ -1,5 +1,373 @@
 # Project notes for Claude
 
+## The Membership Check-Ins live widget (2026-09-05)
+
+Dan: *"a membership check in card — showing the last XX membership checkins,
+similar to this Facility Insights view"*, and then on the shape: *"I'd prefer a
+similar line chart or graph, with a small section underneath of the users who've
+checked in. And add their tiny photos, orgs love that."*
+
+Card **21517**, its own feed, sitting beside the two enrollment cards.
+
+### LIVE, AND THE SIGN-OFF CAUGHT A BUG BEFORE IT SHIPPED
+
+Public UUID `d9891f69-897e-4d60-985c-50b31ad6d280`, verified
+cache-independently through the public endpoint with the app's own
+`date/single` parameters: **apex 1,150 scans in 7.7s cold and 0.9s warm,
+el-segundo 198 in 1.7s**, three registered parameters.
+
+**Asking for the VIEWER's today returned ZERO rows at both orgs**, while the
+previous day returned 1,150 and 198. `liveWindow` builds dates in the viewer's
+zone and the card windows on the ORG's, so from the org's midnight-in-viewer-
+time onwards — for a Denver org read from Eastern that is 22:00 to 00:00 every
+night, and longer for a Pacific one — a one-day window asks for a date the rec
+centre has not reached yet. An empty live card at 10pm is exactly the confident
+zero this widget exists not to render.
+
+It asks for **two** days now and derives `today` from the newest row's own
+org-timezone stamp, which is how the registrations card already absorbs this by
+asking for seven. **No render check or spec could have caught it** — the fixture
+supplies whatever day it likes. Only a live probe of the real card does.
+
+The live sample also confirmed the design call: photo coverage was **29/1150 at
+apex (2.5%) and 0/198 at el-segundo**, the measured 7.5%-and-bimodal figure
+showing through. And **zero refusals** in 1,348 real scans, which is what 58
+denials platform-wide *ever* looks like from the inside.
+
+### IT IS ABSENT UNTIL SOMEBODY PUBLISHES THE LINK, and that is the design
+
+`CHECKINS_LIVE_UUID` is a literal in server.js and `SHARED_UUIDS` **omits the
+key entirely while it is empty**. So `availableReports` has no entry, the route
+404s, the card renders nothing, the section hides it — and, the part worth
+noting, **the hook does not even poll**. Polling a 404 every sixty seconds for
+every org without a link is a self-inflicted error rate that reads exactly like
+a broken feed in the logs.
+
+A confident *"0 check-ins today"* on a morning when the desk is scanning people
+through is the reading that had to be impossible. Filling in the uuid is the
+whole wiring; nothing else changes.
+
+**The tag flip came back CLEAN — three parameters, not six.** Worth recording,
+because this is the first card in either repo where an API-created card's flip
+did not leave `string/=` duplicates behind. The six-parameter mess is common,
+not inevitable.
+
+### A DENIAL IS NOT ATTENDANCE
+
+`liveCheckinState(r)` is the one predicate, at module scope so the spec can RUN
+it. The headline counts **accepted scans only**: a card that folded refusals in
+would report a member the desk turned away as having come in — the facility
+Summary counting invoice fee lines as bookings, one report over.
+
+- **A ROW WITH NO `Status` IS AN ACCEPTED SCAN.** Testing `=== 'Checked In'`
+  instead would make every row of a pre-column feed — including every warm
+  cache entry — read as a refusal, and the card would report the whole day as
+  turned away. Same rule as `ciIsFailed` on the check-ins report.
+- **Refusals are shown, not hidden.** They are the interesting rows. They are
+  counted separately, named on screen, and marked red in the lane.
+- **NO REASON IS INVENTED, and none can be.** `attendance_event.side_effects` is
+  empty on all 58 denials platform-wide, and of 52 membership refusals only 5
+  had an expired, unstarted or cancelled membership — so a "Reason" column would
+  be a confident sentence sitting beside real rows. The spec fails if one
+  appears.
+
+### ONE AXIS, TWO LANES
+
+`liveDayAxis(today)` is extracted from `liveTimeline` and read by both cards.
+They sit one above the other, so **a noon that is not in the same place on both
+is a defect a reader sees immediately**, and two copies of that arithmetic is
+how it happens. The MARKS are deliberately not shared: a signup is coloured by
+what its money is doing, a scan by whether it was accepted.
+
+An accepted scan is the **same green** as a paid signup — both mean "this went
+through", and a second green across two adjacent cards would read as a third
+state. A refusal is **red**, not the registrations card's grey: grey there means
+"no money yet", which is ordinary and waits.
+
+The render case compares the rendered tick POSITIONS of the two lanes, which is
+the only thing that can catch them drifting apart.
+
+### INITIALS ARE THE DESIGN AND THE PHOTO SLOTS INTO THEM
+
+Measured before building, over the 33,239 members who checked in with a
+membership or pass in 90 days: **7.5% have an image**, and it is bimodal rather
+than merely thin — Clarkstown 94.7%, Euclid 93.5%, Douglas County 22.9%, Norman
+16.9%, **Apex 2.2%**. So a photo-first row is a delight at two orgs and a wall
+of holes at the rest.
+
+The photo is absolutely positioned **over** the initials in the same box, so
+both cases are the same shape and the row never goes ragged. A broken image URL
+hides itself and the initials are simply already there.
+
+**The link takes `User ID`, the uuid.** `Member ID` is `users.rec_id`, the
+six-character code staff read out at a desk — it looks identical in a link and
+404s. A row without a uuid renders as plain text; a link to nowhere is worse
+than none.
+
+### NO SOUND ON THIS CARD
+
+The chime says *"somebody just gave you money"*. A beep every time the front
+desk scans a card would be unbearable in a busy gym and would train people to
+mute the whole section — taking the registrations chime with it.
+
+### TWO FEEDS, AND THE THING THAT MUST NOT DRIFT
+
+The check-ins card reads a **different Metabase card**, so it cannot share the
+enrollments feed. Each card is gated on its own verdict and the SECTION hides
+only when both are gone — one feed failing must not blank the other.
+
+What must not drift is the poll behaviour, which had just been fixed on the
+other hook: the spec counts **two** `visibilitychange` listeners, **two**
+`setInterval(load, LIVE_POLL_MS)` and **two** removals. A stale-serving or
+tab-sleeping feed is exactly the bug Dan reported, and it would be invisible if
+only one of the two carried the fix.
+
+### Guards
+
+`live-widgets.spec.js` 273 → **307 assertions**, lifting and RUNNING
+`liveCheckinState`, `liveInitials`, `liveCheckinKey`, `liveDayAxis` and
+`liveCheckinTimeline`. Plus **12 `ci-check-render.js` cases** over a fixture
+where every number is different on purpose — **17 rows · 16 today · 14 accepted
+· 2 turned away · 13 people** — because a fixture where the row count and the
+accepted count coincide cannot tell a correct card from one reading the wrong
+set. Ada scans twice so `people < accepted`; one row carries a photo and one
+carries no uuid, the two branches a source assertion cannot separate.
+
+**Two brittle literals had to be generalised**, both the shape already recorded
+for `SLACK_NOTIFY` and an `ALLOWED` array: the `LIVE_REPORT_TTL_MS` assertion
+pinned the whole object and broke when a second live feed was added, and the
+`every bolt is animated` case pinned `"2of2"` and broke when a third card
+appeared. Both test the property now — membership, and the RATIO with a floor
+of two so a page rendering no bolts cannot pass as `0of0`.
+
+**A spec that DIED instead of failing, sixth instance.** `liveCheckinTimeline`
+calls `liveAt`, which was not in the lift, so the spec threw a bare
+`ReferenceError` at call time naming nothing rather than failing by name. The
+lift block's try/catch only covers lift time, not call time.
+
+### AND THE REPORT-GOES-LAST TRAP BIT AGAIN — the spec printed a clean pass over two real failures
+
+The check-ins block was appended BELOW the `if (failures.length)` reporter. So
+all 34 of its assertions ran, incremented `pass`, recorded two genuine failures
+under a mutation — and the spec printed **"✓ 305 assertions passed"** and
+exited 0. The mutation (`liveCheckinState` inverted, so a row with no `Status`
+reads as a refusal) SURVIVED, and the only visible symptom was the pass count
+dropping by two.
+
+This file already carried a comment warning about exactly this, from the first
+time it happened. **A rule written in a comment did not stop the second
+instance**, so the fix is structural: the reporter is a `process.on('exit')`
+handler now, which cannot be appended past, using `process.exitCode` rather
+than `process.exit` so it is allowed to finish writing. Verified both ways —
+the mutated run exits 1 and names both assertions, the clean run exits 0.
+
+Generalise it: *when a rule about where code goes has failed twice, stop
+restating the rule and remove the position from the design.*
+
+**And the first fix left the old block behind**, which is worth recording as
+its own mistake: for one commit the file carried BOTH reporters, and the stale
+`if (failures.length)` sat ABOVE the check-ins section with a `process.exit(1)`
+in it — so any pre-existing failure would have exited before those 34
+assertions ran at all. The exit handler was what kept it honest. Removing a
+mechanism means removing it, not adding its replacement next to it.
+
+
+## THE LIVE CARD WAS A MINUTE BEHIND, AND REFRESH ONLY LOOKED LIKE THE FIX (2026-09-05)
+
+Dan: *"seems like the larger orgs are lagging a bit on the live cards? Not
+seeing these recent bookings, no?"* and then *"seems like the live widget is
+lagging — nothing happens until i click the refresh."*
+
+**Three separate things, and only one of them was what it looked like.**
+
+### 1. THE CACHE WAS HANDING BACK THE PREVIOUS FETCH
+
+`fetchMetabaseData` is stale-while-revalidate: a caller gets the cached rows
+immediately and, if they are past the TTL, a refresh is kicked off *behind* the
+answer. With a 60s TTL and a 60s poll that means the card shows rows between one
+and two minutes old, sawing between the two:
+
+| | |
+|---|---|
+| t=0 | cold fetch, cache = D0 |
+| t=60 | stale → **serves D0**, kicks a refresh that lands at ~t=65 |
+| t=120 | fresh → serves D65 |
+| t=180 | stale → **serves D65**, kicks a refresh |
+
+**AND THAT IS EXACTLY WHY THE REFRESH BUTTON LOOKED LIKE THE CURE.** `refresh`
+IS `load` — the same function, the same URL, no cache-buster. Clicking it a
+moment after a poll simply lands *after* the background refresh that poll had
+already started, so it gets the rows the poll should have had. The button was
+never doing anything the poll was not; it was arriving later. Anyone diagnosing
+this from the symptom will look for a difference between the two code paths and
+there is none.
+
+The trade is right for a dashboard of a window somebody chose — nobody should
+wait 30s for a report they can read a quarter of an hour old. It is wrong for a
+widget whose whole claim is *"right now"*, where a stale answer is the failure
+rather than the graceful degradation. **So a live feed now AWAITS the refresh**
+(`isLive` off `LIVE_REPORT_TTL_MS`, which already knows which feeds those are);
+everything else is unchanged.
+
+- **It costs the poll the card's own time**, measured through the public
+  endpoint: shrewsbury **3.0s**, el-segundo **5.2s**, san-francisco **9.5s** —
+  comfortably inside the 60s poll.
+- **`revalidate` now returns the IN-FLIGHT PROMISE instead of `null`** when a
+  refresh is already running. Fire-and-forget callers never noticed; a caller
+  that has to *wait* would have fallen straight back to the stale rows it was
+  avoiding — silently, and only when two viewers polled in the same second,
+  which is the hardest version of that bug to ever see.
+- **A failed refresh still answers with the stale rows.** A card that empties
+  itself the first time Metabase hiccups is worse than one a minute behind for
+  a minute.
+
+### 2. A HIDDEN TAB'S 60-SECOND TIMER IS NOT A 60-SECOND TIMER
+
+Browsers throttle `setInterval` hard in backgrounded pages, so a dashboard left
+open on a second monitor can go minutes without a poll and then show its age the
+instant somebody looks at it. Coming back to the tab IS the request for current
+rows, so the feed refetches on `visibilitychange` rather than waiting out
+whatever is left of an interval that may not have been running. **Not while
+paused** — a tab switch is not an un-pause.
+
+### 3. SESSION BOOKINGS NEVER REACHED THE CARD AT ALL — this is the big one
+
+Card 21286's `bk` CTE filters `b.type = 'section'`. The biggest orgs run camps
+and drop-ins in `registration_mode = per-session`, and those register as
+`type = 'session'`. Measured over seven days, deduped to one row per
+(customer, participant, section) — a parent booking a nine-day camp is nine
+booking rows and must stay one line:
+
+| org | on the card | missing | |
+|---|---|---|---|
+| apex | 795 | **+556** | +70% |
+| essex-junction | 261 | **+241** | +92% |
+| el-segundo | 211 | **+319** | +151% |
+
+So on a busy morning the feed skips long stretches, which reads as lag and is
+not. **The card was built for these rows and the filter is what stops them**: it
+already `LEFT JOIN`s `session` and resolves
+`COALESCE(b.section_id, se.section_id)` downstream — anticipating session
+bookings the upstream `WHERE` never lets through.
+
+Not fixed here: it is a push, a Date-tag flip and a live-widget outage window.
+Flip link https://rec.metabaseapp.com/question/21286
+
+**AND SAN FRANCISCO'S EMPTY CARD IS CORRECT.** SF took 2,963 bookings in seven
+days and the card returns **0 rows**, which looks identical to the bug above.
+All 80 of its `section` bookings are `is_rec_managed = true` (excluded by
+design), and everything else is `facilityRental`. *A report that is empty for
+one org and healthy for another is not evidence about that org* — check what its
+rows actually ARE before calling it a defect.
+
+## A BIG REGISTRATION DAY SOUNDS LIKE ONE (2026-09-05)
+
+Dan: *"When an org has a big registration day, I want it to sound like a las
+vegas casino."*
+
+`LIVE_CHIME_MAX` was **3**, on the argument that a dozen overlapping coins is
+noise. That argument was about LOUDNESS, and truncating the burst was the wrong
+answer to it — a morning where sixty people register is the one morning this
+card is worth having on, and ringing three times for it says nothing about the
+size of the day. It is **40** now, and the loudness is handled where it belongs.
+
+### THE DUCK IS BY THE OVERLAP, NOT THE BATCH SIZE
+
+The mistake worth not repeating. Forty rings at full gain sum past 1.0 and the
+browser hard-clips, which crackles — it sounds broken, not loud. But **forty
+rings 90ms apart do not play together**: each lasts about 0.7s, so only about
+eight are ever sounding at once and the rest are strictly later. Ducking by
+forty would divide by five times the loudness actually present, and the biggest
+morning of the year would ring the quietest.
+
+`level = overlap^-0.4`, where `overlap = RING_MS / GAP_MS` capped by the count.
+**Slightly less than equal loudness (`^-0.5`) on purpose**, so a bigger burst
+really is a bit louder. A batch of ONE is exactly 1.0 and takes the old code
+path entirely, so an ordinary single signup sounds identical to before.
+
+The duck **saturates**: past the overlap point a longer burst is longer, not
+quieter. That is the assertion that fails if anyone reads the level off the
+batch size again.
+
+### THE DETUNE IS NOT DECORATION
+
+Identical simultaneous copies of the same waveform sum coherently — forty coins
+scheduled together sound like **one louder coin, not like forty**. A four-step
+rising run of 25 cents, resetting, keeps them from phase-cancelling into a
+flanged mush. Under a semitone, so the coin's own B5→E6 interval still sounds in
+tune.
+
+Jitter for the same family of reason: an exactly even stagger is a machine gun
+and reads as one effect. **The first ring is deliberately NOT jittered** — it is
+the one a person reacts to, and delaying it up to 45ms for nothing only makes
+the card feel slower.
+
+### `liveChimeBurst(n, rnd)` RETURNS THE SCHEDULE AS DATA
+
+Delay, level and detune per ring, at module scope, with `rnd` injected. A
+browser has no ears in CI, so the only checkable claim about a burst is its
+SHAPE — and a jitter read off `Math.random` cannot be asserted about at all.
+
+The level and detune reach the voices through a module-level output bus and a
+detune value that `liveChime` swaps in around one **synchronous** `play()` call
+and restores in a `finally`. Scheduling a voice only queues nodes, it never
+awaits, so nothing can run in between; the alternative was a third argument
+threaded through three primitives and nine voices that every one of them would
+only pass along. The `finally` matters: without it one throwing voice mutes
+every ring after it.
+
+## $195 / $325 — a part-paid row shows both figures (2026-09-05)
+
+Dan, on a $325 registration with $195 paid on a plan: *"would like to see
+195/325 here."* Rec's own household page reads *"$195.00 / $325.00 · Partially
+paid"* for the same booking.
+
+`livePriceCell(r)` — **only** a part-paid row gets two figures. A fully paid one
+has nothing to compare against and *"$325 / $325"* is noise; an unpaid one has
+no first figure, and *"$0 / $325"* reads as a refund rather than as a booking
+nobody has paid for yet. It goes through `liveMarkState`, so the rows that get
+two figures are exactly the rows the dots in the lane call part-paid — the two
+cannot disagree.
+
+The charge is **muted** behind the paid figure rather than sharing its orange:
+two figures in one colour read as a single number with a slash in it. `.lm` went
+62px → 104px with `white-space: nowrap`; the programs card's own 116px override
+still stacks on top of that.
+
+**A benign mutation worth recording.** Changing the gate from
+`!== 'part'` to `=== 'paid'` SURVIVES, and correctly: an unpaid row falls
+through to `liveMoney(r['Paid'])`, which is `''` for zero, and the sub-dollar
+fallback already returns the charge alone. The branch is belt-and-braces and the
+fallback is the real guard — reporting that mutation as "caught" would have been
+wrong.
+
+## RUN `ci-check-html.js` AFTER EVERY dashboard.html EDIT (2026-09-05)
+
+Self-inflicted, and it cost a ten-minute render run. Rewriting a comment block
+left the old paragraphs *outside* it:
+
+```js
+   ...which is exactly the relationship wanted.
+*/
+const LIVE_CHIME_RING_MS = 700;
+
+   AND THE DETUNE IS NOT DECORATION. ...        ← now bare code
+```
+
+Babel threw `Missing semicolon (1916:6)`, discarded the entire inline block, and
+**every widget on the dashboard vanished** — the blank-page class both these
+repos keep being bitten by.
+
+**`live-widgets.spec.js` passed on it, all 270 assertions**, because a spec
+regexes source and never parses it. `ci-check-render.js` caught it — and so does
+`node scripts/ci-check-html.js`, **in about a second**, which is the cheap guard
+that should have run first. Verified by reintroducing the bug: the HTML check
+names the file, the block and the line.
+
+Generalise it: *editing a comment is editing code.* Run the parse check after
+touching a `text/babel` block, before spending ten minutes on a browser.
+
+
 ## The Programs Live money column was 62px (2026-09-04)
 
 Dan: *"look at the alignment on the headers and revenue section"*, with the

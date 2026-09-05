@@ -46,17 +46,44 @@ async function test(name, fn) {
     assert.strictEqual(getCacheEntry('k').stale, false);
   });
 
-  await test('single in-flight: concurrent revalidate calls fetch once', async () => {
+  await test('single in-flight: concurrent revalidate calls fetch once, and BOTH can wait', async () => {
     setCache('k', ['old'], 5);
     await sleep(20);
     let fetches = 0;
     const slow = async () => { await sleep(15); fetches++; return ['new']; };
     const p1 = revalidate('k', 60000, slow);
-    const p2 = revalidate('k', 60000, slow);            // no-op: a refresh is already in flight
-    assert.strictEqual(p2, null);
-    await p1;
+    const p2 = revalidate('k', 60000, slow);            // joins the in-flight refresh
+    /* IT RETURNS THE IN-FLIGHT PROMISE, NOT null. A live feed awaits this
+       instead of serving a stale answer, and a `null` here would make the
+       second concurrent poll fall straight back to the stale rows it was
+       trying to avoid — silently, and only when two viewers polled at once,
+       which is the hardest version of that bug to ever see. */
+    assert.strictEqual(p2, p1);
+    await Promise.all([p1, p2]);
     assert.strictEqual(fetches, 1);
     assert.deepStrictEqual(getCached('k'), ['new']);
+  });
+
+  await test('a joined refresh resolves only once the rows are actually in cache', async () => {
+    setCache('k', ['old'], 5);
+    await sleep(20);
+    const slow = async () => { await sleep(15); return ['new']; };
+    const p1 = revalidate('k', 60000, slow);
+    await revalidate('k', 60000, slow);                 // the second caller waits on the first
+    // The load-bearing claim for the live-feed branch in server.js: after the
+    // await, reading the cache gives the FRESH rows rather than the stale ones.
+    assert.deepStrictEqual(getCacheEntry('k').data, ['new']);
+    assert.strictEqual(getCacheEntry('k').stale, false);
+    await p1;
+  });
+
+  await test('an awaited refresh never rejects — a failure leaves stale rows to fall back on', async () => {
+    setCache('k', ['old'], 5);
+    await sleep(20);
+    // If this rejected, the live-feed branch would 500 rather than serving a
+    // minute-old list, which is much the worse of the two outcomes.
+    await revalidate('k', 60000, async () => { throw new Error('metabase down'); });
+    assert.deepStrictEqual(getCacheEntry('k').data, ['old']);
   });
 
   await test('failed refresh keeps the stale value', async () => {

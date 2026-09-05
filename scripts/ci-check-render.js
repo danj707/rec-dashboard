@@ -235,9 +235,49 @@ function enrollArrivals() {
   return enrollExtra.slice();
 }
 
+/* ── MEMBERSHIP CHECK-INS ──────────────────────────────────────────────────
+   Built so that every number on the card is DIFFERENT, because a fixture where
+   the row count, the accepted count and the head count coincide cannot tell a
+   correct card from one reading the wrong set:
+
+     17 rows  ·  16 today  ·  14 accepted  ·  2 turned away  ·  13 people
+
+   Ada scans twice, so people (13) < accepted (14) and the "N members" sub-line
+   has something to say. One row carries a PHOTO and one carries NO USER ID —
+   the two branches that render identically to a source assertion. */
+const CHECKINS = [
+  { 'Checked In At': liveIso(0, '18:02:00'), Member: 'Katherine Johnson', 'User ID': 'user-kj',
+    'Member ID': 'KJ1234', Photo: null, Status: 'Failed', 'Desk Location': 'Front Desk', Product: 'Adult Annual' },
+  { 'Checked In At': liveIso(0, '17:00:00'), Member: 'Ada Lovelace', 'User ID': 'user-ada',
+    'Member ID': 'AD0001', Photo: 'https://example.test/ada.jpg', Status: 'Checked In',
+    'Desk Location': 'Front Desk', Product: 'Adult Annual' },
+  /* NO USER ID: the face must render as plain text rather than as a link to
+     nowhere — and never from "Member ID", the six-character desk code, which
+     looks identical in a link and 404s. */
+  { 'Checked In At': liveIso(0, '09:10:00'), Member: 'Alan Turing', 'User ID': null,
+    'Member ID': 'TU9999', Photo: null, Status: 'Checked In', 'Desk Location': 'Front Desk', Product: 'Pool Pass' },
+  { 'Checked In At': liveIso(0, '09:05:00'), Member: 'Grace Hopper', 'User ID': 'user-grace',
+    'Member ID': 'GH0002', Photo: null, Status: 'Checked In', 'Desk Location': 'North Desk', Product: 'Adult Annual' },
+  { 'Checked In At': liveIso(0, '09:00:00'), Member: 'Ada Lovelace', 'User ID': 'user-ada',
+    'Member ID': 'AD0001', Photo: 'https://example.test/ada.jpg', Status: 'Checked In',
+    'Desk Location': 'Front Desk', Product: 'Adult Annual' },
+  { 'Checked In At': liveIso(0, '08:40:00'), Member: 'Turned Away Two', 'User ID': 'user-ta2',
+    'Member ID': 'TA0002', Photo: null, Status: 'Failed', 'Desk Location': 'Front Desk', Product: 'Youth Pass' },
+];
+for (let n = 1; n <= 10; n++) CHECKINS.push(
+  { 'Checked In At': liveIso(0, '07:' + String(60 - n).padStart(2, '0') + ':00'),
+    Member: 'Member ' + n + ' Regular', 'User ID': 'user-m' + n, 'Member ID': 'M' + n,
+    Photo: null, Status: 'Checked In', 'Desk Location': 'Front Desk', Product: 'Adult Annual' });
+/* YESTERDAY. The lane and the face list are both TODAY, so this row proves
+   they filter rather than merely rendering whatever arrived. */
+CHECKINS.push({ 'Checked In At': liveIso(1, '19:00:00'), Member: 'Yesterday Person',
+  'User ID': 'user-yp', 'Member ID': 'YP0001', Photo: null, Status: 'Checked In',
+  'Desk Location': 'Front Desk', Product: 'Adult Annual' });
+
 const FIXTURES = {
   memberships: MEMBERSHIPS,
   enrollments: ENROLLMENTS,
+  'checkins-live': CHECKINS,
   gl: [], facility: [], programs: [], 'court-utilization': [], fasttrack: [],
   users: [], products: [], 'instructor-payout': [],
 };
@@ -257,7 +297,7 @@ const CONFIG = {
   },
   // enrollments present = the card has a public link, which is the ONLY
   // thing that puts the Live Widgets section on the page.
-  availableReports: { memberships: true, enrollments: true },
+  availableReports: { memberships: true, enrollments: true, 'checkins-live': true },
   // The rec.us org uuid the admin links are addressed by. Deliberately NOT the
   // dashboard's own slug or token — a link built from those is the drift that
   // broke every report link for five weeks.
@@ -563,6 +603,25 @@ const CASES = [
   /* THE PRICE CARRIES ITS PAYMENT STATE'S COLOUR (Dan: "Full payment the price
      is in green, partial or installment plan, price is in orange to match the
      legend"). Computed, because a class name proves nothing about the ink. */
+  /* WHAT ARRIVED, OVER WHAT WAS CHARGED. Dan, on a $325 registration with $195
+     paid on a plan: "would like to see 195/325 here." The fixture's part-paid
+     row is $25 of $60, and no source assertion can tell a cell that renders
+     both figures from one that renders the charge twice — so this keys on the
+     TEXT of the cell. */
+  { name: 'live · a part-paid row shows what arrived over what was charged',
+    needs: '[data-live-regs] td[data-live-price="part"][data-live-paid="$25"]',
+    act: async page => {
+      await page.waitForSelector('[data-live-regs] td[data-live-price="part"]', { timeout: 15000 });
+      const txt = await page.$eval('[data-live-regs] td[data-live-price="part"]', el => el.innerText.replace(/\s+/g, ' ').trim());
+      if (txt !== '$25 / $60') throw new Error('the part-paid cell reads "' + txt + '", not "$25 / $60"');
+    } },
+  /* AND A FULLY PAID ROW DOES NOT. "$45 / $45" is noise, and an unpaid row
+     showing "$0 / $170" would read as a refund rather than as a booking
+     nobody has paid for yet. Absence, not a different value — the two claims
+     are different and only one keeps the column readable. */
+  { name: 'live · a fully paid row shows one figure, and an unpaid one shows no zero',
+    needs: '[data-live-regs] td[data-live-price="paid"][data-live-paid=""]',
+    absent: '[data-live-regs] td[data-live-price="unpaid"]:not([data-live-paid=""])' },
   { name: 'live · a paid price is green and a part-paid one orange',
     needs: 'body[data-lc-paid="rgb(22, 163, 74)"][data-lc-part="rgb(245, 158, 11)"]',
     act: async page => {
@@ -611,14 +670,23 @@ const CASES = [
      card's bolt was never checked, which is exactly the one Dan reported as
      dead ("The lightning bolt on the programs card isn't pulsing"). Both were
      in fact running; the guard could not have told us either way. */
-  { name: 'live · every bolt is animated', needs: 'body[data-livebolt="2of2"]',
+  /* EVERY bolt, however many cards there are. This pinned "2of2" and broke the
+     day a third live card was added, with nothing about the animation having
+     changed — the brittle-literal shape already recorded twice for
+     SLACK_NOTIFY and an ALLOWED array. It asserts the RATIO now, and requires
+     at least two, or a page that rendered no bolts at all would read "0of0"
+     and pass. */
+  { name: 'live · every bolt is animated', needs: 'body[data-livebolt="all"]',
     act: async page => {
       await page.waitForSelector('[data-live-progs] .live-bolt', { timeout: 15000 });
-      await page.evaluate(() => {
+      const out = await page.evaluate(() => {
         const els = [...document.querySelectorAll('.live-bolt')];
         const running = els.filter(el => el.getAnimations && el.getAnimations().length > 0);
-        document.body.setAttribute('data-livebolt', running.length + 'of' + els.length);
+        return els.length >= 2 && running.length === els.length
+          ? 'all' : (running.length + ' of ' + els.length + ' bolts animating');
       });
+      await page.evaluate(v => document.body.setAttribute('data-livebolt', v), out);
+      if (out !== 'all') throw new Error(out);
     } },
   /* THE MANUAL REFRESH, on BOTH cards (Dan: "add a manual refresh button on
      both these live cards in case I don't want to wait every minute"). */
@@ -736,6 +804,57 @@ const CASES = [
       await page.evaluate(v => document.body.setAttribute('data-chime-all', v), out);
       if (wasMuted) await page.click('input[data-live-mute="1"]');
     } },
+  /* A BIG REGISTRATION MORNING, DRIVEN IN A REAL BROWSER. Dan: "When an org
+     has a big registration day, I want it to sound like a las vegas casino."
+     No source assertion can prove a burst is audible: the level and detune are
+     new arguments that reach an AudioContext, and a voice that throws under
+     them would leave the ring counter untouched (it is bumped first) while
+     making the card silent for the rest of the session.
+
+     So this fires a FULL burst through EVERY sound in the menu and requires
+     the VOICED count to match the ring count — a hundred-odd scheduled voices,
+     ducked and detuned, all of which have to synthesize. It also pins that a
+     flood is capped, which is what stops one poll ringing forever. */
+  { name: 'live · a flood of arrivals rings as a burst, and every voice survives it',
+    needs: 'body[data-chime-burst="ok"]',
+    act: async page => {
+      const wasMuted = await page.$eval('input[data-live-mute="1"]', el => el.checked);
+      if (wasMuted) await page.click('input[data-live-mute="1"]');
+      await page.waitForSelector('.live-chime-pick', { timeout: 10000 });
+      const out = await page.evaluate(() => {
+        if (typeof liveChimeBurst !== 'function' || typeof liveChime !== 'function')
+          return 'the burst scheduler is not reachable from the page';
+        const names = Array.from(document.querySelectorAll('.live-chime-pick option')).map(o => o.value);
+        const plan = liveChimeBurst(60);          // a flood, far past the cap
+        if (plan.length < 8) return 'a flood rang only ' + plan.length + ' times';
+        if (plan.length >= 60) return 'a flood was not capped at all';
+        if (!(plan[0].level > 0 && plan[0].level <= 1)) return 'level out of range: ' + plan[0].level;
+        window.__liveChimeRings = 0; window.__liveChimeVoiced = 0;
+        // Fired synchronously rather than on the real timers: the schedule is
+        // already proven by the spec, and what a browser adds is whether the
+        // synthesis SURVIVES the level and detune it is handed.
+        /* A THROWN VOICE IS REPORTED BY NAME, not left to kill act(). Verified
+           by mutation: a `cow` rigged to throw when detuned took this case out
+           with a bare "act() threw: moo", which names the mutation and not the
+           sound — the die-instead-of-fail lesson already recorded twice here. */
+        const broke = [];
+        names.forEach(n => plan.forEach(hit => {
+          try { liveChime(n, hit); } catch (e) { if (broke.indexOf(n) < 0) broke.push(n); }
+        }));
+        if (broke.length) return 'these sounds threw in a burst: ' + broke.join(', ');
+        const want = names.length * plan.length;
+        const rings = window.__liveChimeRings, voiced = window.__liveChimeVoiced;
+        return (rings === want && voiced === want && names.length >= 9)
+          ? 'ok' : ('rings=' + rings + ' voiced=' + voiced + ' of ' + want);
+      });
+      await page.evaluate(v => document.body.setAttribute('data-chime-burst', v), out);
+      if (wasMuted) await page.click('input[data-live-mute="1"]');
+      /* THE DIAGNOSIS IS THROWN AS WELL AS STAMPED. The runner prints `rendered
+         no body[data-chime-burst="ok"]` for any failure, which is the same
+         sentence whether the cap vanished, a voice threw or the level went to
+         zero — three different bugs with three different fixes. */
+      if (out !== 'ok') throw new Error(out);
+    } },
   /* AND THE COUNT IS WHAT SEPARATES "PAID" FROM "ANY ARRIVAL". This refresh
      delivers ONE paid registration and ONE unpaid one together, so a correct
      card rings exactly once. Two rings means it does not read the payment;
@@ -759,6 +878,82 @@ const CASES = [
       // Re-tick it, or every case after this one runs on an unmuted dashboard.
       await page.click('input[data-live-mute="1"]');
     } },
+  /* ── MEMBERSHIP CHECK-INS ────────────────────────────────────────────────
+     Every case here keys on a COMPUTED VALUE, because "a check-ins card
+     rendered" passes on every one of the regressions worth catching. The
+     fixture makes 17 / 16 / 14 / 2 / 13 all different on purpose. */
+  { name: 'live · the check-ins card is on the page',
+    needs: '[data-live-checkins="17"]' },
+  /* A DENIAL IS NOT ATTENDANCE. Counting every row reads 16, counting the
+     whole feed reads 17; only filtering to today's ACCEPTED scans reads 14. */
+  { name: 'live · the count is accepted scans today, not every row',
+    needs: '[data-live-ci-today="14"]',
+    absent: '[data-live-ci-today="16"], [data-live-ci-today="17"]' },
+  /* ...AND THE REFUSALS ARE STILL SHOWN, separately and named. A card that
+     silently dropped them would pass the case above. */
+  { name: 'live · ...and the ones turned away are counted separately',
+    needs: '[data-live-ci-failed="2"]' },
+  /* THE LANE IS TODAY. 16, not 17 — the yesterday row must not be drawn on
+     today's axis, where it would pin to 7pm and invent an evening rush. */
+  { name: 'live · yesterday is not drawn on today\'s lane',
+    needs: '[data-live-ci-marks="16"]' },
+  { name: 'live · a refused scan is marked as one',
+    needs: '[data-live-ci-mark="failed"]' },
+  /* THE FACES. Capped at twelve of sixteen, and the cap says so rather than
+     trailing off. */
+  { name: 'live · the people who checked in are shown, capped',
+    needs: '[data-live-ci-people="12"] [data-live-ci-person="Ada Lovelace"]' },
+  { name: 'live · ...and the cap names what it left out',
+    needs: '[data-live-ci-more="4"]' },
+  /* A PHOTO WHERE THERE IS ONE, INITIALS WHERE THERE IS NOT — and both in the
+     same row. No source assertion can tell a photo-first layout from one that
+     falls back, because both render an element. */
+  { name: 'live · a member with a photo gets it, and one without gets initials',
+    needs: '[data-live-ci-face="photo"]',
+    act: async page => {
+      await page.waitForSelector('[data-live-ci-face]', { timeout: 15000 });
+      const out = await page.evaluate(() => {
+        const ini = document.querySelector('[data-live-ci-person="Grace Hopper"] .ci-face em');
+        if (!ini) return 'no initials element for Grace Hopper';
+        if (ini.textContent.trim() !== 'GH') return 'initials read "' + ini.textContent.trim() + '", not GH';
+        const photoRow = document.querySelector('[data-live-ci-person="Ada Lovelace"] .ci-face');
+        if (!photoRow || !photoRow.querySelector('img')) return 'Ada has no <img> over her initials';
+        if (!photoRow.querySelector('em')) return 'the photo REPLACED the initials instead of sitting over them';
+        return 'ok';
+      });
+      if (out !== 'ok') throw new Error(out);
+    } },
+  /* THE LINK TAKES THE UUID, and a row without one is plain text rather than
+     a link to nowhere. "Member ID" is the six-character desk code — it looks
+     identical in a link and 404s, so the absent case is the load-bearing one. */
+  { name: 'live · a member links into Rec by uuid',
+    needs: '[data-live-ci-link="user-ada"]',
+    absent: '[data-live-ci-link="AD0001"]' },
+  { name: 'live · ...and a row with no uuid is not a dead link',
+    needs: '[data-live-ci-person="Alan Turing"]',
+    absent: '[data-live-ci-person="Alan Turing"] a' },
+  /* ONE AXIS, TWO LANES. The two cards sit one above the other, so a noon in
+     two places is a defect a reader sees at once. Compares the rendered tick
+     positions rather than the code, which is the only thing that can. */
+  { name: 'live · both lanes share one axis',
+    needs: 'body[data-ci-axis="same"]',
+    act: async page => {
+      await page.waitForSelector('[data-live-ci-marks]', { timeout: 15000 });
+      const same = await page.evaluate(() => {
+        const lanes = Array.from(document.querySelectorAll('.live-timeline'));
+        if (lanes.length < 2) return 'only ' + lanes.length + ' lane(s) on the page';
+        const ticks = lanes.map(l => Array.from(l.querySelectorAll('.lt-day')).map(d => d.style.left).join(','));
+        return ticks[0] && ticks[0] === ticks[1] ? 'same' : 'lanes disagree: ' + ticks.join(' | ');
+      });
+      await page.evaluate(v => document.body.setAttribute('data-ci-axis', v), same);
+      if (same !== 'same') throw new Error(same);
+    } },
+  /* NO SOUND ON THIS CARD. The chime says "somebody just gave you money"; a
+     beep on every desk scan would get the whole section muted. */
+  { name: 'live · the check-ins card has no sound control',
+    needs: '[data-live-checkins]',
+    absent: '[data-live-checkins] .live-chime-pick' },
+
   /* NOTE THE DESCENDANT SPACE in these selectors: the programme name is on the
      ROW and the trend on its signups CELL, so `[data-live-prog=x][data-live-prog-trend=y]`
      demands both on ONE element and matches nothing. All three cases failed

@@ -314,6 +314,12 @@ setTimeout(() => { reconcileWithReporting().catch(e => console.warn('[reporting]
 setInterval(() => { reconcileWithReporting().catch(() => {}); }, REPORTING_RECONCILE_MS);
 
 // Reports available to ALL orgs via shared Metabase cards (need org_id param)
+/* Card 21517's public link. Verified through the public endpoint with the
+   app's own date/single parameters before wiring: apex 1,150 scans in 7.7s
+   cold and 0.9s warm, el-segundo 198 in 1.7s, three registered parameters.
+   Empty here means the widget is absent — see the 'checkins-live' key below. */
+const CHECKINS_LIVE_UUID = 'd9891f69-897e-4d60-985c-50b31ad6d280';
+
 const SHARED_UUIDS = {
   facility: 'f6787f45-3a36-4501-8a5f-b0f647451a85',
   programs: 'e35f2b47-87c9-40e3-8507-3d9b56f9ce62',
@@ -349,7 +355,23 @@ const SHARED_UUIDS = {
 
      Verified live before wiring: shrewsbury, 7-day window, 126 rows in 20.7s
      through the public endpoint with the app's own date/single parameters. */
-  enrollments: 'e663ecfb-71b4-4de1-b984-13c69beab005'
+  enrollments: 'e663ecfb-71b4-4de1-b984-13c69beab005',
+  /* Card 21517 "✅ Membership Check-Ins Live" — newest membership and pass
+     scans first, behind the Membership Check-Ins widget. Mirrored at
+     sql/checkins-live.sql; the live card is the source of truth.
+
+     A LITERAL, like every other card here — the env-var version of this lasted
+     about an hour on the enrollments card (Dan: "what is MB_ENROLLMENTS_UUID
+     lol") and bought nothing, because the absence rule is enforced where it
+     belongs rather than by a deploy step.
+
+     THE KEY IS OMITTED WHILE THE UUID IS EMPTY, and that is the absence rule:
+     `availableReports` is built from this map, so an absent key hides the
+     widget, the route 404s, and the section hides itself when its widgets do.
+     A confident "0 check-ins today" on a morning when the desk is scanning
+     people through is the reading that had to be impossible. Filling this in
+     is the whole wiring — no other change is needed. */
+  ...(CHECKINS_LIVE_UUID ? { 'checkins-live': CHECKINS_LIVE_UUID } : {})
 };
 
 /* A LIVE WIDGET NEEDS ITS OWN CLOCK. Everything else here is a dashboard of a
@@ -358,7 +380,7 @@ const SHARED_UUIDS = {
    also what the page polls at, so most ticks are served from this cache and
    the card is queried about once a minute per org rather than once per
    viewer. */
-const LIVE_REPORT_TTL_MS = { enrollments: 60 * 1000 };
+const LIVE_REPORT_TTL_MS = { enrollments: 60 * 1000, 'checkins-live': 60 * 1000 };
 
 // Reports that don't accept date parameters
 const NO_DATE_REPORTS = new Set([
@@ -548,10 +570,37 @@ async function fetchMetabaseData(orgSlug, reportType, query) {
     return rows;
   };
 
-  // Stale-while-revalidate: serve any cached rows immediately. If they're past
-  // the TTL, refresh in the background so the next request is fresh — this one
-  // never eats the live query latency.
+  /* STALE-WHILE-REVALIDATE, EXCEPT FOR A LIVE FEED — and that exception is a
+     bug fix, not a tuning choice. Dan, watching the card: "seems like the live
+     widget is lagging — nothing happens until i click the refresh."
+
+     Serving a stale entry and refreshing behind it means the answer a caller
+     gets is the PREVIOUS fetch, so with a 60s TTL and a 60s poll the card
+     shows rows between one and two minutes old, sawing between the two. And it
+     is exactly why clicking Refresh appeared to fix it: the poll a moment
+     earlier had kicked the background refresh, so the click landed after it
+     finished and got the rows the poll should have had. The button was not
+     doing anything the poll was not; it was arriving later.
+
+     That trade is right for a dashboard of a window somebody chose — nobody
+     should wait 30s for a report they can read a quarter of an hour old. It is
+     wrong for a widget whose entire claim is "right now", where a stale answer
+     is the failure rather than the graceful degradation. So a live feed AWAITS
+     the refresh. It costs the poll the card's own time, measured 3.0s at
+     Shrewsbury and 9.5s at San Francisco — comfortably inside the 60s poll —
+     and `revalidate` de-duplicates, so ten viewers polling together still run
+     the card once.
+
+     A FAILED REFRESH STILL ANSWERS with the stale rows rather than an error: a
+     card that empties itself the first time Metabase hiccups is worse than one
+     that is a minute behind for a minute. */
+  const isLive = !!LIVE_REPORT_TTL_MS[reportType];
   const entry = getCacheEntry(cacheKey);
+  if (entry && entry.stale && isLive) {
+    await revalidate(cacheKey, ttl, doFetch);
+    const fresh = getCacheEntry(cacheKey);
+    return fresh ? fresh.data : entry.data;
+  }
   if (entry) {
     if (entry.stale) revalidate(cacheKey, ttl, doFetch);
     return entry.data;

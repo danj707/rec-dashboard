@@ -220,6 +220,49 @@ body { font-family: var(--font-body); background: var(--bg-page); color: var(--t
                  margin-right: 4px; vertical-align: middle; background: var(--border); }
 .live-legend .lg-paid i { background: #16a34a; }
 .live-legend .lg-part i { background: #f59e0b; }
+.live-legend .lg-fail i { background: #dc2626; }
+
+/* ── MEMBERSHIP CHECK-INS ──────────────────────────────────────────────────
+   AN ACCEPTED SCAN IS THE SAME GREEN AS A PAID SIGNUP — both mean "this went
+   through" and the two cards sit one above the other, so a second green would
+   read as a third state. A refusal is RED rather than the registrations card's
+   grey: grey there means "no money yet", which is ordinary and waits; red here
+   means somebody was turned away at the desk, which is not. */
+.live-timeline .lt-mark.ci-ok   { background: #16a34a; box-shadow: 0 0 0 2px rgba(22,163,74,.18); }
+.live-timeline .lt-mark.ci-failed { background: #dc2626; box-shadow: 0 0 0 2px rgba(220,38,38,.20); }
+
+.live-ci-fail { color: #dc2626; font-weight: 600; }
+
+/* A ROW OF FACES, WRAPPING. Not a table: the ask was to SEE who came in, and a
+   name-and-time table is what the check-ins report already is. */
+.live-ci-people { display: flex; flex-wrap: wrap; gap: 10px 12px; margin: 2px 0 6px; }
+.ci-person { display: flex; flex-direction: column; align-items: center; width: 46px;
+             text-align: center; }
+.ci-person a { text-decoration: none; }
+.ci-person b { font-size: 10px; font-weight: 600; color: var(--text-primary);
+               max-width: 46px; overflow: hidden; text-overflow: ellipsis;
+               white-space: nowrap; margin-top: 3px; }
+.ci-person i { font-size: 9px; font-style: normal; color: var(--text-muted); }
+
+/* THE PHOTO SITS ON TOP OF THE INITIALS, in the same box, so a member with an
+   image and one without are the same shape and the row does not go ragged at
+   the 92.5% of orgs where most people have neither. An image that fails to
+   load hides itself and the initials are simply already there. */
+.ci-face { position: relative; display: block; width: 34px; height: 34px; border-radius: 50%;
+           overflow: hidden; background: var(--border); }
+.ci-face img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
+               z-index: 1; }
+.ci-face em { position: absolute; inset: 0; display: flex; align-items: center;
+              justify-content: center; font-style: normal; font-size: 12px; font-weight: 700;
+              color: #fff; letter-spacing: .3px; }
+.ci-face.ci-ok     { background: #16a34a; }
+/* A REFUSED SCAN IS RINGED, not just tinted: the ring survives a photo sitting
+   on top of it, and a photo is exactly the case where a background colour says
+   nothing at all. */
+.ci-face.ci-failed { background: #dc2626; box-shadow: 0 0 0 2px #fff, 0 0 0 4px #dc2626; }
+@media (prefers-reduced-motion: no-preference) {
+  .ci-person.live-new .ci-face { animation: liveMarkIn 10s ease-out both; }
+}
 @media (prefers-reduced-motion: no-preference) {
   .live-timeline .lt-mark.fresh { animation: liveMarkIn 10s ease-out both; }
   @keyframes liveMarkIn {
@@ -242,20 +285,28 @@ body { font-family: var(--font-body); background: var(--bg-page); color: var(--t
 .live-table .ln { width: 27%; font-weight: 600; color: var(--text-primary); }
 .live-table .lp { width: 24%; color: var(--text-secondary); }
 .live-table .ls { color: var(--text-secondary); }
-.live-table .lm { width: 62px; padding-right: 0; text-align: right;
+.live-table .lm { width: 104px; padding-right: 0; text-align: right; white-space: nowrap;
                   font-variant-numeric: tabular-nums; font-weight: 600; color: var(--text-primary); }
+/* THE CHARGE IS MUTED BEHIND WHAT ARRIVED. Dan, on a $325 registration with
+   $195 paid on a plan: "would like to see 195/325 here." Both figures in the
+   same orange would read as one number with a slash in it; the paid half keeps
+   the state colour and the charge steps back, so the eye lands on the money
+   that is actually in. It inherits nothing from `.lm`'s weight for the same
+   reason. */
+.live-table .lm .live-of { color: var(--text-secondary); font-weight: 400; }
 /* Paid green, part-paid orange — the same two colours as the dots in the lane,
    because they are saying the same thing about the same registration. */
 .live-table .lm.live-paid { color: #16a34a; }
 .live-table .lm.live-part { color: #f59e0b; }
 .live-table th.lm { text-align: right; }
-/* THE PROGRAMS CARD REUSES THIS TABLE WITH A MUCH LONGER MONEY COLUMN, and 62px
-   was sized for the registrations card's bare price. Dan: "look at the
-   alignment on the headers and revenue section" — with `table-layout: fixed`
-   the declared width is honoured, so a 15-character nowrap header ("PROGRAM
-   REVENUE") simply overflowed the card's right edge, and the "of $X charged"
-   sub-line was clipped at 62px. Widening it here rather than on `.live-table`
-   leaves the registrations card, whose column really is that narrow, alone. */
+/* THE PROGRAMS CARD REUSES THIS TABLE WITH A LONGER MONEY COLUMN STILL. Dan:
+   "look at the alignment on the headers and revenue section" — with
+   `table-layout: fixed` the declared width is honoured, so a 15-character
+   nowrap header ("PROGRAM REVENUE") simply overflowed the card's right edge,
+   and the "of $X charged" sub-line was clipped. (The base was 62px when this
+   was written, sized for the registrations card's bare price; it is 104px now
+   that a part-paid row prints "$195 / $325", and this override still has to
+   clear the two-line sub-cell on top of that.) */
 .live-table-progs .lm { width: 116px; }
 .live-table-progs .lm .lm-sub { font-size: 9px; color: #f59e0b; font-weight: 400;
                                 white-space: nowrap; line-height: 1.35; margin-top: 1px; }
@@ -2470,12 +2521,54 @@ const LIVE_CHIMES = [
   ['foghorn',  'Foghorn'],
 ];
 const LIVE_CHIME_DEFAULT = 'coin';
-/* HOW MANY RING FOR ONE BATCH. Twelve registrations landing in one poll is ONE
-   event to somebody listening from across the room; twelve overlapping coins is
-   noise, and on a registration morning it would be a reason to mute the card
-   for good. Staggered so two or three read as two or three. */
-const LIVE_CHIME_MAX = 3;
-const LIVE_CHIME_GAP_MS = 130;
+/* HOW MANY RING FOR ONE BATCH — AND WHY IT IS NOT THREE ANY MORE. Dan, on a
+   registration day: "When an org has a big registration day, I want it to
+   sound like a las vegas casino." The cap was three on the argument that a
+   dozen overlapping coins is noise. That argument was about LOUDNESS and it is
+   answered below by ducking the burst rather than by truncating it — a morning
+   where sixty people register is the one morning this card is worth having on,
+   and a card that rings three times for it says nothing about the size of the
+   day.
+
+   FORTY, and the cap is still real. The point of a constant gap rather than a
+   fitted one is that the LENGTH of the ringing is what says how big the batch
+   was: one arrival is instant, six is half a second, a full forty is nearly
+   four seconds of continuous coins. A cadence that stretched to fill the poll
+   window would make four arrivals ring for as long as forty and sound sparse
+   doing it. Forty is where it stops: about 200 audio nodes, well under the
+   60-second poll, and past it nobody is counting anyway.
+
+   JITTER, because an exactly even stagger is a machine gun and reads as one
+   effect rather than as many arrivals. The first ring is deliberately NOT
+   jittered: it is the one a person actually reacts to, and delaying it by up
+   to 45ms for nothing would only make the card feel less immediate. */
+const LIVE_CHIME_MAX = 40;
+const LIVE_CHIME_GAP_MS = 90;
+const LIVE_CHIME_JITTER_MS = 45;
+/* HOW A BURST STAYS AUDIBLE INSTEAD OF CLIPPING. Rings at full gain sum past
+   1.0 and the browser hard-clips, which crackles — it sounds broken, not loud.
+   Equal perceived loudness would be n^-0.5; this ducks slightly less than that
+   ON PURPOSE, so a bigger burst really is a bit louder, which is the whole
+   thing being asked for. A batch of ONE is exactly 1.0, so the common case
+   sounds identical to before.
+
+   THE `n` IS THE OVERLAP, NOT THE BATCH SIZE, and getting that wrong is what
+   makes a big burst inaudible. Forty rings 90ms apart do NOT play together:
+   each lasts about 0.7s, so only about eight are ever sounding at once and the
+   rest are strictly later. Ducking by forty would divide by five times the
+   loudness that is actually there — the biggest morning of the year would ring
+   the quietest. So the duck saturates: past the overlap point a longer burst
+   is longer, not quieter, which is exactly the relationship wanted.
+
+   AND THE DETUNE IS NOT DECORATION. Identical simultaneous copies of the same
+   waveform sum coherently — forty coins scheduled together sound like one
+   louder coin, not like forty. Spreading them a few cents apart is what makes
+   a burst read as a crowd. A four-step run that resets, and 75 cents at the
+   top: under a semitone, so the coin's own interval still sounds in tune. */
+const LIVE_CHIME_RING_MS = 700;
+const LIVE_CHIME_DUCK = 0.4;
+const LIVE_CHIME_DETUNE_STEP = 25;
+const LIVE_CHIME_DETUNE_STEPS = 4;
 const LIVE_MUTE_KEY  = 'rec-dash-live-muted';
 const LIVE_CHIME_KEY = 'rec-dash-live-chime';
 
@@ -2508,16 +2601,27 @@ function liveAudioWakeOnFirstGesture() {
 }
 
 // A note. Square for the chiptune voices, sine for the bell partials.
+/* WHERE A RING GOES, AND HOW FAR IT IS BENT. Both are swapped in around one
+   synchronous `play()` call in liveChime and put back afterwards — scheduling
+   a voice only queues nodes, it never awaits, so nothing else can run in
+   between and the swap cannot leak into another ring. The alternative was a
+   third argument threaded through all three primitives and all nine voices,
+   for a value every one of them would only ever pass along. */
+let _liveOut = null;
+let _liveDetune = 0;
+function liveOut(ctx) { return _liveOut || ctx.destination; }
+
 function liveTone(ctx, { type, freq, at, dur, gain, decay }) {
   const o = ctx.createOscillator();
   const g = ctx.createGain();
   o.type = type;
   o.frequency.setValueAtTime(freq, at);
+  if (_liveDetune) o.detune.setValueAtTime(_liveDetune, at);
   g.gain.setValueAtTime(0, at);
   g.gain.linearRampToValueAtTime(gain, at + 0.006);
   if (decay) g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
   else { g.gain.setValueAtTime(gain, at + dur - 0.01); g.gain.linearRampToValueAtTime(0, at + dur); }
-  o.connect(g); g.connect(ctx.destination);
+  o.connect(g); g.connect(liveOut(ctx));
   o.start(at); o.stop(at + dur + 0.02);
 }
 
@@ -2535,6 +2639,7 @@ function liveVoice(ctx, { type, from, to, at, dur, gain, cutoff, formants, vibHz
   const g = ctx.createGain();
   o.type = type;
   o.frequency.setValueAtTime(from, at);
+  if (_liveDetune) o.detune.setValueAtTime(_liveDetune, at);
   // exponentialRampToValueAtTime cannot reach or cross zero, and every pitch
   // here is well above it — but a `to` of 0 would throw and silence the ring.
   if (to && to > 0 && to !== from) o.frequency.exponentialRampToValueAtTime(to, at + dur);
@@ -2584,7 +2689,7 @@ function liveVoice(ctx, { type, from, to, at, dur, gain, cutoff, formants, vibHz
   // are held flat and cut off, and decaying them turns both into a sigh.
   if (hold) { g.gain.setValueAtTime(gain, at + dur - 0.05); g.gain.linearRampToValueAtTime(0, at + dur); }
   else g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
-  out.connect(g); g.connect(ctx.destination);
+  out.connect(g); g.connect(liveOut(ctx));
   o.start(at); o.stop(at + dur + 0.02);
 }
 
@@ -2613,7 +2718,7 @@ function liveNoise(ctx, { at, dur, gain, freq, q }) {
   g.gain.setValueAtTime(0, at);
   g.gain.linearRampToValueAtTime(gain, at + 0.006);
   g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
-  src.connect(f); f.connect(g); g.connect(ctx.destination);
+  src.connect(f); f.connect(g); g.connect(liveOut(ctx));
   src.start(at); src.stop(at + dur + 0.02);
 }
 
@@ -2687,7 +2792,7 @@ const LIVE_CHIME_VOICES = {
    a chime wired to the wrong condition, so the render cases assert the COUNT
    moves on a paid arrival and does not move on an unpaid one or under a ticked
    box. */
-function liveChime(kind) {
+function liveChime(kind, shape) {
   window.__liveChimeRings = (window.__liveChimeRings || 0) + 1;
   const ctx = liveAudioCtx();
   if (!ctx) return;
@@ -2698,7 +2803,22 @@ function liveChime(kind) {
      hardest kind of broken to notice, since the whole point is that you are not
      looking at it. */
   const play = LIVE_CHIME_VOICES[kind] || LIVE_CHIME_VOICES[LIVE_CHIME_DEFAULT];
-  play(ctx, ctx.currentTime + 0.01);
+  /* THE LEVEL IS A NODE, NOT A NUMBER PASSED DOWN. Every voice bakes its own
+     per-partial gains — the coin's two notes, the foghorn's sub-octave — and
+     scaling a burst has to preserve those against each other, so it belongs
+     one stage later, on the sum. `finally` puts the bus back even if a voice
+     throws, or one broken sound would mute every ring after it. */
+  const level = shape && typeof shape.level === 'number' ? shape.level : 1;
+  let bus = null;
+  if (level !== 1) {
+    bus = ctx.createGain();
+    bus.gain.setValueAtTime(level, ctx.currentTime);
+    bus.connect(ctx.destination);
+  }
+  _liveOut = bus;
+  _liveDetune = (shape && shape.detune) || 0;
+  try { play(ctx, ctx.currentTime + 0.01); }
+  finally { _liveOut = null; _liveDetune = 0; }
   /* COUNTED ONLY ONCE THE VOICE HAS RETURNED, and this second counter exists
      because the first one cannot do this job. __liveChimeRings is bumped at the
      TOP, before any audio, so the mute and paid-arrival cases hold on a machine
@@ -2707,6 +2827,32 @@ function liveChime(kind) {
      mutation: a deliberately broken `cow` left the ring count at nine and the
      case green. This one only moves when the synthesis actually ran. */
   window.__liveChimeVoiced = (window.__liveChimeVoiced || 0) + 1;
+}
+
+/* THE SHAPE OF A BURST, as data — delay, level and detune per ring — so a spec
+   can RUN it rather than regex over a forEach that schedules timers. A browser
+   has no ears in CI, so the only checkable claim about a burst is its schedule.
+
+   `rnd` is injected for the same reason: a jitter read off Math.random cannot
+   be asserted about, and a spec that seeds it can pin the jitter's BOUND
+   without pinning a value that will differ every run. */
+function liveChimeBurst(n, rnd) {
+  const r = typeof rnd === 'function' ? rnd : Math.random;
+  const count = Math.max(0, Math.min(n | 0, LIVE_CHIME_MAX));
+  if (!count) return [];
+  const overlap = Math.min(count, Math.max(1, Math.round(LIVE_CHIME_RING_MS / LIVE_CHIME_GAP_MS)));
+  const level = Math.pow(overlap, -LIVE_CHIME_DUCK);
+  const out = [];
+  for (let i = 0; i < count; i++) {
+    // The lead ring is exact and untuned: it is the one somebody reacts to.
+    const jitter = i === 0 ? 0 : Math.round((r() * 2 - 1) * LIVE_CHIME_JITTER_MS);
+    out.push({
+      delay: Math.max(0, i * LIVE_CHIME_GAP_MS + jitter),
+      level: level,
+      detune: (i % LIVE_CHIME_DETUNE_STEPS) * LIVE_CHIME_DETUNE_STEP,
+    });
+  }
+  return out;
 }
 
 /* WHAT RINGS. "enrolls AND PAYS" — so a registration whose money has not
@@ -2776,10 +2922,8 @@ function liveTimeline(rows, today) {
   // TODAY IS THE FEED'S DAY, passed in by the caller, never `new Date()`. The
   // card stamps each signup in the ORG's timezone, so a viewer in another zone
   // must not be shown a different day from the person in the rec centre.
-  const p = today.split('-');
-  const t0 = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2])).getTime();
-  const t1 = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]) + 1).getTime();
-  const span = t1 - t0 || 1;
+  const ax = liveDayAxis(today);
+  const t0 = ax.t0, span = ax.span;
   const marks = [];
   let n = 0;
   (rows || []).forEach(r => {
@@ -2801,10 +2945,29 @@ function liveTimeline(rows, today) {
              : 'not yet paid'),
     });
   });
-  // A FIXED 24-HOUR AXIS, deliberately, rather than one fitted to the marks:
-  // on a widget that refreshes every minute a fitted axis would slide every
-  // signup sideways as the day fills, which is disorienting on something whose
-  // whole job is to be watched.
+  return { marks, tickLabels: ax.tickLabels, nowLeft: ax.nowLeft };
+}
+
+/* ONE AXIS, TWO LANES. The registrations card and the check-ins card sit one
+   above the other, so a noon that is not in the same place on both is a defect
+   a reader sees immediately — and two copies of this arithmetic is how that
+   happens. The MARKS are not shared: a signup is coloured by what its money is
+   doing and a scan by whether it was accepted, which are different questions
+   about different rows.
+
+   A FIXED 24-HOUR AXIS, deliberately, rather than one fitted to the marks: on
+   a widget that refreshes every minute a fitted axis would slide every mark
+   sideways as the day fills, which is disorienting on something whose whole
+   job is to be watched.
+
+   TODAY IS THE FEED'S DAY, passed in by the caller, never `new Date()`, and
+   built from PARTS — `new Date("2026-09-05")` is UTC midnight and lands on the
+   previous day west of UTC. */
+function liveDayAxis(today) {
+  const p = String(today || '').split('-');
+  const t0 = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2])).getTime();
+  const t1 = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]) + 1).getTime();
+  const span = t1 - t0 || 1;
   const tickLabels = [];
   for (let h = 0; h < 24; h += 4) {
     const ap = h >= 12 ? 'p' : 'a', h12 = h % 12 === 0 ? 12 : h % 12;
@@ -2815,7 +2978,78 @@ function liveTimeline(rows, today) {
   // being drawn; past the end of it, it would pin to the right edge and imply
   // the day is still running.
   const nowLeft = now >= t0 && now <= t1 ? ((now - t0) / span) * 100 : null;
-  return { marks, tickLabels, nowLeft };
+  return { t0, t1, span, tickLabels, nowLeft };
+}
+
+/* ── MEMBERSHIP CHECK-INS ──────────────────────────────────────────────────
+   Dan: "a membership check in card — showing the last XX membership checkins",
+   and then on the shape: "a similar line chart or graph, with a small section
+   underneath of the users who've checked in. And add their tiny photos, orgs
+   love that."
+
+   Card 21517, its own feed and its own poll. Deliberately NOT folded into the
+   enrollments hook: they are different cards answering different questions and
+   an org can have one card without the other, so one feed failing must not
+   take the other down with it. What IS shared is the axis (liveDayAxis) and
+   the header, because those are the things a reader would notice disagreeing
+   between two cards sitting one above the other. */
+
+/* A SCAN'S IDENTITY. The feed carries no event id, so the key is the four
+   things that together cannot collide: the second it happened, who scanned,
+   at which desk, on what. Two rows matching all four ARE the same scan — and
+   a household of five scanning together really does produce same-second rows,
+   which is why the desk and product are in the key rather than just a time. */
+function liveCheckinKey(r) {
+  return [r['Checked In At'], r['User ID'] || r['Member'], r['Desk Location'], r['Product']].join('\u0000');
+}
+
+/* ACCEPTED OR TURNED AWAY. A DENIAL IS NOT ATTENDANCE — a card that counts a
+   refused scan as a visit reports a member who was turned away at the desk as
+   having come in, which is the facility Summary counting invoice fee lines as
+   bookings, one report over. Anything that COUNTS must filter on this.
+
+   At module scope so the spec can RUN it: a regex over a comparison passes on
+   an inverted one. */
+function liveCheckinState(r) {
+  return String(r && r['Status']) === 'Failed' ? 'failed' : 'ok';
+}
+
+/* INITIALS ARE THE DESIGN AND THE PHOTO SLOTS INTO THEM. Measured over the
+   33,239 members who checked in with a membership or pass in 90 days, only
+   7.5% have an image — and it is bimodal rather than thin: Clarkstown 94.7%,
+   Euclid 93.5%, Douglas County 22.9%, Apex 2.2%. So a photo-first row is a
+   wall of holes at most orgs and a delight at two, and initials under the
+   photo make it the same row either way. */
+function liveInitials(name) {
+  const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return '?';
+  if (parts.length === 1) return parts[0].slice(0, 1).toUpperCase();
+  return (parts[0].slice(0, 1) + parts[parts.length - 1].slice(0, 1)).toUpperCase();
+}
+
+/* The same one-day lane as the registrations card, off the SAME axis, with its
+   own marks: a scan is coloured by whether it was accepted, not by money. */
+function liveCheckinTimeline(rows, today) {
+  if (!today) return { marks: [], tickLabels: [], nowLeft: null };
+  const ax = liveDayAxis(today);
+  const marks = [];
+  let n = 0;
+  (rows || []).forEach(r => {
+    if (liveDay(r['Checked In At']) !== today) return;
+    const t = liveAt(r['Checked In At']);
+    if (t == null) return;
+    const st = liveCheckinState(r);
+    marks.push({
+      key: liveCheckinKey(r),
+      left: Math.min(100, Math.max(0, ((t - ax.t0) / ax.span) * 100)),
+      lane: n++ % 3,
+      state: st,
+      label: liveClock(r['Checked In At']) + ' \u00b7 ' + (r['Member'] || '') +
+             ' \u00b7 ' + (r['Product'] || '') +
+             (st === 'failed' ? ' \u00b7 turned away' : ''),
+    });
+  });
+  return { marks, tickLabels: ax.tickLabels, nowLeft: ax.nowLeft };
 }
 
 /* ── REGISTRATIONS BY PROGRAM ──────────────────────────────────────────────
@@ -3028,6 +3262,26 @@ function liveMarkState(r) {
   return 'paid';
 }
 
+/* WHAT THE MONEY COLUMN SAYS. A part-paid row shows BOTH figures — what has
+   arrived and what was charged — because "$325" in orange says a plan is
+   running and not how far through it is, which is the thing an admin watching
+   a registration morning actually wants. Rec's own household page reads
+   "$195.00 / $325.00 · Partially paid" for the same booking.
+
+   ONLY a part-paid row. A fully paid one has nothing to compare against and
+   "$325 / $325" is noise; an unpaid one has no first figure at all, and a
+   "$0 / $325" would read as a refund rather than as a booking nobody has paid
+   for yet. At module scope so the spec can RUN it — a regex over a branch
+   passes on an inverted one. */
+function livePriceCell(r) {
+  const price = liveMoney(r['Price']);
+  if (liveMarkState(r) !== 'part') return { paid: '', price: price || '\u2014' };
+  const paid = liveMoney(r['Paid']);
+  // A part-paid row whose PAID figure will not render (under a dollar, say)
+  // falls back to the charge alone rather than to a bare slash.
+  return paid ? { paid: paid, price: price } : { paid: '', price: price || '\u2014' };
+}
+
 function liveMoney(v) {
   const n = Number(v);
   return Number.isFinite(n) && n > 0 ? '$' + Math.round(n).toLocaleString() : '';
@@ -3130,9 +3384,9 @@ function useLiveEnrollments(onAvailable) {
                 .map(k => j.rows[keys.indexOf(k)])
                 .filter(r => r && liveChimeWorthy(r));
               const kind = chimeRef.current;
-              paid.slice(0, LIVE_CHIME_MAX).forEach((r, i) => {
-                if (i === 0) { liveChime(kind); return; }
-                const h = setTimeout(() => liveChime(kind), i * LIVE_CHIME_GAP_MS);
+              liveChimeBurst(paid.length).forEach(hit => {
+                if (!hit.delay) { liveChime(kind, hit); return; }
+                const h = setTimeout(() => liveChime(kind, hit), hit.delay);
                 chimeTimersRef.current.push(h);
               });
             }
@@ -3167,6 +3421,22 @@ function useLiveEnrollments(onAvailable) {
     const t = setInterval(load, LIVE_POLL_MS);
     return () => clearInterval(t);
   }, [load, paused]);
+  /* AND IT REFRESHES THE MOMENT THE TAB IS LOOKED AT. A 60-second interval in
+     a hidden tab is not a 60-second interval: browsers throttle timers in
+     backgrounded pages hard, so a dashboard left open on a second monitor can
+     go minutes without a poll and then show its age the instant somebody looks
+     — which is the other half of "nothing happens until i click the refresh".
+     Coming back to the tab IS the request for current rows, so it fetches
+     rather than waiting out whatever is left of an interval that may not have
+     been running. Not while paused: pausing says stop moving, and a tab switch
+     is not an un-pause. */
+  useEffect(() => {
+    const onVis = () => {
+      if (document.visibilityState === 'visible' && !pausedRef.current) load();
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, [load]);
   useEffect(() => () => {
     clearTimeout(timerRef.current);
     chimeTimersRef.current.forEach(clearTimeout);
@@ -3348,9 +3618,13 @@ function LiveRegistrations({ feed, recOrgId }) {
                     match the legend"). Unpaid keeps the default ink rather
                     than a third colour: the grey dot already says it, and a
                     grey PRICE reads as disabled. */}
-                <td className={'lm live-' + liveMarkState(r)} data-live-price={liveMarkState(r)}>
-                  {liveMoney(r['Price']) || '\u2014'}
-                </td>
+                {(() => { const cell = livePriceCell(r); return (
+                <td className={'lm live-' + liveMarkState(r)} data-live-price={liveMarkState(r)}
+                    data-live-paid={cell.paid}>
+                  {cell.paid
+                    ? <React.Fragment>{cell.paid}<span className="live-of">{' / ' + cell.price}</span></React.Fragment>
+                    : cell.price}
+                </td>); })()}
               </tr>
             );
           })}
@@ -3568,7 +3842,232 @@ function ProgramsLive({ feed, recOrgId }) {
   );
 }
 
-function LiveSection({ reportingBaseUrl, recOrgId }) {
+const LIVE_CHECKIN_ROWS = 12;
+
+/* ITS OWN FEED AND ITS OWN POLL. Same cadence and the same two rules the
+   registrations feed just had fixed — pause stops the clock, and coming back
+   to the tab refetches, because a 60-second interval in a hidden tab is not a
+   60-second interval. The spec requires BOTH hooks to carry those, which is
+   the mechanical guard against the pair drifting.
+
+   NO SOUND. The chime says "somebody just gave you money"; a beep every time
+   the front desk scans a card would be unbearable in a busy gym and would
+   train people to mute the whole section, taking the registrations chime with
+   it. */
+function useLiveCheckins(onAvailable, enabled) {
+  const [rows, setRows] = useState(null);
+  const [err, setErr]   = useState(false);
+  const [at, setAt]     = useState(null);
+  const [paused, setPaused] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [flash, setFlash] = useState(new Set());
+  const seenRef = React.useRef(null);
+  const timerRef = React.useRef(null);
+  const pausedRef = React.useRef(paused);
+
+  const load = React.useCallback(() => {
+    /* NO CARD, NO REQUEST. Without a public link the route 404s, and polling it
+       every sixty seconds for every org that does not have it would be a
+       self-inflicted error rate that looks exactly like a broken feed in the
+       logs. The caller knows from `availableReports`; the hook is told. */
+    if (!enabled) { setLoading(false); if (onAvailable) onAvailable(false); return; }
+    /* TWO DAYS, NOT ONE, AND THE SECOND ONE IS NOT OPTIONAL. `liveWindow`
+       builds dates in the VIEWER's zone; the card windows on the ORG's. So
+       once it is tomorrow for the viewer and still today at the rec centre —
+       every night from the org's midnight-in-viewer-time onwards, which for a
+       Denver org read from Eastern is 22:00 to 00:00 daily and worse for a
+       Pacific one — a one-day window asks for a date the org has not reached
+       and the card comes back EMPTY.
+
+       Measured against the live card while writing this: today's window
+       returned 0 rows at apex and el-segundo, and the previous day returned
+       1,150 and 198. An empty live card at 10pm is exactly the confident zero
+       this widget was built not to render.
+
+       Asking for yesterday too costs one more day of rows and fixes it for
+       every zone, because `today` below is derived from the newest row's own
+       org-timezone stamp rather than from the viewer's clock. Same shape as
+       the registrations card, which absorbs this by asking for seven. */
+    const w = liveWindow(2);
+    const qs = new URLSearchParams({ start: w.start, end: w.end });
+    const url = IS_SHARE
+      ? `/share/${SHARE_TOKEN}/data/checkins-live?${qs}`
+      : `/${ORG_SLUG}/api/data/checkins-live?token=${TOKEN}&${qs}`;
+    setLoading(true);
+    fetch(url)
+      .then(r => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then(j => {
+        if (!j || !Array.isArray(j.rows)) throw new Error('shape');
+        const keys = j.rows.map(liveCheckinKey);
+        const seen = seenRef.current;
+        /* THE FIRST LOAD HIGHLIGHTS NOTHING, same rule as the registrations
+           card: opening the dashboard mid-afternoon must not flash four
+           hundred rows as though everyone just walked in. */
+        if (seen) {
+          const fresh = keys.filter(k => !seen.has(k));
+          if (fresh.length) {
+            setFlash(new Set(fresh));
+            clearTimeout(timerRef.current);
+            timerRef.current = setTimeout(() => setFlash(new Set()), LIVE_FLASH_MS);
+          }
+        }
+        seenRef.current = new Set(keys);
+        setRows(j.rows); setErr(false); setAt(new Date()); setLoading(false);
+        if (onAvailable) onAvailable(true);
+      })
+      .catch(() => { setErr(true); setLoading(false); if (onAvailable) onAvailable(false); });
+  }, [onAvailable, enabled]);
+
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    const wasPaused = pausedRef.current;
+    pausedRef.current = paused;
+    if (paused || !enabled) return;
+    if (wasPaused) load();
+    const t = setInterval(load, LIVE_POLL_MS);
+    return () => clearInterval(t);
+  }, [load, paused, enabled]);
+  useEffect(() => {
+    const onVis = () => {
+      if (document.visibilityState === 'visible' && !pausedRef.current) load();
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, [load]);
+  useEffect(() => () => clearTimeout(timerRef.current), []);
+
+  return { rows, err, at, paused, setPaused, flash, loading, refresh: load };
+}
+
+function MembershipCheckins({ feed, recOrgId }) {
+  const { rows, err, flash } = feed;
+
+  /* ABSENT, NEVER A CONFIDENT ZERO. A feed that has not answered is not a desk
+     nobody walked through — and "0 check-ins today" on a busy morning is the
+     reading that had to be impossible. The section hides itself when its
+     widgets do. */
+  if (err) return null;
+  if (!rows) {
+    return (
+      <div className="widget-card widget-md live-card" data-live-checkins="loading">
+        <LiveCardHeader icon={'\u{1F6C2}'} title="Membership Check-Ins" feed={feed}
+                        sub="Members and passes as they scan in \u00b7 today" />
+        <div className="live-empty">Loading\u2026</div>
+      </div>
+    );
+  }
+
+  const today = rows.length ? liveDay(rows[0]['Checked In At']) : '';
+  const todayRows = rows.filter(r => liveDay(r['Checked In At']) === today);
+  /* THE HEADLINE COUNTS ACCEPTED SCANS ONLY. A denial is not attendance. The
+     refusals are still on screen — they are the interesting rows — but they
+     are counted separately and said out loud rather than folded in. */
+  const okRows   = todayRows.filter(r => liveCheckinState(r) === 'ok');
+  const failed   = todayRows.length - okRows.length;
+  const people   = new Set(okRows.map(r => r['User ID'] || r['Member'])).size;
+  const tl = liveCheckinTimeline(rows, today);
+
+  return (
+    <div className="widget-card widget-md live-card" data-live-checkins={String(rows.length)}>
+      <LiveCardHeader icon={'\u{1F6C2}'} title="Membership Check-Ins" feed={feed}
+                      sub="Members and passes as they scan in \u00b7 today" />
+
+      <div className="live-count">
+        <span className="live-n" data-live-ci-today={String(okRows.length)}>{okRows.length}</span>
+        <span className="live-u">
+          {okRows.length === 1 ? 'check-in' : 'check-ins'} today
+          {people && people !== okRows.length ? ' \u00b7 ' + people + (people === 1 ? ' member' : ' members') : ''}
+          {/* A REFUSAL COUNT WITH NO REASON BESIDE IT, because the log records
+              none: attendance_event.side_effects is empty on all 58 denials
+              platform-wide, and of 52 membership refusals only 5 had an
+              expired, unstarted or cancelled membership. Inventing a "why"
+              would be a confident sentence sitting beside real rows. */}
+          {failed ? <span className="live-ci-fail" data-live-ci-failed={String(failed)}
+                          title="Scans the desk turned away. The log records no reason, so none is shown."
+                    >{' \u00b7 ' + failed + ' turned away'}</span> : null}
+        </span>
+      </div>
+
+      <div className="live-timeline" data-live-ci-marks={String(tl.marks.length)}
+           title="Every scan today, placed at the time it happened. Green accepted, red turned away.">
+        {tl.tickLabels.map((d, i) => (
+          <span key={i} className="lt-day" style={{left: d.left + '%'}}><i /><em>{d.text}</em></span>
+        ))}
+        {tl.nowLeft == null ? null : <span className="lt-now" style={{left: tl.nowLeft + '%'}} title="Now" />}
+        {tl.marks.map(m => (
+          <span key={m.key}
+                className={'lt-mark ci-' + m.state + (flash.has(m.key) ? ' fresh' : '')}
+                data-live-ci-mark={m.state}
+                style={{left: m.left + '%', top: (6 + m.lane * 10) + 'px'}}
+                title={m.label} />
+        ))}
+      </div>
+      <div className="live-legend" data-live-ci-legend="1">
+        <span className="lg-paid"><i />accepted</span>
+        <span className="lg-fail"><i />turned away</span>
+      </div>
+
+      {/* WHO. The ask was for the people, not only the count — the same
+          dead-end this repo keeps writing down, where a number has nowhere to
+          go. Newest first, capped, and the cap SAYS SO rather than trailing
+          off. */}
+      {todayRows.length === 0 ? (
+        <div className="live-empty">No membership or pass check-ins today yet.</div>
+      ) : (
+        <React.Fragment>
+          {/* TODAY'S ROWS, the same set the headline counts. Reading `rows`
+              here would put a scan from another day among the faces under a
+              number that excluded it — one card disagreeing with itself. */}
+          <div className="live-ci-people" data-live-ci-people={String(Math.min(todayRows.length, LIVE_CHECKIN_ROWS))}>
+            {todayRows.slice(0, LIVE_CHECKIN_ROWS).map(r => {
+              const st = liveCheckinState(r);
+              const u  = liveUserUrl(recOrgId, r['User ID']);
+              const nm = r['Member'] || '(no name)';
+              const face = (
+                <span className={'ci-face ci-' + st} data-live-ci-face={r['Photo'] ? 'photo' : 'initials'}>
+                  {/* THE PHOTO IS A BONUS, NOT THE LAYOUT. Initials sit
+                      underneath it, so a 2%-coverage org gets a full row of
+                      faces rather than a row of holes — and a broken image URL
+                      falls back to them rather than to a torn-page glyph. */}
+                  {r['Photo']
+                    ? <img src={r['Photo']} alt="" loading="lazy"
+                           onError={e => { e.target.style.display = 'none'; }} />
+                    : null}
+                  <em>{liveInitials(nm)}</em>
+                </span>
+              );
+              return (
+                <span key={liveCheckinKey(r)}
+                      className={'ci-person' + (flash.has(liveCheckinKey(r)) ? ' live-new' : '')}
+                      data-live-ci-person={nm} data-live-ci-status={st}
+                      title={liveClock(r['Checked In At']) + ' \u00b7 ' + nm + ' \u00b7 ' +
+                             (r['Product'] || '') + ' \u00b7 ' + (r['Desk Location'] || '') +
+                             (st === 'failed' ? ' \u00b7 turned away' : '')}>
+                  {/* A LINK ONLY WHERE THERE IS AN ID. "User ID" is users.id,
+                      the uuid the admin URL takes — never "Member ID", the
+                      six-character desk code, which looks identical in a link
+                      and 404s. No id, plain text: a link to nowhere is worse
+                      than none. */}
+                  {u ? <a href={u} target="_blank" rel="noopener noreferrer"
+                          data-live-ci-link={r['User ID']}>{face}</a> : face}
+                  <b>{nm.split(/\s+/)[0]}</b>
+                  <i>{liveClock(r['Checked In At'])}</i>
+                </span>
+              );
+            })}
+          </div>
+          {todayRows.length > LIVE_CHECKIN_ROWS
+            ? <div className="live-more" data-live-ci-more={String(todayRows.length - LIVE_CHECKIN_ROWS)}>
+                {'+' + (todayRows.length - LIVE_CHECKIN_ROWS) + ' more today'}
+              </div>
+            : null}
+        </React.Fragment>
+      )}
+    </div>
+  );
+}
+
+function LiveSection({ reportingBaseUrl, recOrgId, hasCheckins }) {
   const sec = SECTIONS.live;
   /* THE SECTION HIDES WITH ITS WIDGETS. The counter renders nothing when the
      feed cannot answer — that is the absence rule — but a header and an empty
@@ -3577,8 +4076,15 @@ function LiveSection({ reportingBaseUrl, recOrgId }) {
      so the section does not flash out and back in on a slow first fetch; it
      hides only once a fetch has actually FAILED. */
   const [alive, setAlive] = useState(true);
-  const feed = useLiveEnrollments(setAlive);
-  if (!alive) return null;
+  /* TWO FEEDS, TWO VERDICTS. The check-ins card is a different card on a
+     different Metabase question, so one of them failing must not take the
+     other off the page — and the SECTION hides only when there is nothing left
+     to show in it. Optimistic on mount for the same reason as above. */
+  const [ciAlive, setCiAlive] = useState(!!hasCheckins);
+  const feed   = useLiveEnrollments(setAlive);
+  const ciFeed = useLiveCheckins(setCiAlive, !!hasCheckins);
+  const showCi = !!hasCheckins && ciAlive;
+  if (!alive && !showCi) return null;
   return (
     <div className="dashboard-section" data-live-section="1">
       <div className="section-header">
@@ -3588,8 +4094,9 @@ function LiveSection({ reportingBaseUrl, recOrgId }) {
         <div className="section-line" />
       </div>
       <div className="widget-grid">
-        <LiveRegistrations feed={feed} recOrgId={recOrgId} />
-        <ProgramsLive feed={feed} recOrgId={recOrgId} />
+        {alive ? <LiveRegistrations feed={feed} recOrgId={recOrgId} /> : null}
+        {alive ? <ProgramsLive feed={feed} recOrgId={recOrgId} /> : null}
+        {showCi ? <MembershipCheckins feed={ciFeed} recOrgId={recOrgId} /> : null}
       </div>
     </div>
   );
@@ -5281,8 +5788,10 @@ function DashboardApp() {
             absent until the card has a public link), and never in print — a
             printed "right now" is a lie the moment the paper leaves the
             printer. */}
-        {!IS_PRINT && activeTab === 'dashboard' && availableReports.enrollments && (
-          <LiveSection reportingBaseUrl={orgMeta.reportingBaseUrl || ''} recOrgId={orgMeta.recOrgId || ''} />
+        {!IS_PRINT && activeTab === 'dashboard'
+          && (availableReports.enrollments || availableReports['checkins-live']) && (
+          <LiveSection reportingBaseUrl={orgMeta.reportingBaseUrl || ''} recOrgId={orgMeta.recOrgId || ''}
+                       hasCheckins={!!availableReports['checkins-live']} />
         )}
         {(IS_PRINT || activeTab === 'dashboard' || !availableReports.support) && displaySections.map((sec, i) => (
           <SectionBlock key={sec.id+i+theme} sectionId={sec.id} widgetIds={sec.widgets} reportData={reportData} loading={loading} freshRts={freshRts} priorReportData={priorReportData}
