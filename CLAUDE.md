@@ -164,6 +164,13 @@ the mutated run exits 1 and names both assertions, the clean run exits 0.
 Generalise it: *when a rule about where code goes has failed twice, stop
 restating the rule and remove the position from the design.*
 
+**And the first fix left the old block behind**, which is worth recording as
+its own mistake: for one commit the file carried BOTH reporters, and the stale
+`if (failures.length)` sat ABOVE the check-ins section with a `process.exit(1)`
+in it — so any pre-existing failure would have exited before those 34
+assertions ran at all. The exit handler was what kept it honest. Removing a
+mechanism means removing it, not adding its replacement next to it.
+
 
 ## THE LIVE CARD WAS A MINUTE BEHIND, AND REFRESH ONLY LOOKED LIKE THE FIX (2026-09-05)
 
