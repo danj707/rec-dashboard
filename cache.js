@@ -38,18 +38,29 @@ function setCache(key, data, ttl = DEFAULT_CACHE_TTL) {
 }
 
 // Background refresh for a stale key. De-duplicated: if a refresh is already
-// in flight for the key, extra calls are no-ops (no thundering herd on a slow
-// card). On success the entry is replaced and its TTL reset; on failure the
-// stale entry is kept so it can be retried on the next request. Returns the
-// in-flight promise (handy for tests); callers may ignore it.
-const _revalidating = new Set();
+// in flight for the key, extra calls JOIN it rather than starting a second one
+// (no thundering herd on a slow card). On success the entry is replaced and
+// its TTL reset; on failure the stale entry is kept so it can be retried on
+// the next request.
+//
+// IT RETURNS THE IN-FLIGHT PROMISE, INCLUDING WHEN IT DID NOT START THE WORK.
+// This used to return `null` in that case, which is fine for a caller that
+// fires and forgets — and useless to the one that has to WAIT for the fresh
+// rows. A live feed cannot serve a stale answer (see the live-feed branch in
+// fetchReportData), so it awaits this; handing it `null` would have made it
+// return the stale rows it was trying to avoid, silently, precisely when two
+// viewers polled at once. The promise resolves either way: it never rejects,
+// because a failed refresh is a kept stale entry, not an error to the caller.
+const _revalidating = new Map();
 function revalidate(key, ttl, doFetch) {
-  if (_revalidating.has(key)) return null;
-  _revalidating.add(key);
-  return Promise.resolve().then(doFetch)
+  const running = _revalidating.get(key);
+  if (running) return running;
+  const p = Promise.resolve().then(doFetch)
     .then(rows => { setCache(key, rows, ttl); console.log(`[REVALIDATE] ${key} ✓`); })
     .catch(e => console.warn(`[REVALIDATE] ${key} failed, keeping stale: ${e.message}`))
     .finally(() => _revalidating.delete(key));
+  _revalidating.set(key, p);
+  return p;
 }
 
 module.exports = { cache, DEFAULT_CACHE_TTL, getCached, getCacheEntry, setCache, revalidate };

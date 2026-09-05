@@ -1,5 +1,201 @@
 # Project notes for Claude
 
+## THE LIVE CARD WAS A MINUTE BEHIND, AND REFRESH ONLY LOOKED LIKE THE FIX (2026-09-05)
+
+Dan: *"seems like the larger orgs are lagging a bit on the live cards? Not
+seeing these recent bookings, no?"* and then *"seems like the live widget is
+lagging — nothing happens until i click the refresh."*
+
+**Three separate things, and only one of them was what it looked like.**
+
+### 1. THE CACHE WAS HANDING BACK THE PREVIOUS FETCH
+
+`fetchMetabaseData` is stale-while-revalidate: a caller gets the cached rows
+immediately and, if they are past the TTL, a refresh is kicked off *behind* the
+answer. With a 60s TTL and a 60s poll that means the card shows rows between one
+and two minutes old, sawing between the two:
+
+| | |
+|---|---|
+| t=0 | cold fetch, cache = D0 |
+| t=60 | stale → **serves D0**, kicks a refresh that lands at ~t=65 |
+| t=120 | fresh → serves D65 |
+| t=180 | stale → **serves D65**, kicks a refresh |
+
+**AND THAT IS EXACTLY WHY THE REFRESH BUTTON LOOKED LIKE THE CURE.** `refresh`
+IS `load` — the same function, the same URL, no cache-buster. Clicking it a
+moment after a poll simply lands *after* the background refresh that poll had
+already started, so it gets the rows the poll should have had. The button was
+never doing anything the poll was not; it was arriving later. Anyone diagnosing
+this from the symptom will look for a difference between the two code paths and
+there is none.
+
+The trade is right for a dashboard of a window somebody chose — nobody should
+wait 30s for a report they can read a quarter of an hour old. It is wrong for a
+widget whose whole claim is *"right now"*, where a stale answer is the failure
+rather than the graceful degradation. **So a live feed now AWAITS the refresh**
+(`isLive` off `LIVE_REPORT_TTL_MS`, which already knows which feeds those are);
+everything else is unchanged.
+
+- **It costs the poll the card's own time**, measured through the public
+  endpoint: shrewsbury **3.0s**, el-segundo **5.2s**, san-francisco **9.5s** —
+  comfortably inside the 60s poll.
+- **`revalidate` now returns the IN-FLIGHT PROMISE instead of `null`** when a
+  refresh is already running. Fire-and-forget callers never noticed; a caller
+  that has to *wait* would have fallen straight back to the stale rows it was
+  avoiding — silently, and only when two viewers polled in the same second,
+  which is the hardest version of that bug to ever see.
+- **A failed refresh still answers with the stale rows.** A card that empties
+  itself the first time Metabase hiccups is worse than one a minute behind for
+  a minute.
+
+### 2. A HIDDEN TAB'S 60-SECOND TIMER IS NOT A 60-SECOND TIMER
+
+Browsers throttle `setInterval` hard in backgrounded pages, so a dashboard left
+open on a second monitor can go minutes without a poll and then show its age the
+instant somebody looks at it. Coming back to the tab IS the request for current
+rows, so the feed refetches on `visibilitychange` rather than waiting out
+whatever is left of an interval that may not have been running. **Not while
+paused** — a tab switch is not an un-pause.
+
+### 3. SESSION BOOKINGS NEVER REACHED THE CARD AT ALL — this is the big one
+
+Card 21286's `bk` CTE filters `b.type = 'section'`. The biggest orgs run camps
+and drop-ins in `registration_mode = per-session`, and those register as
+`type = 'session'`. Measured over seven days, deduped to one row per
+(customer, participant, section) — a parent booking a nine-day camp is nine
+booking rows and must stay one line:
+
+| org | on the card | missing | |
+|---|---|---|---|
+| apex | 795 | **+556** | +70% |
+| essex-junction | 261 | **+241** | +92% |
+| el-segundo | 211 | **+319** | +151% |
+
+So on a busy morning the feed skips long stretches, which reads as lag and is
+not. **The card was built for these rows and the filter is what stops them**: it
+already `LEFT JOIN`s `session` and resolves
+`COALESCE(b.section_id, se.section_id)` downstream — anticipating session
+bookings the upstream `WHERE` never lets through.
+
+Not fixed here: it is a push, a Date-tag flip and a live-widget outage window.
+Flip link https://rec.metabaseapp.com/question/21286
+
+**AND SAN FRANCISCO'S EMPTY CARD IS CORRECT.** SF took 2,963 bookings in seven
+days and the card returns **0 rows**, which looks identical to the bug above.
+All 80 of its `section` bookings are `is_rec_managed = true` (excluded by
+design), and everything else is `facilityRental`. *A report that is empty for
+one org and healthy for another is not evidence about that org* — check what its
+rows actually ARE before calling it a defect.
+
+## A BIG REGISTRATION DAY SOUNDS LIKE ONE (2026-09-05)
+
+Dan: *"When an org has a big registration day, I want it to sound like a las
+vegas casino."*
+
+`LIVE_CHIME_MAX` was **3**, on the argument that a dozen overlapping coins is
+noise. That argument was about LOUDNESS, and truncating the burst was the wrong
+answer to it — a morning where sixty people register is the one morning this
+card is worth having on, and ringing three times for it says nothing about the
+size of the day. It is **40** now, and the loudness is handled where it belongs.
+
+### THE DUCK IS BY THE OVERLAP, NOT THE BATCH SIZE
+
+The mistake worth not repeating. Forty rings at full gain sum past 1.0 and the
+browser hard-clips, which crackles — it sounds broken, not loud. But **forty
+rings 90ms apart do not play together**: each lasts about 0.7s, so only about
+eight are ever sounding at once and the rest are strictly later. Ducking by
+forty would divide by five times the loudness actually present, and the biggest
+morning of the year would ring the quietest.
+
+`level = overlap^-0.4`, where `overlap = RING_MS / GAP_MS` capped by the count.
+**Slightly less than equal loudness (`^-0.5`) on purpose**, so a bigger burst
+really is a bit louder. A batch of ONE is exactly 1.0 and takes the old code
+path entirely, so an ordinary single signup sounds identical to before.
+
+The duck **saturates**: past the overlap point a longer burst is longer, not
+quieter. That is the assertion that fails if anyone reads the level off the
+batch size again.
+
+### THE DETUNE IS NOT DECORATION
+
+Identical simultaneous copies of the same waveform sum coherently — forty coins
+scheduled together sound like **one louder coin, not like forty**. A four-step
+rising run of 25 cents, resetting, keeps them from phase-cancelling into a
+flanged mush. Under a semitone, so the coin's own B5→E6 interval still sounds in
+tune.
+
+Jitter for the same family of reason: an exactly even stagger is a machine gun
+and reads as one effect. **The first ring is deliberately NOT jittered** — it is
+the one a person reacts to, and delaying it up to 45ms for nothing only makes
+the card feel slower.
+
+### `liveChimeBurst(n, rnd)` RETURNS THE SCHEDULE AS DATA
+
+Delay, level and detune per ring, at module scope, with `rnd` injected. A
+browser has no ears in CI, so the only checkable claim about a burst is its
+SHAPE — and a jitter read off `Math.random` cannot be asserted about at all.
+
+The level and detune reach the voices through a module-level output bus and a
+detune value that `liveChime` swaps in around one **synchronous** `play()` call
+and restores in a `finally`. Scheduling a voice only queues nodes, it never
+awaits, so nothing can run in between; the alternative was a third argument
+threaded through three primitives and nine voices that every one of them would
+only pass along. The `finally` matters: without it one throwing voice mutes
+every ring after it.
+
+## $195 / $325 — a part-paid row shows both figures (2026-09-05)
+
+Dan, on a $325 registration with $195 paid on a plan: *"would like to see
+195/325 here."* Rec's own household page reads *"$195.00 / $325.00 · Partially
+paid"* for the same booking.
+
+`livePriceCell(r)` — **only** a part-paid row gets two figures. A fully paid one
+has nothing to compare against and *"$325 / $325"* is noise; an unpaid one has
+no first figure, and *"$0 / $325"* reads as a refund rather than as a booking
+nobody has paid for yet. It goes through `liveMarkState`, so the rows that get
+two figures are exactly the rows the dots in the lane call part-paid — the two
+cannot disagree.
+
+The charge is **muted** behind the paid figure rather than sharing its orange:
+two figures in one colour read as a single number with a slash in it. `.lm` went
+62px → 104px with `white-space: nowrap`; the programs card's own 116px override
+still stacks on top of that.
+
+**A benign mutation worth recording.** Changing the gate from
+`!== 'part'` to `=== 'paid'` SURVIVES, and correctly: an unpaid row falls
+through to `liveMoney(r['Paid'])`, which is `''` for zero, and the sub-dollar
+fallback already returns the charge alone. The branch is belt-and-braces and the
+fallback is the real guard — reporting that mutation as "caught" would have been
+wrong.
+
+## RUN `ci-check-html.js` AFTER EVERY dashboard.html EDIT (2026-09-05)
+
+Self-inflicted, and it cost a ten-minute render run. Rewriting a comment block
+left the old paragraphs *outside* it:
+
+```js
+   ...which is exactly the relationship wanted.
+*/
+const LIVE_CHIME_RING_MS = 700;
+
+   AND THE DETUNE IS NOT DECORATION. ...        ← now bare code
+```
+
+Babel threw `Missing semicolon (1916:6)`, discarded the entire inline block, and
+**every widget on the dashboard vanished** — the blank-page class both these
+repos keep being bitten by.
+
+**`live-widgets.spec.js` passed on it, all 270 assertions**, because a spec
+regexes source and never parses it. `ci-check-render.js` caught it — and so does
+`node scripts/ci-check-html.js`, **in about a second**, which is the cheap guard
+that should have run first. Verified by reintroducing the bug: the HTML check
+names the file, the block and the line.
+
+Generalise it: *editing a comment is editing code.* Run the parse check after
+touching a `text/babel` block, before spending ten minutes on a browser.
+
+
 ## The Programs Live money column was 62px (2026-09-04)
 
 Dan: *"look at the alignment on the headers and revenue section"*, with the

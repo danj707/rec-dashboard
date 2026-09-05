@@ -115,11 +115,25 @@ try {
     liftFn(src, 'liveKey') + '\n' + liftFn(src, 'liveSectionKey') + '\n' +
     liftFn(src, 'liveBySection') + '\n' +
     liftFn(src, 'liveMarkState') + '\n' + liftFn(src, 'liveChimeWorthy') + '\n' +
+    liftFn(src, 'livePriceCell') + '\n' +
     liftFn(src, 'liveDayShift') + '\n' + liftFn(src, 'liveProgramTrend') + '\n' +
+    liftFn(src, 'liveChimeBurst') + '\n' +
     'const LIVE_TREND_DAYS = ' + (code.match(/LIVE_TREND_DAYS = (\d+)/) || [0,3])[1] + ';\n' +
     'const LIVE_TREND_MIN = '  + (code.match(/LIVE_TREND_MIN = (\d+)/)  || [0,4])[1] + ';\n' +
+    /* THE BURST CONSTANTS ARE READ OUT OF THE PAGE, never transcribed here.
+       Copying `12` into the spec makes it a test of the spec: the page could
+       drop to three and every assertion below would still pass. */
+    ['LIVE_CHIME_MAX', 'LIVE_CHIME_GAP_MS', 'LIVE_CHIME_JITTER_MS',
+     'LIVE_CHIME_DUCK', 'LIVE_CHIME_DETUNE_STEP', 'LIVE_CHIME_DETUNE_STEPS',
+     'LIVE_CHIME_RING_MS']
+      .map(n => {
+        const m = code.match(new RegExp('const ' + n + ' = ([0-9.]+)'));
+        if (!m) throw new Error(n + ' is not declared in the page');
+        return 'const ' + n + ' = ' + m[1] + ';\n';
+      }).join('') +
     'return { liveWindow, liveDay, liveClock, liveMoney, liveKey, liveSectionKey, liveBySection, liveMarkState,' +
-    ' liveChimeWorthy, liveDayShift, liveProgramTrend };')();
+    ' liveChimeWorthy, livePriceCell, liveDayShift, liveProgramTrend, liveChimeBurst,' +
+    ' LIVE_CHIME_MAX, LIVE_CHIME_GAP_MS, LIVE_CHIME_JITTER_MS, LIVE_CHIME_RING_MS };')();
   pass++;
 } catch (e) {
   // A guard that DIES instead of failing has not told anyone what broke.
@@ -213,6 +227,25 @@ if (H.liveWindow) {
      'and Pause STOPS the timer rather than hiding its effect — a list that reorders under the cursor while you read a name is worse than a stale one');
   ok(/return \(\) => clearInterval\(t\);/.test(code),
      'the interval is cleared on unmount, or switching tabs leaves a timer polling forever');
+
+  /* A LIVE FEED NEVER SERVES A STALE ANSWER. Dan: "seems like the live widget
+     is lagging — nothing happens until i click the refresh." Stale-while-
+     revalidate hands the caller the PREVIOUS fetch and refreshes behind it, so
+     with a 60s TTL and a 60s poll the card shows rows one to two minutes old —
+     and clicking Refresh appeared to fix it only because the click landed
+     after the background refresh the poll itself had kicked off. That trade is
+     right for a report of a chosen window and wrong for a widget whose whole
+     claim is "right now". */
+  ok(/const isLive = !!LIVE_REPORT_TTL_MS\[reportType\];/.test(srv),
+     'the fetcher knows which feeds are live');
+  ok(/if \(entry && entry\.stale && isLive\) \{\s*await revalidate\(/.test(srv),
+     '...and a stale LIVE entry is refreshed BEFORE answering, not behind the answer');
+  ok(/if \(entry && entry\.stale && isLive\)[\s\S]{0,400}?if \(entry\) \{\s*if \(entry\.stale\) revalidate\(/.test(srv),
+     '...while everything else still gets stale-while-revalidate — a 30s report must not block a reader');
+  /* AND A FAILED REFRESH STILL ANSWERS. A card that empties itself the first
+     time Metabase hiccups is worse than one a minute behind for a minute. */
+  ok(/return fresh \? fresh\.data : entry\.data;/.test(srv),
+     'a live refresh that failed falls back to the stale rows rather than to nothing');
 }
 
 /* ── 6. IT IGNORES THE DATE PICKER, and says so ────────────────────────────*/
@@ -713,6 +746,44 @@ if (H.liveBySection) {
        "...via liveMarkState, not its own arithmetic — one predicate, three readers");
   }
 
+  /* WHAT ARRIVED, OVER WHAT WAS CHARGED. Dan, on a $325 registration with $195
+     paid on a payment plan: "would like to see 195/325 here." Lifted and RUN,
+     because the interesting part is WHICH rows get two figures. */
+  if (H.livePriceCell) {
+    const { livePriceCell } = H;
+    const part = livePriceCell({ Price: 325, Paid: 195 });
+    ok(part.paid === '$195' && part.price === '$325',
+       'a part-paid row shows what arrived over what was charged');
+    ok(livePriceCell({ Price: 325, Paid: 325 }).paid === '',
+       'a fully paid row shows one figure — "$325 / $325" is noise');
+    ok(livePriceCell({ Price: 325, Paid: 325 }).price === '$325',
+       '...and it is the charge');
+    /* AN UNPAID ROW SHOWS NO ZERO. "$0 / $325" reads as a refund rather than
+       as a booking nobody has paid for yet; the grey dot already says it. */
+    ok(livePriceCell({ Price: 325, Paid: 0 }).paid === '',
+       'an unpaid row shows no paid figure');
+    ok(livePriceCell({ Price: 325 }).price === '$325',
+       '...and still prints the charge');
+    ok(livePriceCell({}).price === '\u2014',
+       'a row with no money at all is a dash, not an empty cell');
+    /* THE STATE AND THE CELL CANNOT DISAGREE. Both read liveMarkState, so a
+       row the dots call part-paid is exactly the row that gets two figures. */
+    const rows = [{ Price: 325, Paid: 195 }, { Price: 45, Paid: 45 }, { Price: 50, Paid: 0 }];
+    ok(rows.every(r => (H.liveMarkState(r) === 'part') === !!livePriceCell(r).paid),
+       'two figures appear on exactly the rows the dots call part-paid');
+  }
+
+  /* COMING BACK TO THE TAB REFETCHES. A 60-second interval in a hidden tab is
+     not a 60-second interval — browsers throttle backgrounded timers hard — so
+     a dashboard on a second monitor shows its age the moment somebody looks at
+     it. That is the other half of "nothing happens until i click the refresh". */
+  ok(/visibilitychange/.test(code) && /document\.visibilityState === 'visible'/.test(code),
+     'the feed refetches when the tab becomes visible');
+  ok(/visibilityState === 'visible' && !pausedRef\.current/.test(code),
+     '...but not while paused — a tab switch is not an un-pause');
+  ok(/removeEventListener\('visibilitychange'/.test(code),
+     '...and the listener comes off, or a remount stacks a second fetch on every switch');
+
   /* THE FIRST LOAD IS SILENT, and this is the load-bearing one. The chime
      rides the `fresh` diff, which is empty on the first poll by construction —
      so opening the dashboard on a week holding 61 paid registrations plays
@@ -728,11 +799,90 @@ if (H.liveBySection) {
   ok(/\.filter\(r => r && liveChimeWorthy\(r\)\)/.test(loadFn),
      'the arrivals are filtered to the paid ones before any of them rings');
 
-  /* A BURST IS CAPPED. Twelve arrivals in one poll is one event to somebody
-     listening; twelve overlapping coins is a reason to mute the card for good. */
-  ok(/LIVE_CHIME_MAX\s*=\s*3/.test(code), 'a batch rings at most three times');
-  ok(/\.slice\(0, LIVE_CHIME_MAX\)/.test(loadFn), '...and the cap is applied to the batch, not hoped for');
-  ok(/i \* LIVE_CHIME_GAP_MS/.test(loadFn), '...staggered, so two arrivals read as two');
+  /* A BIG REGISTRATION DAY SOUNDS LIKE ONE. Dan: "When an org has a big
+     registration day, I want it to sound like a las vegas casino." The
+     schedule is LIFTED AND RUN, because the only checkable claim about a burst
+     in a browser with no ears is the shape of it. */
+  ok(/liveChimeBurst\(paid\.length\)/.test(loadFn),
+     'the batch is handed to the burst scheduler whole — the cap lives in one place');
+  ok(/liveChime\(kind, hit\)/.test(loadFn),
+     '...and each ring carries its own level and detune');
+  if (H.liveChimeBurst) {
+    const { liveChimeBurst, LIVE_CHIME_MAX, LIVE_CHIME_GAP_MS, LIVE_CHIME_JITTER_MS } = H;
+    const half = () => 0.5;                  // seeded: no jitter, so delays are exact
+    /* EVERY INDEXED READ GOES THROUGH THIS. Shrinking the cap makes `big[3]`
+       undefined, and reading `.delay` off it kills the process with a
+       TypeError naming nothing — which is how this spec first reacted to the
+       cap being put back to three: it DIED instead of failing by name, the
+       lesson already recorded twice in these repos. */
+    const hit = (b, i) => (b && b[i]) || { delay: null, level: null, detune: null };
+    ok(LIVE_CHIME_MAX >= 8,
+       'a busy poll rings enough times to sound busy (cap is ' + LIVE_CHIME_MAX + ')');
+    ok(liveChimeBurst(0).length === 0, 'nothing arriving rings nothing');
+    ok(liveChimeBurst(1).length === 1, 'one arrival rings once');
+    ok(liveChimeBurst(60).length === LIVE_CHIME_MAX,
+       'a flood is capped, so one poll cannot ring forever');
+
+    /* A LONE ARRIVAL IS UNCHANGED. The duck exists for crowds; applying it to
+       the common case would make every ordinary signup quieter than it was. */
+    ok(hit(liveChimeBurst(1), 0).level === 1, 'a single arrival rings at full level');
+    ok(hit(liveChimeBurst(1), 0).delay === 0, '...and immediately');
+    ok(hit(liveChimeBurst(1), 0).detune === 0, '...and in tune');
+
+    /* DUCKED, BUT NOT TO EQUAL LOUDNESS AND NOT BY THE BATCH SIZE. Rings at
+       full gain clip and crackle, which sounds broken rather than loud — but
+       ducking by the whole batch would divide a forty-ring burst by five times
+       the loudness actually present, since only about eight of them ever sound
+       at once. The biggest morning of the year would ring the quietest. */
+    const big = liveChimeBurst(LIVE_CHIME_MAX, half);
+    ok(big.every(h => h.level === hit(big, 0).level), 'one level across the burst');
+    ok(hit(big, 0).level < 1, 'a burst is ducked, so a peal does not clip');
+    ok(hit(big, 0).level > Math.pow(LIVE_CHIME_MAX, -0.5),
+       '...but LESS than equal-loudness, so a bigger day really is louder');
+    ok(liveChimeBurst(3, half)[0].level < 1, 'even three arrivals duck a little');
+    ok(hit(big, 0).level > 0.25,
+       'a full burst is still clearly audible per ring, not divided into nothing');
+    /* THE DUCK SATURATES. This is the assertion that fails if the level is
+       taken from the batch size again: past the overlap point a longer burst
+       has to be LONGER, not quieter. */
+    const overlap = Math.round(H.LIVE_CHIME_RING_MS / LIVE_CHIME_GAP_MS);
+    ok(overlap > 1 && overlap < LIVE_CHIME_MAX,
+       'the fixture actually spans the overlap point (overlap is ' + overlap + ')');
+    ok(hit(liveChimeBurst(overlap + 1, half), 0).level === hit(big, 0).level,
+       'a longer burst is longer, not quieter — the duck saturates at the overlap');
+
+    /* DETUNED, or twelve identical waveforms sum coherently into ONE louder
+       coin instead of into a crowd. Under a semitone, so the coin's own
+       interval still sounds in tune. */
+    ok(new Set(big.slice(0, 4).map(h => h.detune)).size === 4,
+       'consecutive rings are detuned against each other');
+    ok(big.every(h => Math.abs(h.detune) < 100),
+       '...by less than a semitone, so nothing sounds out of tune');
+
+    /* STAGGERED AND ORDERED. A burst that can schedule a later ring earlier
+       than an earlier one is not a run, it is a smear. */
+    ok(big.every((h, i) => i === 0 || h.delay >= hit(big, i - 1).delay),
+       'the schedule never runs backwards');
+    ok(hit(big, 1).delay === LIVE_CHIME_GAP_MS,
+       'the gap is the configured one when the jitter is centred');
+    ok(big.every(h => h.delay >= 0), 'no ring is scheduled in the past');
+
+    /* THE LEAD RING IS EXACT. It is the one somebody reacts to, and delaying
+       it by up to a jitter for nothing would make the card feel slower. */
+    const jittery = liveChimeBurst(LIVE_CHIME_MAX, () => 0);   // full negative jitter
+    ok(hit(jittery, 0).delay === 0, 'the first ring is never jittered');
+    ok(jittery.every((h, i) => Math.abs(h.delay - i * LIVE_CHIME_GAP_MS) <= LIVE_CHIME_JITTER_MS),
+       'every other ring stays within one jitter of its slot');
+    ok(new Set([hit(liveChimeBurst(6, () => 0), 3).delay,
+                hit(liveChimeBurst(6, () => 1), 3).delay]).size === 2,
+       'the jitter actually moves a ring — an even stagger is a machine gun');
+  }
+
+  /* THE BUS IS RESTORED EVEN IF A VOICE THROWS, or one broken sound mutes
+     every ring after it — the failure mode the ring/voice counter split was
+     added for in the first place. */
+  ok(/finally \{ _liveOut = null; _liveDetune = 0; \}/.test(code),
+     'the output bus and detune are put back in a finally');
 
   /* MUTED BY DEFAULT, and the stored form has to make the DEFAULT the safe one:
      `!== '0'` means an absent key, an unreadable store and a private window all

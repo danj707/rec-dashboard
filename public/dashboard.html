@@ -242,20 +242,28 @@ body { font-family: var(--font-body); background: var(--bg-page); color: var(--t
 .live-table .ln { width: 27%; font-weight: 600; color: var(--text-primary); }
 .live-table .lp { width: 24%; color: var(--text-secondary); }
 .live-table .ls { color: var(--text-secondary); }
-.live-table .lm { width: 62px; padding-right: 0; text-align: right;
+.live-table .lm { width: 104px; padding-right: 0; text-align: right; white-space: nowrap;
                   font-variant-numeric: tabular-nums; font-weight: 600; color: var(--text-primary); }
+/* THE CHARGE IS MUTED BEHIND WHAT ARRIVED. Dan, on a $325 registration with
+   $195 paid on a plan: "would like to see 195/325 here." Both figures in the
+   same orange would read as one number with a slash in it; the paid half keeps
+   the state colour and the charge steps back, so the eye lands on the money
+   that is actually in. It inherits nothing from `.lm`'s weight for the same
+   reason. */
+.live-table .lm .live-of { color: var(--text-secondary); font-weight: 400; }
 /* Paid green, part-paid orange — the same two colours as the dots in the lane,
    because they are saying the same thing about the same registration. */
 .live-table .lm.live-paid { color: #16a34a; }
 .live-table .lm.live-part { color: #f59e0b; }
 .live-table th.lm { text-align: right; }
-/* THE PROGRAMS CARD REUSES THIS TABLE WITH A MUCH LONGER MONEY COLUMN, and 62px
-   was sized for the registrations card's bare price. Dan: "look at the
-   alignment on the headers and revenue section" — with `table-layout: fixed`
-   the declared width is honoured, so a 15-character nowrap header ("PROGRAM
-   REVENUE") simply overflowed the card's right edge, and the "of $X charged"
-   sub-line was clipped at 62px. Widening it here rather than on `.live-table`
-   leaves the registrations card, whose column really is that narrow, alone. */
+/* THE PROGRAMS CARD REUSES THIS TABLE WITH A LONGER MONEY COLUMN STILL. Dan:
+   "look at the alignment on the headers and revenue section" — with
+   `table-layout: fixed` the declared width is honoured, so a 15-character
+   nowrap header ("PROGRAM REVENUE") simply overflowed the card's right edge,
+   and the "of $X charged" sub-line was clipped. (The base was 62px when this
+   was written, sized for the registrations card's bare price; it is 104px now
+   that a part-paid row prints "$195 / $325", and this override still has to
+   clear the two-line sub-cell on top of that.) */
 .live-table-progs .lm { width: 116px; }
 .live-table-progs .lm .lm-sub { font-size: 9px; color: #f59e0b; font-weight: 400;
                                 white-space: nowrap; line-height: 1.35; margin-top: 1px; }
@@ -2470,12 +2478,54 @@ const LIVE_CHIMES = [
   ['foghorn',  'Foghorn'],
 ];
 const LIVE_CHIME_DEFAULT = 'coin';
-/* HOW MANY RING FOR ONE BATCH. Twelve registrations landing in one poll is ONE
-   event to somebody listening from across the room; twelve overlapping coins is
-   noise, and on a registration morning it would be a reason to mute the card
-   for good. Staggered so two or three read as two or three. */
-const LIVE_CHIME_MAX = 3;
-const LIVE_CHIME_GAP_MS = 130;
+/* HOW MANY RING FOR ONE BATCH — AND WHY IT IS NOT THREE ANY MORE. Dan, on a
+   registration day: "When an org has a big registration day, I want it to
+   sound like a las vegas casino." The cap was three on the argument that a
+   dozen overlapping coins is noise. That argument was about LOUDNESS and it is
+   answered below by ducking the burst rather than by truncating it — a morning
+   where sixty people register is the one morning this card is worth having on,
+   and a card that rings three times for it says nothing about the size of the
+   day.
+
+   FORTY, and the cap is still real. The point of a constant gap rather than a
+   fitted one is that the LENGTH of the ringing is what says how big the batch
+   was: one arrival is instant, six is half a second, a full forty is nearly
+   four seconds of continuous coins. A cadence that stretched to fill the poll
+   window would make four arrivals ring for as long as forty and sound sparse
+   doing it. Forty is where it stops: about 200 audio nodes, well under the
+   60-second poll, and past it nobody is counting anyway.
+
+   JITTER, because an exactly even stagger is a machine gun and reads as one
+   effect rather than as many arrivals. The first ring is deliberately NOT
+   jittered: it is the one a person actually reacts to, and delaying it by up
+   to 45ms for nothing would only make the card feel less immediate. */
+const LIVE_CHIME_MAX = 40;
+const LIVE_CHIME_GAP_MS = 90;
+const LIVE_CHIME_JITTER_MS = 45;
+/* HOW A BURST STAYS AUDIBLE INSTEAD OF CLIPPING. Rings at full gain sum past
+   1.0 and the browser hard-clips, which crackles — it sounds broken, not loud.
+   Equal perceived loudness would be n^-0.5; this ducks slightly less than that
+   ON PURPOSE, so a bigger burst really is a bit louder, which is the whole
+   thing being asked for. A batch of ONE is exactly 1.0, so the common case
+   sounds identical to before.
+
+   THE `n` IS THE OVERLAP, NOT THE BATCH SIZE, and getting that wrong is what
+   makes a big burst inaudible. Forty rings 90ms apart do NOT play together:
+   each lasts about 0.7s, so only about eight are ever sounding at once and the
+   rest are strictly later. Ducking by forty would divide by five times the
+   loudness that is actually there — the biggest morning of the year would ring
+   the quietest. So the duck saturates: past the overlap point a longer burst
+   is longer, not quieter, which is exactly the relationship wanted.
+
+   AND THE DETUNE IS NOT DECORATION. Identical simultaneous copies of the same
+   waveform sum coherently — forty coins scheduled together sound like one
+   louder coin, not like forty. Spreading them a few cents apart is what makes
+   a burst read as a crowd. A four-step run that resets, and 75 cents at the
+   top: under a semitone, so the coin's own interval still sounds in tune. */
+const LIVE_CHIME_RING_MS = 700;
+const LIVE_CHIME_DUCK = 0.4;
+const LIVE_CHIME_DETUNE_STEP = 25;
+const LIVE_CHIME_DETUNE_STEPS = 4;
 const LIVE_MUTE_KEY  = 'rec-dash-live-muted';
 const LIVE_CHIME_KEY = 'rec-dash-live-chime';
 
@@ -2508,16 +2558,27 @@ function liveAudioWakeOnFirstGesture() {
 }
 
 // A note. Square for the chiptune voices, sine for the bell partials.
+/* WHERE A RING GOES, AND HOW FAR IT IS BENT. Both are swapped in around one
+   synchronous `play()` call in liveChime and put back afterwards — scheduling
+   a voice only queues nodes, it never awaits, so nothing else can run in
+   between and the swap cannot leak into another ring. The alternative was a
+   third argument threaded through all three primitives and all nine voices,
+   for a value every one of them would only ever pass along. */
+let _liveOut = null;
+let _liveDetune = 0;
+function liveOut(ctx) { return _liveOut || ctx.destination; }
+
 function liveTone(ctx, { type, freq, at, dur, gain, decay }) {
   const o = ctx.createOscillator();
   const g = ctx.createGain();
   o.type = type;
   o.frequency.setValueAtTime(freq, at);
+  if (_liveDetune) o.detune.setValueAtTime(_liveDetune, at);
   g.gain.setValueAtTime(0, at);
   g.gain.linearRampToValueAtTime(gain, at + 0.006);
   if (decay) g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
   else { g.gain.setValueAtTime(gain, at + dur - 0.01); g.gain.linearRampToValueAtTime(0, at + dur); }
-  o.connect(g); g.connect(ctx.destination);
+  o.connect(g); g.connect(liveOut(ctx));
   o.start(at); o.stop(at + dur + 0.02);
 }
 
@@ -2535,6 +2596,7 @@ function liveVoice(ctx, { type, from, to, at, dur, gain, cutoff, formants, vibHz
   const g = ctx.createGain();
   o.type = type;
   o.frequency.setValueAtTime(from, at);
+  if (_liveDetune) o.detune.setValueAtTime(_liveDetune, at);
   // exponentialRampToValueAtTime cannot reach or cross zero, and every pitch
   // here is well above it — but a `to` of 0 would throw and silence the ring.
   if (to && to > 0 && to !== from) o.frequency.exponentialRampToValueAtTime(to, at + dur);
@@ -2584,7 +2646,7 @@ function liveVoice(ctx, { type, from, to, at, dur, gain, cutoff, formants, vibHz
   // are held flat and cut off, and decaying them turns both into a sigh.
   if (hold) { g.gain.setValueAtTime(gain, at + dur - 0.05); g.gain.linearRampToValueAtTime(0, at + dur); }
   else g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
-  out.connect(g); g.connect(ctx.destination);
+  out.connect(g); g.connect(liveOut(ctx));
   o.start(at); o.stop(at + dur + 0.02);
 }
 
@@ -2613,7 +2675,7 @@ function liveNoise(ctx, { at, dur, gain, freq, q }) {
   g.gain.setValueAtTime(0, at);
   g.gain.linearRampToValueAtTime(gain, at + 0.006);
   g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
-  src.connect(f); f.connect(g); g.connect(ctx.destination);
+  src.connect(f); f.connect(g); g.connect(liveOut(ctx));
   src.start(at); src.stop(at + dur + 0.02);
 }
 
@@ -2687,7 +2749,7 @@ const LIVE_CHIME_VOICES = {
    a chime wired to the wrong condition, so the render cases assert the COUNT
    moves on a paid arrival and does not move on an unpaid one or under a ticked
    box. */
-function liveChime(kind) {
+function liveChime(kind, shape) {
   window.__liveChimeRings = (window.__liveChimeRings || 0) + 1;
   const ctx = liveAudioCtx();
   if (!ctx) return;
@@ -2698,7 +2760,22 @@ function liveChime(kind) {
      hardest kind of broken to notice, since the whole point is that you are not
      looking at it. */
   const play = LIVE_CHIME_VOICES[kind] || LIVE_CHIME_VOICES[LIVE_CHIME_DEFAULT];
-  play(ctx, ctx.currentTime + 0.01);
+  /* THE LEVEL IS A NODE, NOT A NUMBER PASSED DOWN. Every voice bakes its own
+     per-partial gains — the coin's two notes, the foghorn's sub-octave — and
+     scaling a burst has to preserve those against each other, so it belongs
+     one stage later, on the sum. `finally` puts the bus back even if a voice
+     throws, or one broken sound would mute every ring after it. */
+  const level = shape && typeof shape.level === 'number' ? shape.level : 1;
+  let bus = null;
+  if (level !== 1) {
+    bus = ctx.createGain();
+    bus.gain.setValueAtTime(level, ctx.currentTime);
+    bus.connect(ctx.destination);
+  }
+  _liveOut = bus;
+  _liveDetune = (shape && shape.detune) || 0;
+  try { play(ctx, ctx.currentTime + 0.01); }
+  finally { _liveOut = null; _liveDetune = 0; }
   /* COUNTED ONLY ONCE THE VOICE HAS RETURNED, and this second counter exists
      because the first one cannot do this job. __liveChimeRings is bumped at the
      TOP, before any audio, so the mute and paid-arrival cases hold on a machine
@@ -2707,6 +2784,32 @@ function liveChime(kind) {
      mutation: a deliberately broken `cow` left the ring count at nine and the
      case green. This one only moves when the synthesis actually ran. */
   window.__liveChimeVoiced = (window.__liveChimeVoiced || 0) + 1;
+}
+
+/* THE SHAPE OF A BURST, as data — delay, level and detune per ring — so a spec
+   can RUN it rather than regex over a forEach that schedules timers. A browser
+   has no ears in CI, so the only checkable claim about a burst is its schedule.
+
+   `rnd` is injected for the same reason: a jitter read off Math.random cannot
+   be asserted about, and a spec that seeds it can pin the jitter's BOUND
+   without pinning a value that will differ every run. */
+function liveChimeBurst(n, rnd) {
+  const r = typeof rnd === 'function' ? rnd : Math.random;
+  const count = Math.max(0, Math.min(n | 0, LIVE_CHIME_MAX));
+  if (!count) return [];
+  const overlap = Math.min(count, Math.max(1, Math.round(LIVE_CHIME_RING_MS / LIVE_CHIME_GAP_MS)));
+  const level = Math.pow(overlap, -LIVE_CHIME_DUCK);
+  const out = [];
+  for (let i = 0; i < count; i++) {
+    // The lead ring is exact and untuned: it is the one somebody reacts to.
+    const jitter = i === 0 ? 0 : Math.round((r() * 2 - 1) * LIVE_CHIME_JITTER_MS);
+    out.push({
+      delay: Math.max(0, i * LIVE_CHIME_GAP_MS + jitter),
+      level: level,
+      detune: (i % LIVE_CHIME_DETUNE_STEPS) * LIVE_CHIME_DETUNE_STEP,
+    });
+  }
+  return out;
 }
 
 /* WHAT RINGS. "enrolls AND PAYS" — so a registration whose money has not
@@ -3028,6 +3131,26 @@ function liveMarkState(r) {
   return 'paid';
 }
 
+/* WHAT THE MONEY COLUMN SAYS. A part-paid row shows BOTH figures — what has
+   arrived and what was charged — because "$325" in orange says a plan is
+   running and not how far through it is, which is the thing an admin watching
+   a registration morning actually wants. Rec's own household page reads
+   "$195.00 / $325.00 · Partially paid" for the same booking.
+
+   ONLY a part-paid row. A fully paid one has nothing to compare against and
+   "$325 / $325" is noise; an unpaid one has no first figure at all, and a
+   "$0 / $325" would read as a refund rather than as a booking nobody has paid
+   for yet. At module scope so the spec can RUN it — a regex over a branch
+   passes on an inverted one. */
+function livePriceCell(r) {
+  const price = liveMoney(r['Price']);
+  if (liveMarkState(r) !== 'part') return { paid: '', price: price || '\u2014' };
+  const paid = liveMoney(r['Paid']);
+  // A part-paid row whose PAID figure will not render (under a dollar, say)
+  // falls back to the charge alone rather than to a bare slash.
+  return paid ? { paid: paid, price: price } : { paid: '', price: price || '\u2014' };
+}
+
 function liveMoney(v) {
   const n = Number(v);
   return Number.isFinite(n) && n > 0 ? '$' + Math.round(n).toLocaleString() : '';
@@ -3130,9 +3253,9 @@ function useLiveEnrollments(onAvailable) {
                 .map(k => j.rows[keys.indexOf(k)])
                 .filter(r => r && liveChimeWorthy(r));
               const kind = chimeRef.current;
-              paid.slice(0, LIVE_CHIME_MAX).forEach((r, i) => {
-                if (i === 0) { liveChime(kind); return; }
-                const h = setTimeout(() => liveChime(kind), i * LIVE_CHIME_GAP_MS);
+              liveChimeBurst(paid.length).forEach(hit => {
+                if (!hit.delay) { liveChime(kind, hit); return; }
+                const h = setTimeout(() => liveChime(kind, hit), hit.delay);
                 chimeTimersRef.current.push(h);
               });
             }
@@ -3167,6 +3290,22 @@ function useLiveEnrollments(onAvailable) {
     const t = setInterval(load, LIVE_POLL_MS);
     return () => clearInterval(t);
   }, [load, paused]);
+  /* AND IT REFRESHES THE MOMENT THE TAB IS LOOKED AT. A 60-second interval in
+     a hidden tab is not a 60-second interval: browsers throttle timers in
+     backgrounded pages hard, so a dashboard left open on a second monitor can
+     go minutes without a poll and then show its age the instant somebody looks
+     — which is the other half of "nothing happens until i click the refresh".
+     Coming back to the tab IS the request for current rows, so it fetches
+     rather than waiting out whatever is left of an interval that may not have
+     been running. Not while paused: pausing says stop moving, and a tab switch
+     is not an un-pause. */
+  useEffect(() => {
+    const onVis = () => {
+      if (document.visibilityState === 'visible' && !pausedRef.current) load();
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, [load]);
   useEffect(() => () => {
     clearTimeout(timerRef.current);
     chimeTimersRef.current.forEach(clearTimeout);
@@ -3348,9 +3487,13 @@ function LiveRegistrations({ feed, recOrgId }) {
                     match the legend"). Unpaid keeps the default ink rather
                     than a third colour: the grey dot already says it, and a
                     grey PRICE reads as disabled. */}
-                <td className={'lm live-' + liveMarkState(r)} data-live-price={liveMarkState(r)}>
-                  {liveMoney(r['Price']) || '\u2014'}
-                </td>
+                {(() => { const cell = livePriceCell(r); return (
+                <td className={'lm live-' + liveMarkState(r)} data-live-price={liveMarkState(r)}
+                    data-live-paid={cell.paid}>
+                  {cell.paid
+                    ? <React.Fragment>{cell.paid}<span className="live-of">{' / ' + cell.price}</span></React.Fragment>
+                    : cell.price}
+                </td>); })()}
               </tr>
             );
           })}

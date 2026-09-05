@@ -548,10 +548,37 @@ async function fetchMetabaseData(orgSlug, reportType, query) {
     return rows;
   };
 
-  // Stale-while-revalidate: serve any cached rows immediately. If they're past
-  // the TTL, refresh in the background so the next request is fresh — this one
-  // never eats the live query latency.
+  /* STALE-WHILE-REVALIDATE, EXCEPT FOR A LIVE FEED — and that exception is a
+     bug fix, not a tuning choice. Dan, watching the card: "seems like the live
+     widget is lagging — nothing happens until i click the refresh."
+
+     Serving a stale entry and refreshing behind it means the answer a caller
+     gets is the PREVIOUS fetch, so with a 60s TTL and a 60s poll the card
+     shows rows between one and two minutes old, sawing between the two. And it
+     is exactly why clicking Refresh appeared to fix it: the poll a moment
+     earlier had kicked the background refresh, so the click landed after it
+     finished and got the rows the poll should have had. The button was not
+     doing anything the poll was not; it was arriving later.
+
+     That trade is right for a dashboard of a window somebody chose — nobody
+     should wait 30s for a report they can read a quarter of an hour old. It is
+     wrong for a widget whose entire claim is "right now", where a stale answer
+     is the failure rather than the graceful degradation. So a live feed AWAITS
+     the refresh. It costs the poll the card's own time, measured 3.0s at
+     Shrewsbury and 9.5s at San Francisco — comfortably inside the 60s poll —
+     and `revalidate` de-duplicates, so ten viewers polling together still run
+     the card once.
+
+     A FAILED REFRESH STILL ANSWERS with the stale rows rather than an error: a
+     card that empties itself the first time Metabase hiccups is worse than one
+     that is a minute behind for a minute. */
+  const isLive = !!LIVE_REPORT_TTL_MS[reportType];
   const entry = getCacheEntry(cacheKey);
+  if (entry && entry.stale && isLive) {
+    await revalidate(cacheKey, ttl, doFetch);
+    const fresh = getCacheEntry(cacheKey);
+    return fresh ? fresh.data : entry.data;
+  }
   if (entry) {
     if (entry.stale) revalidate(cacheKey, ttl, doFetch);
     return entry.data;

@@ -563,6 +563,25 @@ const CASES = [
   /* THE PRICE CARRIES ITS PAYMENT STATE'S COLOUR (Dan: "Full payment the price
      is in green, partial or installment plan, price is in orange to match the
      legend"). Computed, because a class name proves nothing about the ink. */
+  /* WHAT ARRIVED, OVER WHAT WAS CHARGED. Dan, on a $325 registration with $195
+     paid on a plan: "would like to see 195/325 here." The fixture's part-paid
+     row is $25 of $60, and no source assertion can tell a cell that renders
+     both figures from one that renders the charge twice — so this keys on the
+     TEXT of the cell. */
+  { name: 'live · a part-paid row shows what arrived over what was charged',
+    needs: '[data-live-regs] td[data-live-price="part"][data-live-paid="$25"]',
+    act: async page => {
+      await page.waitForSelector('[data-live-regs] td[data-live-price="part"]', { timeout: 15000 });
+      const txt = await page.$eval('[data-live-regs] td[data-live-price="part"]', el => el.innerText.replace(/\s+/g, ' ').trim());
+      if (txt !== '$25 / $60') throw new Error('the part-paid cell reads "' + txt + '", not "$25 / $60"');
+    } },
+  /* AND A FULLY PAID ROW DOES NOT. "$45 / $45" is noise, and an unpaid row
+     showing "$0 / $170" would read as a refund rather than as a booking
+     nobody has paid for yet. Absence, not a different value — the two claims
+     are different and only one keeps the column readable. */
+  { name: 'live · a fully paid row shows one figure, and an unpaid one shows no zero',
+    needs: '[data-live-regs] td[data-live-price="paid"][data-live-paid=""]',
+    absent: '[data-live-regs] td[data-live-price="unpaid"]:not([data-live-paid=""])' },
   { name: 'live · a paid price is green and a part-paid one orange',
     needs: 'body[data-lc-paid="rgb(22, 163, 74)"][data-lc-part="rgb(245, 158, 11)"]',
     act: async page => {
@@ -735,6 +754,57 @@ const CASES = [
       }, names.length);
       await page.evaluate(v => document.body.setAttribute('data-chime-all', v), out);
       if (wasMuted) await page.click('input[data-live-mute="1"]');
+    } },
+  /* A BIG REGISTRATION MORNING, DRIVEN IN A REAL BROWSER. Dan: "When an org
+     has a big registration day, I want it to sound like a las vegas casino."
+     No source assertion can prove a burst is audible: the level and detune are
+     new arguments that reach an AudioContext, and a voice that throws under
+     them would leave the ring counter untouched (it is bumped first) while
+     making the card silent for the rest of the session.
+
+     So this fires a FULL burst through EVERY sound in the menu and requires
+     the VOICED count to match the ring count — a hundred-odd scheduled voices,
+     ducked and detuned, all of which have to synthesize. It also pins that a
+     flood is capped, which is what stops one poll ringing forever. */
+  { name: 'live · a flood of arrivals rings as a burst, and every voice survives it',
+    needs: 'body[data-chime-burst="ok"]',
+    act: async page => {
+      const wasMuted = await page.$eval('input[data-live-mute="1"]', el => el.checked);
+      if (wasMuted) await page.click('input[data-live-mute="1"]');
+      await page.waitForSelector('.live-chime-pick', { timeout: 10000 });
+      const out = await page.evaluate(() => {
+        if (typeof liveChimeBurst !== 'function' || typeof liveChime !== 'function')
+          return 'the burst scheduler is not reachable from the page';
+        const names = Array.from(document.querySelectorAll('.live-chime-pick option')).map(o => o.value);
+        const plan = liveChimeBurst(60);          // a flood, far past the cap
+        if (plan.length < 8) return 'a flood rang only ' + plan.length + ' times';
+        if (plan.length >= 60) return 'a flood was not capped at all';
+        if (!(plan[0].level > 0 && plan[0].level <= 1)) return 'level out of range: ' + plan[0].level;
+        window.__liveChimeRings = 0; window.__liveChimeVoiced = 0;
+        // Fired synchronously rather than on the real timers: the schedule is
+        // already proven by the spec, and what a browser adds is whether the
+        // synthesis SURVIVES the level and detune it is handed.
+        /* A THROWN VOICE IS REPORTED BY NAME, not left to kill act(). Verified
+           by mutation: a `cow` rigged to throw when detuned took this case out
+           with a bare "act() threw: moo", which names the mutation and not the
+           sound — the die-instead-of-fail lesson already recorded twice here. */
+        const broke = [];
+        names.forEach(n => plan.forEach(hit => {
+          try { liveChime(n, hit); } catch (e) { if (broke.indexOf(n) < 0) broke.push(n); }
+        }));
+        if (broke.length) return 'these sounds threw in a burst: ' + broke.join(', ');
+        const want = names.length * plan.length;
+        const rings = window.__liveChimeRings, voiced = window.__liveChimeVoiced;
+        return (rings === want && voiced === want && names.length >= 9)
+          ? 'ok' : ('rings=' + rings + ' voiced=' + voiced + ' of ' + want);
+      });
+      await page.evaluate(v => document.body.setAttribute('data-chime-burst', v), out);
+      if (wasMuted) await page.click('input[data-live-mute="1"]');
+      /* THE DIAGNOSIS IS THROWN AS WELL AS STAMPED. The runner prints `rendered
+         no body[data-chime-burst="ok"]` for any failure, which is the same
+         sentence whether the cap vanished, a voice threw or the level went to
+         zero — three different bugs with three different fixes. */
+      if (out !== 'ok') throw new Error(out);
     } },
   /* AND THE COUNT IS WHAT SEPARATES "PAID" FROM "ANY ARRIVAL". This refresh
      delivers ONE paid registration and ONE unpaid one together, so a correct
