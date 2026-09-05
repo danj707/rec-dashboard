@@ -68,14 +68,21 @@ participant name clickable to their profile."*
 hover. Two person columns — one of them blank on every adult registration — was
 half a table saying nothing.
 
-**THE HALF THAT IS NOT DONE, AND WHY.** Card 21286 emits `User ID` (the BUYER's
-uuid) and the participant only as a NAME. So a booking a parent made for a child
-can be named but **not addressed**, and linking it with the buyer's id would
-open the wrong person's profile — worse than no link, because it looks right.
-A booking for the account holder links today, because `Participant` is NULL in
-exactly that case and the buyer IS the participant. **Adding `Participant Id` to
-the card is one column and no logic change**; until it lands a child's name is
-plain text. The render case pins both halves.
+**THE LINK GOES TO THE HOUSEHOLD, AND THAT IS THE DESTINATION RATHER THAN A
+FALLBACK.** I first built this so a child's name rendered as plain text, on the
+reasoning that card 21286 emits only the BUYER's uuid and linking a child with
+it would open the wrong person. Dan: *"actually linking to the parent's account
+is fine, since the profile is all at the household level. so if the parent books
+the kid, we show the kids name, but it links to the HH account."*
+
+So the premise was wrong, not the code: **a Rec profile IS the household**, so
+the buyer's id is exactly where a reader wants to land from a child's name.
+Every row links now, and no card change is needed — the `Participant Id` column
+I had queued up is not wanted.
+
+Worth keeping as a general point: *"I cannot address this row" was a fact about
+the FEED; "so it must not be a link" was an inference about the PRODUCT, and
+only one of those was mine to make.*
 
 ### THE SECTION CAN BE TURNED OFF
 

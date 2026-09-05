@@ -3171,21 +3171,20 @@ function liveMoney(v) {
   return Number.isFinite(n) && n > 0 ? '$' + Math.round(n).toLocaleString() : '';
 }
 
-/* WHO IS IN THE CLASS — one name, and a link where there is an id to link to.
-   Dan: "remove the HH owner here and just keep the participant column. If the
-   participant IS the HH owner, just have their name in this column. And make
-   the participant name clickable to their profile."
+/* WHO IS IN THE CLASS — one name, and it always links. Dan: "remove the HH
+   owner here and just keep the participant column. If the participant IS the HH
+   owner, just have their name in this column. And make the participant name
+   clickable to their profile."
 
-   THE FEED HAS NO PARTICIPANT ID YET, and that is the honest limit here. Card
-   21286 emits "User ID" — the BUYER's uuid — and the participant only as a
-   NAME, so a booking a parent made for a child can be named but not addressed.
-   Adding "Participant Id" to the card is one column and no logic change; until
-   it lands, a child's name renders as plain text rather than as a link to the
-   parent's profile, which would be a link to the wrong person.
+   THE LINK GOES TO THE HOUSEHOLD, AND THAT IS WHY THE BUYER'S ID IS THE RIGHT
+   ONE. Rec's profile page is household-level (Dan: "linking to the parent's
+   account is fine, since the profile is all at the household level"), so a
+   child's name opening the account that booked them lands exactly where a
+   reader wants to be. The feed carries no participant id at all — only the
+   buyer's — so this is not a fallback, it is the destination.
 
-   A BOOKING FOR THE ACCOUNT HOLDER links today: the card's `Participant` is
-   NULL in exactly that case, so the buyer IS the participant and "User ID"
-   addresses them correctly.
+   A BOOKING FOR THE ACCOUNT HOLDER shows THEM rather than a blank: the card's
+   `Participant` is NULL in exactly that case, so the buyer is the participant.
 
    The household owner is not lost, only unstacked from its own column: where
    the participant is somebody else, the owner and their email are on hover. */
@@ -3193,10 +3192,11 @@ function liveParticipant(r) {
   const child = (r && r['Participant']) || '';
   const owner = (r && r['Customer Name']) || '';
   const email = (r && r['Email']) || '';
-  if (!child) return { name: owner, id: r && r['User ID'], title: email };
+  const id    = r && r['User ID'];
+  if (!child) return { name: owner, id: id, title: email };
   return {
     name: child,
-    id: r && r['Participant Id'],
+    id: id,
     title: owner ? 'Booked by ' + owner + (email ? ' \u00b7 ' + email : '') : email,
   };
 }

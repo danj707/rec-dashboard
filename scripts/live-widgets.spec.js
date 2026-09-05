@@ -483,11 +483,13 @@ if (H.liveWindow) {
     const child = P({ Participant: 'Cam Baldarelli', 'Customer Name': 'Nicole Baldarelli',
                       'User ID': 'u-nicole', Email: 'n@example.test' });
     ok(child.name === 'Cam Baldarelli', 'a child registration shows the CHILD');
-    /* AND IT IS NOT LINKED TO THE PARENT. The feed's only id is the BUYER's,
-       so linking a child's name with it would open the wrong person's profile
-       — worse than no link, because it looks right. Card 21286 needs one more
-       column ("Participant Id") before this can be a link. */
-    ok(!child.id, "...and carries no id until the card emits the participant's");
+    /* AND IT LINKS TO THE HOUSEHOLD. Rec's profile page is household-level
+       (Dan: "linking to the parent's account is fine, since the profile is all
+       at the household level"), so the buyer's id is the DESTINATION rather
+       than a fallback — a child's name opens the account that booked them,
+       which is where a reader wants to be. */
+    ok(child.id === 'u-nicole',
+       "...linked to the household that booked them, which is what a profile IS");
     ok(/Booked by Nicole Baldarelli/.test(child.title),
        '...with the household owner on hover, since the column went not the fact');
 

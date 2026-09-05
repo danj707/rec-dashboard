@@ -120,7 +120,13 @@ const ENROLLMENTS = [
   { 'Signed Up At': liveIso(0, '14:41:48'), 'Customer Name': 'Rita Perri', 'Participant': null,
     'User ID': 'user-rita', 'Section Id': 'sec-oxygen',
     'Section': 'Play on 60+ Beginner Oxygen Dance', 'Program': 'Oxygen Dance Aerobics', 'Price': 25, 'Paid': 25 },
+  /* A CHILD REGISTERED BY A PARENT, TODAY, WITH THE BUYER'S UUID. The other
+     child rows in this fixture carry no User ID (they are the plain-text
+     branch), and the one that did — Kaitlin/Cecelia — is dated YESTERDAY, so
+     it stopped rendering when the card narrowed to today. Without an id here
+     the household-link case would have had nothing to key on. */
   { 'Signed Up At': liveIso(0, '13:06:40'), 'Customer Name': 'Ryan Little', 'Participant': 'Brayden Little',
+    'User ID': 'user-ryan',
     'Section': 'Boys (Grades 4-5) Tryouts', 'Program': 'SBA Travel Teams', 'Price': 25 },
   /* PART-PAID, and it has to be HIGH IN THE LIST: only the newest eight rows
      render, and the other part-paid row (Swim Lessons) sits ninth — so the
@@ -656,17 +662,24 @@ const CASES = [
   { name: 'live · two widgets in the section',
     needs: '[data-live-section] [data-live-regs] ~ [data-live-progs]' },
 
-  /* ONE PERSON COLUMN, AND IT LINKS. Rita's row has no separate participant,
-     so she IS the participant and the buyer's uuid addresses her correctly —
-     which is the only case the feed can link today. */
+  /* ONE PERSON COLUMN, AND IT LINKS TO THE HOUSEHOLD. Rita's row has no
+     separate participant, so she IS the participant. */
   { name: 'live · the participant links into Rec',
     needs: 'a.live-link[data-live-participant="user-rita"][href="https://www.rec.us/admin/o/rec-org-uuid/users/user-rita"]' },
-  /* AND A CHILD'S NAME IS NOT LINKED TO THE PARENT. The feed carries no
-     participant id, so linking one with the buyer's would open the wrong
-     person — worse than no link, because it looks right. */
-  { name: "live · ...but a child's name is not linked to the parent",
-    needs: '[data-live-regs] .live-table td.lp',
-    absent: '[data-live-regs] a[data-live-participant="undefined"]' },
+  /* AND SO DOES A CHILD'S — to the account that booked them, because the Rec
+     profile is household-level. Kaitlin's row names Cecelia and must open
+     Kaitlin's household; a card that linked only the adult rows would render
+     almost identically, so this keys on the CHILD's row carrying the link. */
+  { name: "live · ...and a child's name opens the household that booked them",
+    needs: '[data-live-regs] a[data-live-participant="user-ryan"]',
+    absent: '[data-live-regs] a[data-live-participant="undefined"]',
+    act: async page => {
+      await page.waitForSelector('[data-live-regs] .live-table td.lp', { timeout: 15000 });
+      const t = await page.$eval('[data-live-regs] a[data-live-participant="user-ryan"]',
+                                 el => el.textContent.trim()).catch(() => null);
+      if (t !== 'Brayden Little')
+        throw new Error('the linked name reads "' + t + '", wanted the CHILD, Brayden Little');
+    } },
   { name: 'live · the section links into Rec',
     needs: 'a.live-link[data-live-section="sec-oxygen"][href="https://www.rec.us/admin/o/rec-org-uuid/programming/sections/sec-oxygen"]' },
   { name: 'live · a row with no id is plain text, not a dead link',
