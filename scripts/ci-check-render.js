@@ -356,7 +356,12 @@ const CASES = [
      printing the row count, on a sparkline drawn from the wrong days, and on a
      list wired to the wrong feed. */
   { name: 'live · the section is on the page', needs: '[data-live-section]' },
-  { name: 'live · the registrations card reads its own feed', needs: '[data-live-regs="30"]' },
+  /* TODAY, NOT THE WHOLE FEED. The fixture holds 30 rows of which 14 are
+     today — different numbers on purpose, so a card that still rendered the
+     seven-day list reads 30 here and fails. */
+  { name: 'live · the registrations card shows TODAY, not the whole feed',
+    needs: '[data-live-regs="14"]',
+    absent: '[data-live-regs="30"]' },
   // 14 of the 16 rows are today. A widget printing rows.length reads 16.
   { name: 'live · and counts TODAY, not the list', needs: '[data-live-today="14"]' },
   { name: 'live · above the date-ranged sections', needs: '.dashboard-section[data-live-section] + .dashboard-section' },
@@ -402,7 +407,7 @@ const CASES = [
   /* COLUMN HEADERS, in the order Dan named them, and FIXED tracks — the rows
      change under the reader every minute, so natural widths re-measured the
      table on every poll and the columns jumped. */
-  { name: 'live · the list has column headers', needs: 'body[data-livehead="Time|Household owner|Participant|Section|Price"]',
+  { name: 'live · the list has column headers', needs: 'body[data-livehead="Time|Participant|Section|Price"]',
     act: async page => {
       // Close the editor first: it is a modal left open by the cases above.
       await page.evaluate(() => {
@@ -423,7 +428,7 @@ const CASES = [
      forces the refresh, and the stub serves one extra row from the second call
      — so a widget that highlights everything, or nothing, fails. */
   { name: 'live · a new registration lands highlighted, at the top',
-    needs: '[data-live-regs] .live-table tbody tr:first-child[data-live-new="1"] td.ln',
+    needs: '[data-live-regs] .live-table tbody tr:first-child[data-live-new="1"] td.lp',
     act: async page => {
       await page.waitForSelector('.live-pause input', { timeout: 15000 });
       await page.click('.live-pause input');          // pause
@@ -479,20 +484,12 @@ const CASES = [
       });
     } },
   { name: 'live · ...labelled 12a through 8p', needs: 'body[data-lt-ticks="12a|4a|8a|12p|4p|8p"]' },
-  /* ROWS FROM ANOTHER DAY SAY SO. The list is sorted newest-first and always
-     was; a column showing only a clock made it look shuffled, because 8:15p
-     yesterday sorts below 2:41p today. */
-  { name: 'live · a row from another day carries its weekday',
-    needs: 'body[data-liveday="1"]',
-    act: async page => {
-      await page.waitForSelector('[data-live-regs] .live-table tbody tr', { timeout: 15000 });
-      await page.evaluate(() => {
-        const cells = [...document.querySelectorAll('[data-live-regs] .live-table td.lt')].map(c => c.textContent.trim());
-        const today = cells.filter(t => /^\d{1,2}:\d{2}[ap]$/.test(t)).length;
-        const dated = cells.filter(t => /^(Sun|Mon|Tue|Wed|Thu|Fri|Sat) \d{1,2}:\d{2}[ap]$/.test(t)).length;
-        if (today > 0 && dated > 0) document.body.setAttribute('data-liveday', '1');
-      });
-    } },
+  /* THE WEEKDAY-PREFIX CASE IS GONE WITH THE SEVEN-DAY LIST. It required a
+     row from another day to be on screen, and this card now only ever shows
+     today — so the case could never pass again, and a case that cannot pass is
+     not a stricter guard, it is a broken one. `liveWhen`'s prefix behaviour is
+     still lifted and RUN in live-widgets.spec.js, which is where a rule about a
+     pure function belongs anyway. */
   /* LINKS INTO REC, built from the ids rather than the names — a link built
      from rec_id or from a section NAME renders identically and 404s. */
   /* PROGRAMS LIVE (Dan: "a live programs card, showing the most recent
@@ -659,8 +656,17 @@ const CASES = [
   { name: 'live · two widgets in the section',
     needs: '[data-live-section] [data-live-regs] ~ [data-live-progs]' },
 
-  { name: 'live · the household owner links into Rec',
-    needs: 'a.live-link[data-live-user="user-rita"][href="https://www.rec.us/admin/o/rec-org-uuid/users/user-rita"]' },
+  /* ONE PERSON COLUMN, AND IT LINKS. Rita's row has no separate participant,
+     so she IS the participant and the buyer's uuid addresses her correctly —
+     which is the only case the feed can link today. */
+  { name: 'live · the participant links into Rec',
+    needs: 'a.live-link[data-live-participant="user-rita"][href="https://www.rec.us/admin/o/rec-org-uuid/users/user-rita"]' },
+  /* AND A CHILD'S NAME IS NOT LINKED TO THE PARENT. The feed carries no
+     participant id, so linking one with the buyer's would open the wrong
+     person — worse than no link, because it looks right. */
+  { name: "live · ...but a child's name is not linked to the parent",
+    needs: '[data-live-regs] .live-table td.lp',
+    absent: '[data-live-regs] a[data-live-participant="undefined"]' },
   { name: 'live · the section links into Rec',
     needs: 'a.live-link[data-live-section="sec-oxygen"][href="https://www.rec.us/admin/o/rec-org-uuid/programming/sections/sec-oxygen"]' },
   { name: 'live · a row with no id is plain text, not a dead link',
@@ -721,10 +727,10 @@ const CASES = [
      audio device, and "a Mute box rendered" passes just as happily on a chime
      wired to every arrival, to the first load, or to an unpaid hold. */
   { name: 'live · muted by default, with no sound menu',
-    needs: '[data-live-regs] input[data-live-mute="1"]',
+    needs: '[data-live-regs] input[data-live-mute="enrollments"]',
     absent: '.live-chime-pick',
     act: async page => {
-      const checked = await page.$eval('input[data-live-mute="1"]', el => el.checked);
+      const checked = await page.$eval('[data-live-regs] input[data-live-mute="enrollments"]', el => el.checked);
       if (!checked) throw new Error('the Mute box is NOT ticked on arrival');
     } },
   /* MUTED, A PAID ARRIVAL IS SILENT. Refresh twice: the second call brings a
@@ -742,7 +748,10 @@ const CASES = [
           .filter(e => /api\/data\/enrollments/.test(e.name)).length > n, { timeout: 15000 }, b);
       }
       // The paid arrival really did land — otherwise a zero count proves nothing.
-      await page.waitForFunction(() => /\bPaid \d/.test(document.body.innerText), { timeout: 10000 });
+      /* KEYED ON THE SECTION, not the customer name. The person column is the
+         PARTICIPANT now, so "Paid 3" (the buyer) is no longer on screen at all
+         and this waited ten seconds for text that could never appear. */
+      await page.waitForFunction(() => /Paid Section \d/.test(document.body.innerText), { timeout: 10000 });
       const rings = await page.evaluate(() => window.__liveChimeRings || 0);
       await page.evaluate(n => document.body.setAttribute('data-chime-muted', String(n)), rings);
     } },
@@ -755,7 +764,7 @@ const CASES = [
          React tracks a controlled input's value internally and ignores a
          direct assignment, so the first draft of this case toggled the DOM,
          left the state ticked, and timed out on a menu that never appeared. */
-      await page.click('input[data-live-mute="1"]');
+      await page.click('[data-live-regs] input[data-live-mute="enrollments"]');
       await page.waitForSelector('.live-chime-pick', { timeout: 10000 });
       await page.evaluate(() => { window.__liveChimeRings = 0; });
       await page.select('.live-chime-pick', 'chaching');
@@ -782,8 +791,8 @@ const CASES = [
          re-muted it, the menu never appeared, and this case took the next one
          down with it. So: read the state, ensure unmuted, and put it back
          exactly as found rather than assuming either starting point. */
-      const wasMuted = await page.$eval('input[data-live-mute="1"]', el => el.checked);
-      if (wasMuted) await page.click('input[data-live-mute="1"]');
+      const wasMuted = await page.$eval('[data-live-regs] input[data-live-mute="enrollments"]', el => el.checked);
+      if (wasMuted) await page.click('[data-live-regs] input[data-live-mute="enrollments"]');
       await page.waitForSelector('.live-chime-pick', { timeout: 10000 });
       const names = await page.evaluate(() =>
         Array.from(document.querySelectorAll('.live-chime-pick option')).map(o => o.value));
@@ -798,11 +807,11 @@ const CASES = [
         const rings  = window.__liveChimeRings  || 0;
         const voiced = window.__liveChimeVoiced || 0;
         const audio = !!(window.AudioContext || window.webkitAudioContext);
-        return (rings === n && voiced === n && audio && n >= 9)
+        return (rings === n && voiced === n && audio && n === 4)
           ? 'ok' : ('rings=' + rings + ' voiced=' + voiced + ' of ' + n + ' audio=' + audio);
       }, names.length);
       await page.evaluate(v => document.body.setAttribute('data-chime-all', v), out);
-      if (wasMuted) await page.click('input[data-live-mute="1"]');
+      if (wasMuted) await page.click('[data-live-regs] input[data-live-mute="enrollments"]');
     } },
   /* A BIG REGISTRATION MORNING, DRIVEN IN A REAL BROWSER. Dan: "When an org
      has a big registration day, I want it to sound like a las vegas casino."
@@ -818,8 +827,8 @@ const CASES = [
   { name: 'live · a flood of arrivals rings as a burst, and every voice survives it',
     needs: 'body[data-chime-burst="ok"]',
     act: async page => {
-      const wasMuted = await page.$eval('input[data-live-mute="1"]', el => el.checked);
-      if (wasMuted) await page.click('input[data-live-mute="1"]');
+      const wasMuted = await page.$eval('[data-live-regs] input[data-live-mute="enrollments"]', el => el.checked);
+      if (wasMuted) await page.click('[data-live-regs] input[data-live-mute="enrollments"]');
       await page.waitForSelector('.live-chime-pick', { timeout: 10000 });
       const out = await page.evaluate(() => {
         if (typeof liveChimeBurst !== 'function' || typeof liveChime !== 'function')
@@ -844,11 +853,12 @@ const CASES = [
         if (broke.length) return 'these sounds threw in a burst: ' + broke.join(', ');
         const want = names.length * plan.length;
         const rings = window.__liveChimeRings, voiced = window.__liveChimeVoiced;
-        return (rings === want && voiced === want && names.length >= 9)
-          ? 'ok' : ('rings=' + rings + ' voiced=' + voiced + ' of ' + want);
+        return (rings === want && voiced === want && names.length === 4)
+          ? 'ok' : ('rings=' + rings + ' voiced=' + voiced + ' of ' + want +
+                    ' across ' + names.length + ' sounds');
       });
       await page.evaluate(v => document.body.setAttribute('data-chime-burst', v), out);
-      if (wasMuted) await page.click('input[data-live-mute="1"]');
+      if (wasMuted) await page.click('[data-live-regs] input[data-live-mute="enrollments"]');
       /* THE DIAGNOSIS IS THROWN AS WELL AS STAMPED. The runner prints `rendered
          no body[data-chime-burst="ok"]` for any failure, which is the same
          sentence whether the cap vanished, a voice threw or the level went to
@@ -867,8 +877,8 @@ const CASES = [
       const b = await page.evaluate(() => performance.getEntriesByType('resource')
         .filter(e => /api\/data\/enrollments/.test(e.name)).length);
       await page.click('[data-live-regs] [data-live-refresh]');
-      const seenBefore = await page.evaluate(() => document.body.innerText.match(/Unpaid \d+/g) || []);
-      await page.waitForFunction((prev) => (document.body.innerText.match(/Unpaid \d+/g) || [])
+      const seenBefore = await page.evaluate(() => document.body.innerText.match(/Unpaid Section \d+/g) || []);
+      await page.waitForFunction((prev) => (document.body.innerText.match(/Unpaid Section \d+/g) || [])
         .some(x => prev.indexOf(x) < 0), { timeout: 15000 }, seenBefore);
       // The burst is staggered, so give the later handles time to have fired
       // had they been queued — a count read too early would hide a second ring.
@@ -876,8 +886,91 @@ const CASES = [
       const rings = await page.evaluate(() => window.__liveChimeRings || 0);
       await page.evaluate(n => document.body.setAttribute('data-chime-rings', String(n)), rings);
       // Re-tick it, or every case after this one runs on an unmuted dashboard.
-      await page.click('input[data-live-mute="1"]');
+      await page.click('[data-live-regs] input[data-live-mute="enrollments"]');
     } },
+  /* ── ONE MUTE AND ONE SOUND PER CARD ─────────────────────────────────────
+     Dan: "make the mute/unmute toggles separate for each widget, some might
+     want to hear sounds for a widget and not the others", and "Ideally I'd be
+     able to set a separate sound for each."
+
+     No source assertion can tell three boxes wired to one piece of state from
+     three wired to their own — all three render, and all three tick. Only
+     clicking one and reading the other two can. */
+  { name: 'live · every card has its own mute box',
+    needs: 'body[data-mutes="3"]',
+    act: async page => {
+      await page.waitForSelector('[data-live-checkins] input[data-live-mute]', { timeout: 20000 });
+      const n = await page.evaluate(() =>
+        new Set([...document.querySelectorAll('input[data-live-mute]')]
+          .map(el => el.getAttribute('data-live-mute'))).size);
+      await page.evaluate(v => document.body.setAttribute('data-mutes', String(v)), n);
+      if (n !== 3) throw new Error('found ' + n + ' distinct mute boxes, wanted 3');
+    } },
+  { name: 'live · ...and unmuting one leaves the others silent',
+    needs: 'body[data-mute-indep="ok"]',
+    act: async page => {
+      const out = await page.evaluate(async () => {
+        const box = c => document.querySelector('input[data-live-mute="' + c + '"]');
+        /* THESE CASES ARE NOT INDEPENDENT — the mute boxes are shared controls
+           and an earlier case may have left one unticked. Normalise rather than
+           assert a starting state, which is the trap already recorded here for
+           the single shared box. */
+        for (const c of ['enrollments', 'programs', 'checkins']) {
+          if (box(c) && !box(c).checked) box(c).click();
+        }
+        await new Promise(r => setTimeout(r, 250));
+        box('programs').click();
+        await new Promise(r => setTimeout(r, 250));
+        const after = ['enrollments', 'programs', 'checkins'].map(c => box(c) && box(c).checked);
+        // Put it back, or every later case runs on a half-unmuted dashboard.
+        box('programs').click();
+        await new Promise(r => setTimeout(r, 150));
+        return (after[0] === true && after[1] === false && after[2] === true)
+          ? 'ok' : 'unmuting programs gave ' + after.join(',');
+      });
+      await page.evaluate(v => document.body.setAttribute('data-mute-indep', v), out);
+      if (out !== 'ok') throw new Error(out);
+    } },
+  /* AND THE SOUNDS ARE SET SEPARATELY. Two cards left on the same sound would
+     look identical to two cards sharing one — so this sets them DIFFERENTLY
+     and reads both back. */
+  { name: 'live · two cards can carry two different sounds',
+    needs: 'body[data-sounds="arcade|bell"]',
+    act: async page => {
+      const out = await page.evaluate(async () => {
+        const box = c => document.querySelector('input[data-live-mute="' + c + '"]');
+        const pick = c => document.querySelector('select[data-live-chime-card="' + c + '"]');
+        // Normalise to muted first — an earlier case may have left one open,
+        // and a blind click would then MUTE the card this needs to hear.
+        for (const c of ['enrollments', 'programs', 'checkins']) {
+          if (box(c) && !box(c).checked) box(c).click();
+        }
+        await new Promise(r => setTimeout(r, 250));
+        box('enrollments').click(); box('checkins').click();
+        await new Promise(r => setTimeout(r, 300));
+        if (!pick('enrollments') || !pick('checkins')) return 'a picker did not appear on unmute';
+        const set = (el, v) => {
+          const d = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value');
+          d.set.call(el, v);
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+        };
+        /* SET BOTH, and to DIFFERENT values. Reading one back against a
+           default proves nothing here — an earlier case walks the whole menu
+           on the first picker on the page, so "enrollments is still coin" is
+           an assumption about test ORDER rather than about the cards. Two
+           writes and two distinct reads is the independence claim itself. */
+        set(pick('enrollments'), 'arcade');
+        set(pick('checkins'), 'bell');
+        await new Promise(r => setTimeout(r, 300));
+        const got = [pick('enrollments').value, pick('checkins').value].join('|');
+        box('enrollments').click(); box('checkins').click();
+        await new Promise(r => setTimeout(r, 150));
+        return got;
+      });
+      await page.evaluate(v => document.body.setAttribute('data-sounds', v), out);
+      if (out !== 'arcade|bell') throw new Error('the two cards read ' + out + ', wanted arcade|bell');
+    } },
+
   /* ── MEMBERSHIP CHECK-INS ────────────────────────────────────────────────
      Every case here keys on a COMPUTED VALUE, because "a check-ins card
      rendered" passes on every one of the regressions worth catching. The
@@ -950,8 +1043,12 @@ const CASES = [
     } },
   /* NO SOUND ON THIS CARD. The chime says "somebody just gave you money"; a
      beep on every desk scan would get the whole section muted. */
-  { name: 'live · the check-ins card has no sound control',
-    needs: '[data-live-checkins]',
+  /* IT HAS ONE NOW, and its own. Dan: "Add the soundbar to the programs and
+     memberships check-in widgets." Muted on arrival like every card, so the
+     picker is absent until somebody unticks it — which is the state this
+     asserts, since every earlier case restores the boxes it touched. */
+  { name: 'live · the check-ins card has its own mute box',
+    needs: '[data-live-checkins] input[data-live-mute="checkins"]',
     absent: '[data-live-checkins] .live-chime-pick' },
 
   /* NOTE THE DESCENDANT SPACE in these selectors: the programme name is on the
@@ -1104,6 +1201,34 @@ const CASES = [
   if (errors.length) failures.push('uncaught error(s): ' + errors.join(' | '));
   const bodyLen = await page.evaluate(() => document.body.innerText.trim().length);
   if (bodyLen < 100) failures.push('the page came up blank (' + bodyLen + ' chars of text)');
+
+  /* NO UNRENDERED ESCAPES ANYWHERE ON THE PAGE. This is here because one
+     shipped: the check-ins card read "Members and passes as they scan in
+     \u00b7 today" on production, with the escape as five literal characters.
+
+     THE CAUSE IS WORTH KNOWING, because it looks like correct code. A JSX
+     ATTRIBUTE is not a JavaScript string literal — `sub="a \u00b7 b"` passes
+     the backslash through verbatim, while `sub={'a \u00b7 b'}` is a real
+     string and renders the character. The same trap catches escapes written in
+     JSX text. Every spec passed on it, the parse check passed on it, and the
+     render check passed on it too, because nothing was LOOKING at the words.
+
+     Global rather than per-case: the bug is not about one card, and a case
+     that pinned this one sentence would not have covered the next one. */
+  const escaped = await page.evaluate(() => {
+    const t = document.body.innerText;
+    const hits = [];
+    // \uXXXX and \n as literal text, plus an HTML entity that reached the eye.
+    [/\\u[0-9a-fA-F]{4}/g, /\\n(?![a-zA-Z])/g, /&(amp|lt|gt|quot|#\d+);/g].forEach(re => {
+      const m = t.match(re);
+      if (m) hits.push(...m.slice(0, 4));
+    });
+    return hits;
+  });
+  if (escaped.length) {
+    failures.push('unrendered escape(s) on screen: ' + [...new Set(escaped)].join(', ') +
+                  ' — a JSX attribute or JSX text is not a string literal');
+  }
 
   for (const c of CASES) {
     let bad = null;

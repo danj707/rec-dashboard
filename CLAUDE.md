@@ -1,5 +1,152 @@
 # Project notes for Claude
 
+## Live widgets, round three — seven fixes from Dan (2026-09-05)
+
+### ONE MUTE AND ONE SOUND PER CARD
+
+*"make the mute/unmute toggles separate for each widget, some might want to hear
+sounds for a widget and not the others"*, and *"Ideally I'd be able to set a
+separate sound for each, and hear them going off like it's a las vegas casino
+during busy times."*
+
+Mute and the sound picker used to live on the FEED, which was right while one
+feed served two cards and wrong the moment somebody wanted one card audible.
+**A feed that rings can only ever have one opinion about that**, so the feed now
+publishes its fresh arrivals (`freshRows`) and each card rings them itself
+through `useLiveSound(card, freshRows, worthy)`.
+
+- **`worthy` travels with the card that knows the rows.** A signup rings when
+  its money arrived; a scan rings only when the desk let the member in — a chime
+  on a refusal would announce the opposite of what happened.
+- **Still the same `fresh` diff the highlight uses**, so no card can ring for a
+  row it does not light up, and the first load still produces no diff at all.
+- **Three cards ring one batch with three sounds, deliberately overlapping.**
+  That is the casino.
+- **The old single-key preferences are NOT migrated.** They were
+  `rec-dash-live-muted` / `-chime`; carrying them over would mean guessing which
+  of three cards the old choice was about, and the value in question is
+  "silent", which is where every card starts anyway.
+- The fetch no longer reads mute at all. It used to, through a ref, because
+  putting `muted` in `load`'s deps would rebuild the callback and restart the
+  poll clock — the hazard is removed rather than guarded.
+
+### THE FIVE ANIMALS ARE GONE, and so is the synthesis they needed
+
+Dan asked for a car horn, a chicken, a cow, a sheep and a foghorn, heard them,
+and asked for them out. The menu is four again. **`liveVoice`, `liveNoise`,
+`liveNoiseBuffer`, the formant bandpasses and the LFO went with them** — none of
+the four chiptune sounds uses any of it, and a helper with no callers is the
+first thing a reader mistakes for a live feature. The spec pins the ABSENCE,
+which is what a later "let's add a few more" would quietly undo.
+
+### LIVE ENROLLMENTS IS TODAY. THE FEED IS STILL SEVEN DAYS.
+
+Dan: *"aren't the live enrollments just the CURRENT day? Not 7 days? I don't
+care about 7 days ago, I care about today, this is an open and watch what
+happens today. Programs can stay 7 days."*
+
+**The CARD narrowed, not the query.** Programs Live sits beside it, is a
+leaderboard over the week, and reads the SAME feed — narrowing the fetch would
+have broken it while narrowing the card costs nothing. One query, two windows,
+and `today` is still the newest row's own org-timezone day rather than the
+viewer's clock.
+
+The day-break rule went with it: over one day it can never fire, and a CSS class
+nothing can apply is what sends the next reader hunting for the feature it
+belonged to. Same for the weekday-prefix render case — **a case that can no
+longer pass is not a stricter guard, it is a broken one**, so it is retired and
+`liveWhen`'s prefix behaviour stays lifted and run in the spec, where a rule
+about a pure function belongs.
+
+### ONE PERSON COLUMN, AND THE FEED CANNOT LINK A CHILD
+
+Dan: *"remove the HH owner here and just keep the participant column. If the
+participant IS the HH owner, just have their name in this column. And make the
+participant name clickable to their profile."*
+
+`liveParticipant(r)` returns the name, the id to link to, and what to say on
+hover. Two person columns — one of them blank on every adult registration — was
+half a table saying nothing.
+
+**THE HALF THAT IS NOT DONE, AND WHY.** Card 21286 emits `User ID` (the BUYER's
+uuid) and the participant only as a NAME. So a booking a parent made for a child
+can be named but **not addressed**, and linking it with the buyer's id would
+open the wrong person's profile — worse than no link, because it looks right.
+A booking for the account holder links today, because `Participant` is NULL in
+exactly that case and the buyer IS the participant. **Adding `Participant Id` to
+the card is one column and no logic change**; until it lands a child's name is
+plain text. The render case pins both halves.
+
+### THE SECTION CAN BE TURNED OFF
+
+*"as cool as they are, not everyone will want them."* The editor row read
+"Always on" and could not be — fine for Support, which Rec runs, wrong for a row
+of self-refreshing cards. It is a checkbox now, saved with the layout as
+`config.liveWidgets`.
+
+**Read as `!== false`, never as a truthy test.** An org that has never opened
+Edit Dashboard has no value stored, so absent has to keep meaning ON — a truthy
+gate would have made the section vanish for every org the day it shipped.
+
+### THE `\u00b7` THAT REACHED PRODUCTION — a JSX attribute is not a string literal
+
+The check-ins card read *"Members and passes as they scan in \u00b7 today"* on
+screen, with the escape as five literal characters. `sub="a \u00b7 b"` passes
+the backslash through verbatim; `sub={'a \u00b7 b'}` is a real string. Same
+family as the `\u2014` written into JSX TEXT in the sibling repo.
+
+**Every guard passed on it.** The specs regex source, the parse check parses,
+and the render check was looking at attributes and counts — **nothing was
+looking at the words**. `ci-check-render.js` now scans every rendered page for
+literal `\uXXXX`, a literal `\n`, and HTML entities that reached the eye. It is
+global rather than a case, because the bug is not about one card and a case
+pinning this one sentence would not cover the next one.
+
+### Guards
+
+`live-widgets.spec.js` 309 → **326 assertions**, lifting and RUNNING
+`liveParticipant`. The sound block was rewritten rather than extended: it now
+pins the ABSENCE of the five animals and of the synthesis they used, the
+per-card keys, and that the fetch reads neither mute nor chime any more.
+
+**Two render cases had to be written to prove independence, not presence.** No
+source assertion can tell three mute boxes wired to one piece of state from
+three wired to their own — all three render and all three tick. So one case
+unmutes ONE card and reads the other two back, and another sets TWO cards to
+DIFFERENT sounds and reads both.
+
+**That second case failed first time, and the failure was mine, not the code's.**
+It read one card back against the default `coin` — but an earlier case walks the
+whole menu on the first picker on the page, so `coin` was an assumption about
+test ORDER rather than about the cards. Setting both explicitly and requiring
+two distinct values is the independence claim itself. Third instance of "these
+cases are not independent" in this file; the mute cases now normalise every box
+before touching one rather than asserting a starting state.
+
+**Two mutations SURVIVED the first draft of these guards**, and both are the
+same shape — an assertion that checked a mechanism was present rather than that
+it worked. `const LIVE_MUTE_KEY = card => 'rec-dash-live-muted'` still matches
+`/card =>/` while ignoring its own parameter, so three cards would share one
+stored preference and unmuting any of them would unmute all three **on the next
+reload** — the bug arriving a refresh late. And a checkbox hardcoded to
+`useState(true)` looks identical until you reopen the editor after turning the
+section off, at which point Save Layout silently turns it back on. Both
+assertions read the whole expression now.
+
+**A render case was RETIRED rather than repaired.** `a row from another day
+carries its weekday` required a row from another day on screen, which this card
+can no longer show — and a case that cannot pass is not a stricter guard, it is
+a broken one.
+
+### A near-miss worth recording: `.lp` is two columns in two tables
+
+Widening the person column, I set `.live-table .lp { width: 34% }` — and the
+Programs card reuses `.live-table` with `.lp` as its **Signups** count, so that
+made a number column a third of the row wide. Scoped to
+`.live-table:not(.live-table-progs)`. Second instance of the one-class-two-tables
+trap already recorded here for `.lm` at 62px.
+
+
 ## The Membership Check-Ins live widget (2026-09-05)
 
 Dan: *"a membership check in card — showing the last XX membership checkins,

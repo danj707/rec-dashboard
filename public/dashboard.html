@@ -282,8 +282,16 @@ body { font-family: var(--font-body); background: var(--bg-page); color: var(--t
                  font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .live-table tr:last-child td { border-bottom: 0; }
 .live-table .lt { width: 72px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
-.live-table .ln { width: 27%; font-weight: 600; color: var(--text-primary); }
 .live-table .lp { width: 24%; color: var(--text-secondary); }
+/* ONE PERSON COLUMN ON THE ENROLLMENTS TABLE, so it takes the width the owner
+   column used to have as well, and the name is primary ink rather than the
+   secondary it wore as a second column.
+
+   SCOPED AWAY FROM THE PROGRAMS TABLE, which shares `.live-table` and uses
+   `.lp` for its SIGNUPS count — widening `.lp` outright made a number column a
+   third of the row wide, which is the one-class-two-tables trap this file
+   already records for `.lm` at 62px. */
+.live-table:not(.live-table-progs) .lp { width: 34%; font-weight: 600; color: var(--text-primary); }
 .live-table .ls { color: var(--text-secondary); }
 .live-table .lm { width: 104px; padding-right: 0; text-align: right; white-space: nowrap;
                   font-variant-numeric: tabular-nums; font-weight: 600; color: var(--text-primary); }
@@ -391,7 +399,6 @@ body { font-family: var(--font-body); background: var(--bg-page); color: var(--t
 
 /* A link into Rec. Underlined on hover only: a column of eight underlined
    names reads as a wall of links rather than a list of people. */
-.live-table tr.live-daybreak td { border-top: 1px solid var(--border); }
 .live-link { color: inherit; text-decoration: none; }
 .live-link:hover { text-decoration: underline; color: var(--amber); }
 .live-table .ls .live-link:hover { color: var(--amber); }
@@ -2514,11 +2521,6 @@ const LIVE_CHIMES = [
   ['chaching', 'Cha-ching'],
   ['arcade',   'Arcade'],
   ['bell',     'Bell'],
-  ['horn',     'Car horn'],
-  ['chicken',  'Chicken'],
-  ['cow',      'Cow'],
-  ['sheep',    'Sheep'],
-  ['foghorn',  'Foghorn'],
 ];
 const LIVE_CHIME_DEFAULT = 'coin';
 /* HOW MANY RING FOR ONE BATCH — AND WHY IT IS NOT THREE ANY MORE. Dan, on a
@@ -2569,8 +2571,20 @@ const LIVE_CHIME_RING_MS = 700;
 const LIVE_CHIME_DUCK = 0.4;
 const LIVE_CHIME_DETUNE_STEP = 25;
 const LIVE_CHIME_DETUNE_STEPS = 4;
-const LIVE_MUTE_KEY  = 'rec-dash-live-muted';
-const LIVE_CHIME_KEY = 'rec-dash-live-chime';
+/* ONE MUTE AND ONE SOUND PER CARD, keyed by the card. Dan: "make the
+   mute/unmute toggles separate for each widget, some might want to hear sounds
+   for a widget and not the others", and then "Ideally I'd be able to set a
+   separate sound for each, and hear them going off like it's a las vegas
+   casino during busy times".
+
+   THE OLD SINGLE-KEY PREFERENCES ARE DELIBERATELY NOT MIGRATED. They were
+   `rec-dash-live-muted` and `rec-dash-live-chime`; carrying them across would
+   mean guessing which of three cards the old choice was about, and the value
+   in question is "silent", which is also the default every card starts on. So
+   the worst case of not migrating is that somebody who had unmuted has to
+   untick one box again. */
+const LIVE_MUTE_KEY  = card => 'rec-dash-live-muted:' + card;
+const LIVE_CHIME_KEY = card => 'rec-dash-live-chime:' + card;
 
 /* ONE AudioContext, built on first use and never before. Constructing one at
    module scope starts a suspended context on every dashboard load including
@@ -2625,109 +2639,13 @@ function liveTone(ctx, { type, freq, at, dur, gain, decay }) {
   o.start(at); o.stop(at + dur + 0.02);
 }
 
-/* A VOICE WITH A PITCH CONTOUR. liveTone is a steady note and that is all the
-   four chiptune sounds need. An animal is a CONTOUR — a moo falls, a bleat
-   wobbles, a horn does neither — so the five Dan asked for next need a glide,
-   a lowpass to take the buzz off a sawtooth, and an LFO. Those go here rather
-   than into liveTone, which has no reason to grow them.
-
-   THE WOBBLE IS PITCH, NOT VOLUME. A bleat and a moo waver in FREQUENCY; an
-   LFO on the gain would give a tremolo, which reads as a stutter rather than
-   an animal. So the LFO drives `o.frequency` and its depth is in Hz. */
-function liveVoice(ctx, { type, from, to, at, dur, gain, cutoff, formants, vibHz, vibDepth, attack, hold }) {
-  const o = ctx.createOscillator();
-  const g = ctx.createGain();
-  o.type = type;
-  o.frequency.setValueAtTime(from, at);
-  if (_liveDetune) o.detune.setValueAtTime(_liveDetune, at);
-  // exponentialRampToValueAtTime cannot reach or cross zero, and every pitch
-  // here is well above it — but a `to` of 0 would throw and silence the ring.
-  if (to && to > 0 && to !== from) o.frequency.exponentialRampToValueAtTime(to, at + dur);
-  let out = o;
-  if (cutoff) {
-    const f = ctx.createBiquadFilter();
-    f.type = 'lowpass';
-    f.frequency.setValueAtTime(cutoff, at);
-    o.connect(f);
-    out = f;
-  }
-  /* FORMANTS — the thing that separates an animal from a buzzer. A moo and a
-     bleat are a buzzing source (the vocal folds, near enough a sawtooth) played
-     through a resonant TUBE, and it is the tube's two or three resonant peaks
-     that the ear reads as a voice rather than an oscillator. A lowpass alone
-     just makes a dull sawtooth, which is what the first pass at these sounded
-     like. Parallel bandpasses, summed — in series they would multiply down to
-     silence, since two narrow bands barely overlap. */
-  if (formants && formants.length) {
-    const sum = ctx.createGain();
-    sum.gain.setValueAtTime(1, at);
-    formants.forEach(([ff, fq, fg]) => {
-      const bp = ctx.createBiquadFilter();
-      bp.type = 'bandpass';
-      bp.frequency.setValueAtTime(ff, at);
-      bp.Q.setValueAtTime(fq, at);
-      const bg = ctx.createGain();
-      bg.gain.setValueAtTime(fg, at);
-      out.connect(bp); bp.connect(bg); bg.connect(sum);
-    });
-    out = sum;
-  }
-  if (vibHz) {
-    const lfo = ctx.createOscillator();
-    const lg = ctx.createGain();
-    lfo.frequency.setValueAtTime(vibHz, at);
-    lg.gain.setValueAtTime(vibDepth || 12, at);
-    lfo.connect(lg);
-    lg.connect(o.frequency);
-    lfo.start(at);
-    lfo.stop(at + dur + 0.02);
-  }
-  const a = attack || 0.02;
-  g.gain.setValueAtTime(0, at);
-  g.gain.linearRampToValueAtTime(gain, at + a);
-  // `hold` is for the sounds that STOP rather than fade — a horn and a foghorn
-  // are held flat and cut off, and decaying them turns both into a sigh.
-  if (hold) { g.gain.setValueAtTime(gain, at + dur - 0.05); g.gain.linearRampToValueAtTime(0, at + dur); }
-  else g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
-  out.connect(g); g.connect(liveOut(ctx));
-  o.start(at); o.stop(at + dur + 0.02);
-}
-
-/* A SHORT BAND OF NOISE — the consonant at the front and back of a cluck, which
-   no oscillator can make. The buffer is built ONCE and reused: allocating a
-   fresh second of random floats per ring is a garbage-collection pause, and the
-   morning this card is worth listening to is the morning it rings most. */
-let _liveNoiseBuf = null;
-function liveNoiseBuffer(ctx) {
-  if (_liveNoiseBuf) return _liveNoiseBuf;
-  const n = Math.floor(ctx.sampleRate * 0.4);
-  const buf = ctx.createBuffer(1, n, ctx.sampleRate);
-  const d = buf.getChannelData(0);
-  for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
-  _liveNoiseBuf = buf;
-  return buf;
-}
-function liveNoise(ctx, { at, dur, gain, freq, q }) {
-  const src = ctx.createBufferSource();
-  src.buffer = liveNoiseBuffer(ctx);
-  const f = ctx.createBiquadFilter();
-  f.type = 'bandpass';
-  f.frequency.setValueAtTime(freq, at);
-  f.Q.setValueAtTime(q || 6, at);
-  const g = ctx.createGain();
-  g.gain.setValueAtTime(0, at);
-  g.gain.linearRampToValueAtTime(gain, at + 0.006);
-  g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
-  src.connect(f); f.connect(g); g.connect(liveOut(ctx));
-  src.start(at); src.stop(at + dur + 0.02);
-}
-
-/* ONE VOICE PER SOUND, KEYED BY THE NAME IN LIVE_CHIMES. This was an if/else
-   chain while there were four; at nine it is a map, and the map is what makes
-   the pairing CHECKABLE — the spec requires every name in the menu to have a
-   voice here and every voice here to be in the menu. A listed sound with no
-   voice is a menu entry that rings the default and looks broken; a voice
-   nothing lists is unreachable code. */
+/* ONLY FOUR SOUNDS, and the five that were here are gone. Dan asked for a car
+   horn, a chicken, a cow, a sheep and a foghorn, heard them, and asked for them
+   out again. The synthesis they needed went with them — a glide, a lowpass, an
+   LFO, parallel formant bandpasses and a noise buffer — because none of the
+   four chiptune sounds uses any of it and a helper with no callers is the dead
+   code this file keeps writing down. `git log` has it if an animal is ever
+   wanted back. */
 const LIVE_CHIME_VOICES = {
   /* THE COIN. B5 for a beat, then E6 held and decaying — the interval is what
      makes it recognisable, so neither note may be tuned by feel. */
@@ -2750,42 +2668,8 @@ const LIVE_CHIME_VOICES = {
     liveTone(ctx, { type: 'sine', freq: 1318.5, at: t, dur: 0.70, gain: 0.18, decay: true });
     liveTone(ctx, { type: 'sine', freq: 2637.0, at: t, dur: 0.35, gain: 0.05, decay: true });
   },
-  /* A CAR HORN IS A CHORD, not a note — the dual-tone ones are two reeds a
-     major third apart (A4 + C#5), which is why one sawtooth alone reads as a
-     buzzer. Flat and cut off rather than decaying: a horn stops. */
-  horn(ctx, t) {
-    liveVoice(ctx, { type: 'sawtooth', from: 440.00, to: 440.00, at: t, dur: 0.42, gain: 0.10, cutoff: 3000, attack: 0.012, hold: true });
-    liveVoice(ctx, { type: 'sawtooth', from: 554.37, to: 554.37, at: t, dur: 0.42, gain: 0.09, cutoff: 3000, attack: 0.012, hold: true });
-  },
-  /* A CLUCK IS THREE THINGS: a noise transient, a short rising squawk, then a
-     longer one falling away with a fast waver. Tone alone sounds like a bird
-     toy; the noise at each end is what makes it poultry. */
-  chicken(ctx, t) {
-    liveNoise(ctx, { at: t,        dur: 0.05, gain: 0.10, freq: 1800, q: 4 });
-    const bawk = [[1100, 10, 1.0], [2600, 12, 0.45]];
-    liveVoice(ctx, { type: 'sawtooth', from: 900,  to: 1250, at: t + 0.02, dur: 0.10, gain: 0.24, cutoff: 4000, formants: bawk, attack: 0.008 });
-    liveVoice(ctx, { type: 'sawtooth', from: 1150, to: 620,  at: t + 0.14, dur: 0.24, gain: 0.26, cutoff: 3600, formants: bawk, attack: 0.010, vibHz: 22, vibDepth: 40 });
-    liveNoise(ctx, { at: t + 0.34, dur: 0.05, gain: 0.06, freq: 1400, q: 5 });
-  },
-  /* A MOO RISES AND THEN FALLS — "mmm-OOO-ooo" — so it is two segments, not a
-     glide in one direction. Heavily lowpassed, because the vowel is dark. */
-  cow(ctx, t) {
-    const moo = [[400, 7, 1.0], [900, 9, 0.35]];   // a dark "oo/uh"
-    liveVoice(ctx, { type: 'sawtooth', from: 150, to: 196, at: t,        dur: 0.28, gain: 0.30, cutoff: 1400, formants: moo, attack: 0.07, hold: true });
-    liveVoice(ctx, { type: 'sawtooth', from: 196, to: 120, at: t + 0.28, dur: 0.66, gain: 0.32, cutoff: 1200, formants: moo, attack: 0.02, vibHz: 6, vibDepth: 4 });
-  },
-  // The BLEAT is the fast pitch waver; without it this is just a falling note.
-  sheep(ctx, t) {
-    const baa = [[750, 8, 1.0], [1900, 10, 0.55]];  // an open "aa"
-    liveVoice(ctx, { type: 'sawtooth', from: 405, to: 320, at: t, dur: 0.66, gain: 0.26, cutoff: 3000, formants: baa, attack: 0.04, vibHz: 17, vibDepth: 30 });
-  },
-  /* LOW, SLOW TO SPEAK, AND LONG. The sub-octave underneath is what gives it
-     weight on a laptop speaker, which cannot reproduce the fundamental at all. */
-  foghorn(ctx, t) {
-    liveVoice(ctx, { type: 'sawtooth', from: 116, to: 104, at: t, dur: 1.30, gain: 0.15, cutoff: 520, attack: 0.16, hold: true });
-    liveVoice(ctx, { type: 'sine',     from: 58,  to: 52,  at: t, dur: 1.30, gain: 0.12, attack: 0.16, hold: true });
-  },
 };
+
 
 /* RING ONCE. Counted on `window.__liveChimeRings` because a browser check has
    no ears and no audio device: "a mute box rendered" passes just as happily on
@@ -3287,6 +3171,36 @@ function liveMoney(v) {
   return Number.isFinite(n) && n > 0 ? '$' + Math.round(n).toLocaleString() : '';
 }
 
+/* WHO IS IN THE CLASS — one name, and a link where there is an id to link to.
+   Dan: "remove the HH owner here and just keep the participant column. If the
+   participant IS the HH owner, just have their name in this column. And make
+   the participant name clickable to their profile."
+
+   THE FEED HAS NO PARTICIPANT ID YET, and that is the honest limit here. Card
+   21286 emits "User ID" — the BUYER's uuid — and the participant only as a
+   NAME, so a booking a parent made for a child can be named but not addressed.
+   Adding "Participant Id" to the card is one column and no logic change; until
+   it lands, a child's name renders as plain text rather than as a link to the
+   parent's profile, which would be a link to the wrong person.
+
+   A BOOKING FOR THE ACCOUNT HOLDER links today: the card's `Participant` is
+   NULL in exactly that case, so the buyer IS the participant and "User ID"
+   addresses them correctly.
+
+   The household owner is not lost, only unstacked from its own column: where
+   the participant is somebody else, the owner and their email are on hover. */
+function liveParticipant(r) {
+  const child = (r && r['Participant']) || '';
+  const owner = (r && r['Customer Name']) || '';
+  const email = (r && r['Email']) || '';
+  if (!child) return { name: owner, id: r && r['User ID'], title: email };
+  return {
+    name: child,
+    id: r && r['Participant Id'],
+    title: owner ? 'Booked by ' + owner + (email ? ' \u00b7 ' + email : '') : email,
+  };
+}
+
 /* A ROW'S IDENTITY. The feed carries no booking id, so the key is the four
    things that together cannot collide for two different registrations: the
    second it happened, who bought it, for whom, and into what. Two rows that
@@ -3324,38 +3238,7 @@ function useLiveEnrollments(onAvailable) {
   const [flash, setFlash] = React.useState(() => new Set());
   const seenRef  = React.useRef(null);
   const timerRef = React.useRef(null);
-  const chimeTimersRef = React.useRef([]);
-
-  /* MUTED BY DEFAULT, per Dan, and remembered per browser like the theme and
-     the column toggles — an unmute is a preference about this screen, not a
-     question about this minute. A ticked box is the safe default for a
-     dashboard somebody may open in a meeting. */
-  const [muted, setMuted] = useState(() => {
-    try { return localStorage.getItem(LIVE_MUTE_KEY) !== '0'; } catch (e) { return true; }
-  });
-  const [chime, setChime] = useState(() => {
-    try {
-      const v = localStorage.getItem(LIVE_CHIME_KEY);
-      return LIVE_CHIMES.some(c => c[0] === v) ? v : LIVE_CHIME_DEFAULT;
-    } catch (e) { return LIVE_CHIME_DEFAULT; }
-  });
-  /* READ THROUGH REFS INSIDE `load`. Putting `muted` in load's dependency list
-     would rebuild the callback on every tick of the checkbox, and the poll
-     interval is keyed on that callback — so muting the card would silently
-     restart its 60-second clock. */
-  const mutedRef = React.useRef(muted);
-  const chimeRef = React.useRef(chime);
-  useEffect(() => {
-    mutedRef.current = muted;
-    try { localStorage.setItem(LIVE_MUTE_KEY, muted ? '1' : '0'); } catch (e) {}
-    if (!muted) liveAudioWake();
-    else { chimeTimersRef.current.forEach(clearTimeout); chimeTimersRef.current = []; }
-  }, [muted]);
-  useEffect(() => {
-    chimeRef.current = chime;
-    try { localStorage.setItem(LIVE_CHIME_KEY, chime); } catch (e) {}
-  }, [chime]);
-  useEffect(() => { liveAudioWakeOnFirstGesture(); }, []);
+  const [freshRows, setFreshRows] = useState(null);
 
   const load = React.useCallback(() => {
     const w = liveWindow(LIVE_DAYS);
@@ -3374,22 +3257,19 @@ function useLiveEnrollments(onAvailable) {
           const fresh = keys.filter(k => !seen.has(k));
           if (fresh.length) {
             setFlash(new Set(fresh));
-            /* IT RINGS OFF THE SAME `fresh` DIFF THE HIGHLIGHT USES, which is
-               what keeps the sound honest: the card cannot ring for a row it
-               does not light up, and — the load-bearing half — the FIRST load
-               produces no diff at all, so opening the dashboard on a week with
-               61 paid registrations plays nothing instead of 61 coins. */
-            if (!mutedRef.current) {
-              const paid = fresh
-                .map(k => j.rows[keys.indexOf(k)])
-                .filter(r => r && liveChimeWorthy(r));
-              const kind = chimeRef.current;
-              liveChimeBurst(paid.length).forEach(hit => {
-                if (!hit.delay) { liveChime(kind, hit); return; }
-                const h = setTimeout(() => liveChime(kind, hit), hit.delay);
-                chimeTimersRef.current.push(h);
-              });
-            }
+            /* THE FEED PUBLISHES THE ARRIVALS; THE CARDS RING THEM. It used to
+               ring here, which was right while one mute and one sound served
+               both cards — Dan: "make the mute/unmute toggles separate for each
+               widget, some might want to hear sounds for a widget and not the
+               others". A feed that rings can only ever have one opinion about
+               that. It hands over the rows instead and each card decides.
+
+               STILL THE SAME `fresh` DIFF THE HIGHLIGHT USES, which is what
+               keeps the sound honest: no card can ring for a row it does not
+               light up, and — the load-bearing half — the FIRST load produces
+               no diff at all, so opening the dashboard on a week holding 61
+               paid registrations plays nothing instead of 61 coins. */
+            setFreshRows(fresh.map(k => j.rows[keys.indexOf(k)]).filter(Boolean));
             // The class comes off after the highlight has faded, so a later
             // re-render cannot replay the animation on a row that is no longer
             // news. Cleared on unmount as well, or a closed tab still fires it.
@@ -3437,15 +3317,69 @@ function useLiveEnrollments(onAvailable) {
     document.addEventListener('visibilitychange', onVis);
     return () => document.removeEventListener('visibilitychange', onVis);
   }, [load]);
-  useEffect(() => () => {
-    clearTimeout(timerRef.current);
-    chimeTimersRef.current.forEach(clearTimeout);
-  }, []);
+  useEffect(() => () => clearTimeout(timerRef.current), []);
 
   /* REFRESHING DOES NOT UNPAUSE. Pausing says "stop moving while I read"; a
      manual refresh says "move once, now". Conflating them would make the
      button a second, hidden un-pause. */
-  return { rows, err, at, paused, setPaused, flash, loading, refresh: load, muted, setMuted, chime, setChime };
+  return { rows, err, at, paused, setPaused, flash, freshRows, loading, refresh: load };
+}
+
+/* A CARD'S SOUND: whether it is muted, which sound it makes, and the ringing
+   itself. One of these per card, so three cards can be muted independently and
+   ring three different sounds at once — which is the casino, and is why this
+   is a hook rather than three copies of the same state.
+
+   `worthy` decides which arrivals count. A signup rings only when its money
+   arrived; a scan rings only when the desk let the member in. Passing it in
+   keeps that judgement with the card that knows the rows.
+
+   IT RINGS OFF THE FEED'S `freshRows`, so every card on one feed lights up and
+   rings the same arrivals — a card that rang for a row it did not highlight
+   would be lying about which event it heard. */
+function useLiveSound(card, freshRows, worthy) {
+  const [muted, setMuted] = useState(() => {
+    try { return localStorage.getItem(LIVE_MUTE_KEY(card)) !== '0'; } catch (e) { return true; }
+  });
+  const [chime, setChime] = useState(() => {
+    try {
+      const v = localStorage.getItem(LIVE_CHIME_KEY(card));
+      return LIVE_CHIMES.some(c => c[0] === v) ? v : LIVE_CHIME_DEFAULT;
+    } catch (e) { return LIVE_CHIME_DEFAULT; }
+  });
+  const timersRef = React.useRef([]);
+
+  useEffect(() => {
+    try { localStorage.setItem(LIVE_MUTE_KEY(card), muted ? '1' : '0'); } catch (e) {}
+    if (!muted) liveAudioWake();
+    // Muting kills the rest of a burst already in flight. Otherwise ticking the
+    // box mid-peal leaves it ringing on for another three seconds, which reads
+    // as a broken control rather than a slow one.
+    else { timersRef.current.forEach(clearTimeout); timersRef.current = []; }
+  }, [muted, card]);
+  useEffect(() => {
+    try { localStorage.setItem(LIVE_CHIME_KEY(card), chime); } catch (e) {}
+  }, [chime, card]);
+  useEffect(() => { liveAudioWakeOnFirstGesture(); }, []);
+
+  /* THE RING IS AN EFFECT ON THE ARRIVALS, not a call inside the fetch. Three
+     cards read one feed, so the fetch cannot know how many times to ring — each
+     card reacts to the same published arrivals with its own mute and its own
+     sound, and they overlap on purpose. */
+  useEffect(() => {
+    if (muted || !freshRows || !freshRows.length) return;
+    const hits = worthy ? freshRows.filter(worthy) : freshRows;
+    liveChimeBurst(hits.length).forEach(hit => {
+      if (!hit.delay) { liveChime(chime, hit); return; }
+      timersRef.current.push(setTimeout(() => liveChime(chime, hit), hit.delay));
+    });
+    // `chime` and `muted` are read, not depended on: re-running this when the
+    // reader picks a different sound would replay the last batch of arrivals.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [freshRows]);
+  useEffect(() => () => timersRef.current.forEach(clearTimeout), []);
+
+  return { muted, setMuted, chime, setChime };
 }
 
 /* ONE HEADER, BOTH CARDS. It carries the live dot, the Pause box, the manual
@@ -3457,8 +3391,9 @@ function useLiveEnrollments(onAvailable) {
    button cannot land on one card and not the other.
    PAUSE IS ON BOTH because there is one feed behind them: a Pause on the left
    card that silently stopped the right one was the confusing half-measure. */
-function LiveCardHeader({ icon, title, sub, feed, sound }) {
-  const { paused, setPaused, refresh, loading, muted, setMuted, chime, setChime } = feed;
+function LiveCardHeader({ icon, title, sub, feed, sound, card }) {
+  const { paused, setPaused, refresh, loading } = feed;
+  const { muted, setMuted, chime, setChime } = sound;
   return (
     <div className="widget-header">
       <div>
@@ -3473,20 +3408,23 @@ function LiveCardHeader({ icon, title, sub, feed, sound }) {
             sound play at all, so there is nothing else to press. The picker
             only exists while the sound can be heard — a menu of sounds beside a
             ticked Mute box is a control that cannot do anything. */}
-        <label className="live-pause" data-live-mute-box="1"
-               title="Ticked, the cards are silent. Unticked, a short sound plays when a paid enrollment lands.">
-          <input type="checkbox" data-live-mute="1" checked={muted}
+        {/* MUTE AND THE PICKER ARE BOTH PER CARD NOW. They used to be shared,
+            on the argument that Mute is an operating control like Pause and one
+            feed behind two cards has to read the same on either — Dan's answer
+            was that somebody may want to hear one card and not the others, so
+            three cards get three boxes. Two menus reading "Coin" side by side
+            is no longer a duplication bug; it is two cards that happen to be
+            set the same, and setting them differently is the point. */}
+        <label className="live-pause" data-live-mute-box={card}
+               title="Ticked, this card is silent. Unticked, a short sound plays when something lands on it.">
+          <input type="checkbox" data-live-mute={card} checked={muted}
                  onChange={e => setMuted(e.target.checked)} /> Mute
         </label>
-        {/* THE PICKER IS ON ONE CARD, THE MUTE BOX ON BOTH. Mute is an
-            operating control like Pause — one feed behind two cards, so it has
-            to read the same on either — but WHICH sound is a setting you touch
-            once, and two menus side by side both reading "Coin" look like a
-            duplication bug rather than a choice. */}
-        {muted || !sound ? null : (
-          <select className="live-chime-pick" data-live-chime={chime} value={chime}
+        {muted ? null : (
+          <select className="live-chime-pick" data-live-chime={chime}
+                  data-live-chime-card={card} value={chime}
                   aria-label="Which sound"
-                  title="Pick a sound. Choosing one plays it."
+                  title="Pick a sound for this card. Choosing one plays it."
                   onChange={e => { setChime(e.target.value); liveChime(e.target.value); }}>
             {LIVE_CHIMES.map(c => <option key={c[0]} value={c[0]}>{c[1]}</option>)}
           </select>
@@ -3508,6 +3446,7 @@ function LiveCardHeader({ icon, title, sub, feed, sound }) {
    so a comment naming one still ships it. The card itself is unchanged — one
    day's lane, and the list. */
 function LiveRegistrations({ feed, recOrgId }) {
+  const sound = useLiveSound('enrollments', feed.freshRows, liveChimeWorthy);
   const { rows, err, at, paused, flash } = feed;
 
   /* ABSENT, NEVER A ZERO, when the feed cannot answer. A "0 signups today"
@@ -3524,7 +3463,7 @@ function LiveRegistrations({ feed, recOrgId }) {
   if (!rows) {
     return (
       <div className="widget-card widget-md live-card" data-live-loading="1">
-        <LiveCardHeader icon={'\u{1F4DD}'} title="Live Enrollments" feed={feed} sound
+        <LiveCardHeader icon={'\u{1F4DD}'} title="Live Enrollments" feed={feed} card="enrollments" sound={sound}
                         sub={'Loading the last ' + LIVE_DAYS + ' days\u2026'} />
         <div className="skeleton skeleton-chart" />
       </div>
@@ -3537,10 +3476,20 @@ function LiveRegistrations({ feed, recOrgId }) {
 
   const tl = liveTimeline(rows, today);
 
+  /* TODAY, NOT SEVEN DAYS. Dan: "aren't the live enrollments just the CURRENT
+     day? Not 7 days? I don't care about 7 days ago, I care about today, this
+     is an open and watch what happens today. Programs can stay 7 days."
+
+     THE FEED STILL FETCHES SEVEN, and that is deliberate rather than lazy: the
+     Programs card beside this one is a leaderboard over the week and reads the
+     SAME feed, so narrowing the query would break it while narrowing the CARD
+     costs nothing. One query, two windows. It also means `today` is still
+     derived from the newest row's own org-timezone stamp rather than the
+     viewer's clock. */
   return (
-    <div className="widget-card widget-md live-card" data-live-regs={String(rows.length)}>
-      <LiveCardHeader icon={'\u{1F4DD}'} title="Live Enrollments" feed={feed} sound
-                      sub={'Enrollments as they happen \u00b7 last ' + LIVE_DAYS + ' days'} />
+    <div className="widget-card widget-md live-card" data-live-regs={String(todayRows.length)}>
+      <LiveCardHeader icon={'\u{1F4DD}'} title="Live Enrollments" feed={feed} card="enrollments" sound={sound}
+                      sub={'Enrollments as they happen \u00b7 today'} />
 
       <div className="live-count">
         <span className="live-n" data-live-today={String(todayRows.length)}>{todayRows.length}</span>
@@ -3581,31 +3530,37 @@ function LiveRegistrations({ feed, recOrgId }) {
         <thead>
           <tr>
             <th className="lt">Time</th>
-            <th className="ln">Household owner</th>
+            {/* ONE PERSON COLUMN. Dan: "remove the HH owner here and just keep
+                the participant column. If the participant IS the HH owner, just
+                have their name in this column." Two columns where one of them
+                was blank on every adult registration was half a table saying
+                nothing, and the name a reader wants is whoever is IN the class. */}
             <th className="lp">Participant</th>
             <th className="ls">Section</th>
             <th className="lm">Price</th>
           </tr>
         </thead>
         <tbody>
-          {rows.slice(0, LIVE_ROWS).map((r, i, arr) => {
+          {/* TODAY'S ROWS. The day-break rule that used to separate them went
+              with the seven-day list: over one day it can never fire, and a
+              class nothing can apply is what sends the next reader looking for
+              the feature it belonged to. */}
+          {todayRows.slice(0, LIVE_ROWS).map(r => {
             const k = liveKey(r);
-            // A rule where the day changes. The weekday prefix already says it,
-            // but a list scanned in two seconds is read by its shape.
-            const newDay = i > 0 && liveDay(r['Signed Up At']) !== liveDay(arr[i - 1]['Signed Up At']);
             return (
-              <tr key={k} className={(flash.has(k) ? 'live-new' : '') + (newDay ? ' live-daybreak' : '')} data-live-new={flash.has(k) ? '1' : undefined}>
+              <tr key={k} className={flash.has(k) ? 'live-new' : ''} data-live-new={flash.has(k) ? '1' : undefined}>
                 <td className="lt">{liveWhen(r['Signed Up At'], today)}</td>
-                <td className="ln" title={r['Email'] || ''}>{(() => {
-                  const u = liveUserUrl(recOrgId, r['User ID']);
-                  return u ? <a className="live-link" href={u} target="_blank" rel="noopener noreferrer"
-                               data-live-user={String(r['User ID'])}>{r['Customer Name']}</a>
-                           : r['Customer Name'];
-                })()}</td>
-                {/* A blank, not the buyer's name repeated: a booking for the
-                    account holder has no separate participant, and echoing the
-                    buyer would imply a child who is not there. */}
-                <td className="lp">{r['Participant'] || ''}</td>
+                {(() => {
+                  const p = liveParticipant(r);
+                  const u = liveUserUrl(recOrgId, p.id);
+                  return (
+                    <td className="lp" title={p.title}>
+                      {u ? <a className="live-link" href={u} target="_blank" rel="noopener noreferrer"
+                              data-live-participant={String(p.id)}>{p.name}</a>
+                         : p.name}
+                    </td>
+                  );
+                })()}
                 <td className="ls" title={(r['Section'] || '') + (r['Program'] && r['Program'] !== r['Section'] ? ' \u00b7 ' + r['Program'] : '')}>{(() => {
                   const u = liveSectionUrl(recOrgId, r['Section Id']);
                   return u ? <a className="live-link" href={u} target="_blank" rel="noopener noreferrer"
@@ -3636,13 +3591,14 @@ function LiveRegistrations({ feed, recOrgId }) {
         {paused ? ' \u00b7 paused' : ' \u00b7 refreshes every minute'}
         {/* The list is the top of a feed, not the whole of it — say so rather
             than letting eight rows read as the day's total. */}
-        {rows.length > LIVE_ROWS ? ' \u00b7 showing ' + LIVE_ROWS + ' of ' + rows.length : ''}
+        {todayRows.length > LIVE_ROWS ? ' \u00b7 showing ' + LIVE_ROWS + ' of ' + todayRows.length : ''}
       </div>
     </div>
   );
 }
 
 function ProgramsLive({ feed, recOrgId }) {
+  const sound = useLiveSound('programs', feed.freshRows, liveChimeWorthy);
   const { rows, err, at, paused, flash } = feed;
 
   // Same three states as the counter, and for the same reasons: absence is for
@@ -3652,7 +3608,7 @@ function ProgramsLive({ feed, recOrgId }) {
   if (!rows) {
     return (
       <div className="widget-card widget-md live-card" data-live-progloading="1">
-        <LiveCardHeader icon={'\u{1F3AF}'} title="Programs Live" feed={feed} sub={'Loading the last ' + LIVE_DAYS + ' days\u2026'} />
+        <LiveCardHeader icon={'\u{1F3AF}'} title="Programs Live" feed={feed} card="programs" sound={sound} sub={'Loading the last ' + LIVE_DAYS + ' days\u2026'} />
         <div className="skeleton skeleton-chart" />
       </div>
     );
@@ -3692,7 +3648,7 @@ function ProgramsLive({ feed, recOrgId }) {
   if (!progs.length) {
     return (
       <div className="widget-card widget-md live-card" data-live-progs="0">
-        <LiveCardHeader icon={'\u{1F3AF}'} title="Programs Live" feed={feed}
+        <LiveCardHeader icon={'\u{1F3AF}'} title="Programs Live" feed={feed} card="programs" sound={sound}
                         sub={'Top sections by money received \u00b7 last ' + LIVE_DAYS + ' days'} />
         <div style={{padding:'18px 4px',fontSize:12,color:'var(--text-muted)'}}>
           No enrollments in the last {LIVE_DAYS} days.
@@ -3703,7 +3659,7 @@ function ProgramsLive({ feed, recOrgId }) {
 
   return (
     <div className="widget-card widget-md live-card" data-live-progs={String(progs.length)}>
-      <LiveCardHeader icon={'\u{1F3AF}'} title="Programs Live" feed={feed}
+      <LiveCardHeader icon={'\u{1F3AF}'} title="Programs Live" feed={feed} card="programs" sound={sound}
                       sub={'Top sections by money received \u00b7 last ' + LIVE_DAYS + ' days'} />
 
       {/* A SPACE IN THE TEXT AS WELL AS A GAP IN THE LAYOUT. The flex gap fixes
@@ -3940,6 +3896,10 @@ function useLiveCheckins(onAvailable, enabled) {
 }
 
 function MembershipCheckins({ feed, recOrgId }) {
+  /* AN ACCEPTED SCAN RINGS; A REFUSAL DOES NOT. A denial is not attendance, and
+     a card that chimed when the desk turned somebody away would be announcing
+     the opposite of what happened. */
+  const sound = useLiveSound('checkins', feed.freshRows, r => liveCheckinState(r) === 'ok');
   const { rows, err, flash } = feed;
 
   /* ABSENT, NEVER A CONFIDENT ZERO. A feed that has not answered is not a desk
@@ -3950,8 +3910,8 @@ function MembershipCheckins({ feed, recOrgId }) {
   if (!rows) {
     return (
       <div className="widget-card widget-md live-card" data-live-checkins="loading">
-        <LiveCardHeader icon={'\u{1F6C2}'} title="Membership Check-Ins" feed={feed}
-                        sub="Members and passes as they scan in \u00b7 today" />
+        <LiveCardHeader icon={'\u{1F6C2}'} title="Membership Check-Ins" feed={feed} card="checkins" sound={sound}
+                        sub={'Members and passes as they scan in \u00b7 today'} />
         <div className="live-empty">Loading\u2026</div>
       </div>
     );
@@ -3969,8 +3929,8 @@ function MembershipCheckins({ feed, recOrgId }) {
 
   return (
     <div className="widget-card widget-md live-card" data-live-checkins={String(rows.length)}>
-      <LiveCardHeader icon={'\u{1F6C2}'} title="Membership Check-Ins" feed={feed}
-                      sub="Members and passes as they scan in \u00b7 today" />
+      <LiveCardHeader icon={'\u{1F6C2}'} title="Membership Check-Ins" feed={feed} card="checkins" sound={sound}
+                      sub={'Members and passes as they scan in \u00b7 today'} />
 
       <div className="live-count">
         <span className="live-n" data-live-ci-today={String(okRows.length)}>{okRows.length}</span>
@@ -4417,8 +4377,18 @@ function SectionBlock({ sectionId, widgetIds, reportData, loading, freshRts, tar
 const MAX_PER_SECTION = 999;
 const MAX_TOTAL = 999;
 
-function EditModal({ sections, onSave, onClose, availableReports, toggles, focusSection }) {
+function EditModal({ sections, onSave, onClose, availableReports, toggles, focusSection, liveOn }) {
   const [draft, setDraft] = useState(sections.map(s => ({ ...s, widgets: [...s.widgets] })));
+  /* THE LIVE SECTION IS A CHOICE NOW, not a fact. Dan: "need a way to toggle
+     off these live widgets in the UI/edit dashboard section, as cool as they
+     are, not everyone will want them." It read "Always on" and could not be
+     turned off — which is fine for Support, which Rec runs, and wrong for a
+     row of self-refreshing cards somebody may simply not want on screen.
+
+     DEFAULT ON, and stored as an explicit false rather than as a truthy flag:
+     an org that has never opened this dialog has no value saved, and absent has
+     to keep meaning on or the section would vanish for everyone on deploy. */
+  const [live, setLive] = useState(liveOn !== false);
   // Opening from a section's own "N widgets" badge lands on THAT section rather
   // than on the first one — the whole point of the per-section entry point is
   // not having to hunt for the section you were already looking at.
@@ -4488,15 +4458,19 @@ function EditModal({ sections, onSave, onClose, availableReports, toggles, focus
               have produced a duplicate section that renders nothing. Same
               shape as the Support row below it, and FIRST, because that is
               where the section itself sits on the page. */}
-          {availableReports.enrollments && (
-            <div className="edit-section" data-edit-live="1" style={{opacity:0.85,cursor:'default'}}
-              title="Live data, always on — it ignores the date range and refreshes itself">
-              <div style={{display:'flex',alignItems:'center',gap:10,padding:'12px 14px'}}>
+          {(availableReports.enrollments || availableReports['checkins-live']) && (
+            <div className="edit-section" data-edit-live={live ? 'on' : 'off'}>
+              <label style={{display:'flex',alignItems:'center',gap:10,padding:'12px 14px',cursor:'pointer'}}
+                title="Live cards refresh themselves every minute and ignore the date range above.">
+                <input type="checkbox" data-edit-live-toggle="1" checked={live}
+                       onChange={e => setLive(e.target.checked)} />
                 <span style={{fontSize:15}}>{SECTIONS.live.icon}</span>
                 <span style={{fontSize:13,fontWeight:600,color:'var(--text-primary)'}}>{SECTIONS.live.label}</span>
-                <span style={{fontSize:10,fontWeight:600,padding:'2px 8px',borderRadius:8,background:'rgba(22,163,74,.12)',color:'#16a34a'}}>{'\u26A1'} Always on {'\u00b7'} not date-filtered</span>
-                <span style={{fontSize:11,color:'var(--text-muted)',marginLeft:'auto'}}>1 widget</span>
-              </div>
+                <span style={{fontSize:10,fontWeight:600,padding:'2px 8px',borderRadius:8,background:'rgba(22,163,74,.12)',color:'#16a34a'}}>{'\u26A1'} not date-filtered</span>
+                <span style={{fontSize:11,color:'var(--text-muted)',marginLeft:'auto'}}>
+                  {live ? 'refreshes every minute' : 'hidden'}
+                </span>
+              </label>
             </div>
           )}
           {availableReports.support && (
@@ -4574,7 +4548,7 @@ function EditModal({ sections, onSave, onClose, availableReports, toggles, focus
         <div className="modal-footer">
           <span style={{fontSize:11,color:atLimit?'var(--red)':'var(--text-muted)',flex:1}}>{totalWidgets} widgets{MAX_TOTAL < 100 ? ' / '+MAX_TOTAL+(atLimit?' (limit reached)':'') : ''}</span>
           <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn btn-amber" onClick={() => onSave(draft)}>Save Layout</button>
+          <button className="btn btn-amber" onClick={() => onSave(draft, { liveWidgets: live })}>Save Layout</button>
         </div>
       </div>
     </div>
@@ -5617,12 +5591,12 @@ function DashboardApp() {
     track('template_selected', { template: key, sections: secs.length, theme: t });
   }
 
-  async function handleSaveSections(sections) {
+  async function handleSaveSections(sections, extra) {
     const oldIds = config.sections.map(s=>s.id);
     const newIds = sections.map(s=>s.id);
     const added = newIds.filter(id => !oldIds.includes(id));
     const removed = oldIds.filter(id => !newIds.includes(id));
-    const cfg = { ...config, sections }; setConfig(cfg); setEditOpen(false); await saveConfig(cfg);
+    const cfg = { ...config, sections, ...(extra || {}) }; setConfig(cfg); setEditOpen(false); await saveConfig(cfg);
     track('layout_saved', { sections: sections.length, widgets: sections.reduce((s,sec)=>s+sec.widgets.length,0), sectionsAdded: added, sectionsRemoved: removed });
   }
 
@@ -5788,7 +5762,10 @@ function DashboardApp() {
             absent until the card has a public link), and never in print — a
             printed "right now" is a lie the moment the paper leaves the
             printer. */}
-        {!IS_PRINT && activeTab === 'dashboard'
+        {/* `!== false`, never a truthy test: an org that has never opened Edit
+            Dashboard has no value saved, and absent has to keep meaning ON or
+            the whole section would disappear for everyone the day this shipped. */}
+        {!IS_PRINT && activeTab === 'dashboard' && config.liveWidgets !== false
           && (availableReports.enrollments || availableReports['checkins-live']) && (
           <LiveSection reportingBaseUrl={orgMeta.reportingBaseUrl || ''} recOrgId={orgMeta.recOrgId || ''}
                        hasCheckins={!!availableReports['checkins-live']} />
@@ -5813,7 +5790,8 @@ function DashboardApp() {
           const vis = orgMeta.reportVisibility.find(v => v.type === rt);
           return !vis || vis.visible;
         })} availableReports={availableReports} toggles={orgMeta.toggles || {}} focusSection={editFocus}
-        onSave={handleSaveSections} onClose={()=>{setEditOpen(false);setEditFocus(null);}} />}
+        onSave={handleSaveSections} onClose={()=>{setEditOpen(false);setEditFocus(null);}}
+        liveOn={config.liveWidgets} />}
     </div>
   );
 }

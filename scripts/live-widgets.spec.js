@@ -115,7 +115,7 @@ try {
     liftFn(src, 'liveKey') + '\n' + liftFn(src, 'liveSectionKey') + '\n' +
     liftFn(src, 'liveBySection') + '\n' +
     liftFn(src, 'liveMarkState') + '\n' + liftFn(src, 'liveChimeWorthy') + '\n' +
-    liftFn(src, 'livePriceCell') + '\n' +
+    liftFn(src, 'livePriceCell') + '\n' + liftFn(src, 'liveParticipant') + '\n' +
     liftFn(src, 'liveCheckinKey') + '\n' + liftFn(src, 'liveCheckinState') + '\n' +
     liftFn(src, 'liveInitials') + '\n' + liftFn(src, 'liveDayAxis') + '\n' +
     liftFn(src, 'liveAt') + '\n' + liftFn(src, 'liveCheckinTimeline') + '\n' +
@@ -135,7 +135,7 @@ try {
         return 'const ' + n + ' = ' + m[1] + ';\n';
       }).join('') +
     'return { liveWindow, liveDay, liveClock, liveMoney, liveKey, liveSectionKey, liveBySection, liveMarkState,' +
-    ' liveChimeWorthy, livePriceCell, liveDayShift, liveProgramTrend, liveChimeBurst,' +
+    ' liveChimeWorthy, livePriceCell, liveParticipant, liveDayShift, liveProgramTrend, liveChimeBurst,' +
     ' liveCheckinKey, liveCheckinState, liveInitials, liveDayAxis, liveCheckinTimeline,' +
     ' LIVE_CHIME_MAX, LIVE_CHIME_GAP_MS, LIVE_CHIME_JITTER_MS, LIVE_CHIME_RING_MS };')();
   pass++;
@@ -202,8 +202,8 @@ if (H.liveWindow) {
   ok(/if \(!rows\) \{[\s\S]{0,900}?skeleton skeleton-chart/.test(code),
      '...and a feed that has not answered YET shows a skeleton, the way every other widget here does');
   ok(/data-live-loading="1"/.test(code), 'the loading card is distinguishable from the loaded one');
-  ok(/availableReports\.enrollments && \(/.test(code),
-     'and the section renders only where the feed exists at all');
+  ok(/\(availableReports\.enrollments \|\| availableReports\['checkins-live'\]\) && \(/.test(code),
+     'and the section renders only where a feed exists at all');
   /* THE SECTION HIDES WITH ITS WIDGETS. This was an env gate for about an hour
      (Dan: "what is MB_ENROLLMENTS_UUID lol"), which put a deploy step between
      publishing a card and seeing the widget for no benefit — the rule that had
@@ -279,8 +279,31 @@ if (H.liveWindow) {
 
 /* ── 7. NOT IN PRINT, and ABOVE the stored sections ───────────────────────*/
 {
-  ok(/\{!IS_PRINT && activeTab === 'dashboard'\s*\n?\s*&& \(availableReports\.enrollments \|\| availableReports\['checkins-live'\]\) && \(/.test(code),
+  ok(/\{!IS_PRINT && activeTab === 'dashboard' && config\.liveWidgets !== false/.test(code),
      'the live section is excluded from print — a printed "right now" is a lie the moment the paper leaves the printer');
+  /* AND IT CAN BE TURNED OFF. Dan: "need a way to toggle off these live
+     widgets in the UI/edit dashboard section, as cool as they are, not
+     everyone will want them."
+
+     `!== false`, NEVER a truthy test. An org that has never opened Edit
+     Dashboard has no value saved, so absent has to keep meaning ON — a truthy
+     gate would have made the whole section disappear for every org the day it
+     shipped, which is the failure mode worth pinning. */
+  ok(/config\.liveWidgets !== false/.test(code),
+     '...and an org that never opened the editor still sees it');
+  ok(/data-edit-live-toggle="1"/.test(code) && /onChange=\{e => setLive\(e\.target\.checked\)\}/.test(code),
+     'the editor offers a real checkbox rather than an "Always on" label');
+  /* AND IT OPENS ON WHAT IS SAVED. A checkbox that always opens ticked looks
+     identical until you reopen the dialog after turning the section off — and
+     then Save Layout silently turns it back on. */
+  ok(/const \[live, setLive\] = useState\(liveOn !== false\);/.test(code),
+     '...which opens on the stored choice, not always ticked');
+  ok(/liveOn=\{config\.liveWidgets\}/.test(code),
+     '...and the stored choice is what the editor is handed');
+  ok(/onSave\(draft, \{ liveWidgets: live \}\)/.test(code),
+     '...and Save Layout carries the choice');
+  ok(/const cfg = \{ \.\.\.config, sections, \.\.\.\(extra \|\| \{\}\) \}/.test(code),
+     '...which is persisted with the layout rather than dropped on the floor');
   /* EITHER card is enough to render the section: an org with a check-ins link
      and no enrollments one would otherwise lose a widget it has. */
   ok(/availableReports\.enrollments \|\| availableReports\['checkins-live'\]/.test(code),
@@ -375,8 +398,11 @@ if (H.liveWindow) {
      'today keeps the bare clock — that is the day being watched, and prefixing every row would be noise');
   ok(/\['Sun','Mon','Tue','Wed','Thu','Fri','Sat'\]\[d\.getDay\(\)\] \+ ' ' \+ clock/.test(code),
      '...and every other row carries its weekday');
-  ok(/live-daybreak/.test(code),
-     'plus a rule where the day changes: a list scanned in two seconds is read by its shape, not only by its text');
+  /* THE DAY-BREAK RULE IS GONE WITH THE SEVEN-DAY LIST. Over one day it can
+     never fire, and a CSS class nothing can apply is what sends the next
+     reader looking for the feature it belonged to. */
+  ok(!/live-daybreak/.test(code),
+     'no day-break rule survives on a list that only ever shows one day');
 }
 
 /* ── 9e. LINKS INTO REC, built from ids rather than names ─────────────────
@@ -411,8 +437,8 @@ if (H.liveWindow) {
   ok(/widget-card widget-md live-card/.test(code),
      'the counter is half width — widget-lg spans all four columns, and this is eight short rows, not a chart');
   ok(/data-edit-live/.test(code), 'the editor carries a pinned row for it');
-  ok(/1 widget<\/span>|>1 widget</.test(code) || /1 widget/.test(code),
-     '...with its widget count');
+  ok(/refreshes every minute/.test(code) && /'hidden'/.test(code),
+     '...saying which state it is in rather than a widget count');
   ok(/if \(s\.id === 'live'\) return false;/.test(code),
      'and it is excluded from the addable list, or the editor offers to add what is already there');
   const editIdx = code.indexOf('data-edit-live');
@@ -442,8 +468,37 @@ if (H.liveWindow) {
 {
   ok(/table-layout: fixed/.test(code),
      'the columns are FIXED tracks — the rows change every minute, so natural widths re-measured the table and the columns jumped');
-  ['Time', 'Household owner', 'Participant', 'Section', 'Price'].forEach(h =>
+  /* FOUR COLUMNS, NOT FIVE. Dan: "remove the HH owner here and just keep the
+     participant column. If the participant IS the HH owner, just have their
+     name in this column." Two person columns, one of them blank on every adult
+     registration, was half a table saying nothing. */
+  ['Time', 'Participant', 'Section', 'Price'].forEach(h =>
     ok(new RegExp('>' + h + '</th>').test(code), 'the list has a ' + h + ' header'));
+  ok(!/>Household owner<\/th>/.test(code), 'and no separate Household owner column');
+
+  /* ONE NAME, AND WHOSE. Lifted and RUN, because the whole point is WHICH of
+     two names lands in the cell and a regex over a ternary passes inverted. */
+  if (H.liveParticipant) {
+    const P = H.liveParticipant;
+    const child = P({ Participant: 'Cam Baldarelli', 'Customer Name': 'Nicole Baldarelli',
+                      'User ID': 'u-nicole', Email: 'n@example.test' });
+    ok(child.name === 'Cam Baldarelli', 'a child registration shows the CHILD');
+    /* AND IT IS NOT LINKED TO THE PARENT. The feed's only id is the BUYER's,
+       so linking a child's name with it would open the wrong person's profile
+       — worse than no link, because it looks right. Card 21286 needs one more
+       column ("Participant Id") before this can be a link. */
+    ok(!child.id, "...and carries no id until the card emits the participant's");
+    ok(/Booked by Nicole Baldarelli/.test(child.title),
+       '...with the household owner on hover, since the column went not the fact');
+
+    const self = P({ Participant: null, 'Customer Name': 'John Orr', 'User ID': 'u-john',
+                     Email: 'j@example.test' });
+    ok(self.name === 'John Orr',
+       'a booking for the account holder shows THEM, not a blank');
+    ok(self.id === 'u-john',
+       '...and links, because in exactly that case the buyer IS the participant');
+    ok(P({}).name === '', 'a row with neither name renders empty rather than "undefined"');
+  }
 
   /* THE ROW KEY IS THE ROW'S IDENTITY. The feed carries no booking id, so it
      is the four things that cannot collide for two different registrations —
@@ -686,7 +741,7 @@ if (H.liveBySection) {
   /* TEN PROGRAMS, not eight rows. */
   ok(/const LIVE_PROG_ROWS = 10;/.test(code), 'the programs card shows ten');
   ok(/progs\.slice\(0, LIVE_PROG_ROWS\)/.test(code), '...and slices on its own constant');
-  ok(/rows\.slice\(0, LIVE_ROWS\)/.test(code),
+  ok(/todayRows\.slice\(0, LIVE_ROWS\)/.test(code),
      '...while the registration list keeps its own, or one constant would govern two different kinds of row');
 
   /* THE MONEY PULSE comes from the SAME arrival diff as the row highlight, or
@@ -807,29 +862,34 @@ if (H.liveBySection) {
   ok(/removeEventListener\('visibilitychange'/.test(code),
      '...and the listener comes off, or a remount stacks a second fetch on every switch');
 
-  /* THE FIRST LOAD IS SILENT, and this is the load-bearing one. The chime
-     rides the `fresh` diff, which is empty on the first poll by construction —
-     so opening the dashboard on a week holding 61 paid registrations plays
-     nothing rather than 61 coins. */
+  /* THE FIRST LOAD IS SILENT, and this is the load-bearing one. Every card
+     rings off the feed's published arrivals, and that list is empty on the
+     first poll by construction — so opening the dashboard on a day holding 61
+     paid registrations plays nothing rather than 61 coins. */
   const loadFn = code.slice(code.indexOf('const fresh = keys.filter'), code.indexOf('seenRef.current = new Set(keys)'));
-  ok(/if \(fresh\.length\)/.test(loadFn) && /liveChime\(/.test(loadFn),
-     'the chime fires inside the fresh-arrivals branch, so the first load cannot ring');
-  ok(!/liveChime\(/.test(code.slice(0, code.indexOf('const fresh = keys.filter'))
+  ok(/if \(fresh\.length\)/.test(loadFn) && /setFreshRows\(/.test(loadFn),
+     'the arrivals are published inside the fresh-diff branch, so the first load cannot ring');
+  ok(!/setFreshRows\(/.test(code.slice(0, code.indexOf('const fresh = keys.filter'))
        .slice(code.slice(0, code.indexOf('const fresh = keys.filter')).indexOf('function useLiveEnrollments'))),
      '...and nowhere else inside the hook ahead of that diff');
-  ok(/mutedRef\.current/.test(loadFn),
-     'it reads mute through a REF — a dependency would rebuild `load` and restart the poll clock');
-  ok(/\.filter\(r => r && liveChimeWorthy\(r\)\)/.test(loadFn),
-     'the arrivals are filtered to the paid ones before any of them rings');
+  /* THE FETCH NO LONGER READS MUTE AT ALL. It used to, through a ref, because
+     putting `muted` in load's dependency list would rebuild the callback and
+     restart the poll clock. With three cards owning three mutes the fetch has
+     no business knowing about any of them — which removes that hazard rather
+     than guarding it. */
+  ok(!/mutedRef/.test(code),
+     'the fetch does not read mute — three cards own three of them');
+  ok(!/chimeRef/.test(code),
+     '...nor which sound to play');
 
   /* A BIG REGISTRATION DAY SOUNDS LIKE ONE. Dan: "When an org has a big
      registration day, I want it to sound like a las vegas casino." The
      schedule is LIFTED AND RUN, because the only checkable claim about a burst
      in a browser with no ears is the shape of it. */
-  ok(/liveChimeBurst\(paid\.length\)/.test(loadFn),
+  ok(/liveChimeBurst\(hits\.length\)/.test(code),
      'the batch is handed to the burst scheduler whole — the cap lives in one place');
-  ok(/liveChime\(kind, hit\)/.test(loadFn),
-     '...and each ring carries its own level and detune');
+  ok(/liveChime\(chime, hit\)/.test(code),
+     '...and each ring carries its own level, detune and the CARD\'s own sound');
   if (H.liveChimeBurst) {
     const { liveChimeBurst, LIVE_CHIME_MAX, LIVE_CHIME_GAP_MS, LIVE_CHIME_JITTER_MS } = H;
     const half = () => 0.5;                  // seeded: no jitter, so delays are exact
@@ -911,7 +971,7 @@ if (H.liveBySection) {
      `!== '0'` means an absent key, an unreadable store and a private window all
      land on muted. Reading `=== '1'` would be equivalent today and would flip
      the default the first time the value written changed. */
-  ok(/localStorage\.getItem\(LIVE_MUTE_KEY\) !== '0'/.test(code),
+  ok(/localStorage\.getItem\(LIVE_MUTE_KEY\(card\)\) !== '0'/.test(code),
      'mute defaults ON, including when localStorage cannot be read');
   ok(/checked=\{muted\}/.test(code), 'the box reflects the state rather than being decorative');
 
@@ -957,48 +1017,65 @@ if (H.liveBySection) {
   ok(/LIVE_CHIME_VOICES\[kind\] \|\| LIVE_CHIME_VOICES\[LIVE_CHIME_DEFAULT\]/.test(code),
      '...and an unknown stored name rings the default rather than nothing');
 
-  /* THE FIVE DAN ASKED FOR SECOND. Named individually, because "there are nine
-     sounds" passes just as happily on nine chiptune beeps. */
+  /* FOUR SOUNDS, AND THE FIVE ANIMALS ARE GONE. Dan asked for a car horn, a
+     chicken, a cow, a sheep and a foghorn, heard them, and asked for them out
+     again — so this pins the ABSENCE, which is the thing a later "let's add a
+     few more" would quietly undo. */
+  ok(LIVE_CHIME_NAMES.length === 4,
+     'the menu is four sounds (it is ' + LIVE_CHIME_NAMES.length + ')');
   ['horn', 'chicken', 'cow', 'sheep', 'foghorn'].forEach(n => {
-    ok(LIVE_CHIME_NAMES.includes(n), 'the menu offers ' + n);
+    ok(!LIVE_CHIME_NAMES.includes(n), 'the menu does NOT offer ' + n);
+  });
+  /* AND THE SYNTHESIS THEY NEEDED WENT WITH THEM. A glide, an LFO, parallel
+     formant bandpasses and a noise buffer have no other caller — a helper
+     nothing calls is the dead code this repo keeps writing down, and it would
+     be the first thing a reader mistook for a live feature. */
+  ['liveVoice', 'liveNoise', 'liveNoiseBuffer', 'formants', 'vibHz'].forEach(n => {
+    ok(!code.includes(n), n + ' went with the sounds that used it');
   });
 
-  /* AN ANIMAL IS A PITCH CONTOUR, NOT A NOTE. These three are what separate the
-     five from a row of beeps, and each one is a thing that was got wrong first:
-     without the glide a moo is a flat hum, without the LFO on FREQUENCY a bleat
-     is a stutter, and without the noise burst a cluck is a bird toy. */
-  ok(/exponentialRampToValueAtTime\(to, at \+ dur\)/.test(code),
-     'liveVoice glides between two pitches');
-  ok(/lg\.connect\(o\.frequency\)/.test(code),
-     'the wobble drives FREQUENCY, not gain — a gain LFO is a tremolo, not a bleat');
-  ok(/createBufferSource\(\)/.test(code) && /type = 'bandpass'/.test(code),
-     'there is a filtered noise burst — no oscillator can make the front of a cluck');
-  ok(/if \(_liveNoiseBuf\) return _liveNoiseBuf;/.test(code),
-     '...and its buffer is built once, not per ring');
-  ok(/from: 440\.00[\s\S]{0,200}from: 554\.37/.test(code),
-     'the car horn is a DYAD (A4 + C#5) — one reed alone is a buzzer');
-
-  /* FORMANTS ARE WHAT MAKE A VOICE A VOICE. A moo and a bleat are a buzzing
-     source played through a resonant tube, and the tube's peaks are what the
-     ear reads as an animal rather than an oscillator — the first pass at these
-     used a lowpass alone and sounded like a dull sawtooth.
-
-     PARALLEL AND SUMMED, never chained: two narrow bandpasses in series barely
-     overlap and multiply down to near silence, so the sound would all but
-     vanish. That is the mutation this pins. */
-  ok(/formants\.forEach/.test(code) && /bg\.connect\(sum\)/.test(code),
-     'the formants are summed in PARALLEL — chaining two narrow bands is silence');
-  ['cow', 'sheep', 'chicken'].forEach(n => {
-    const v = (code.match(new RegExp('\\n  ' + n + '\\(ctx, t\\) \\{[\\s\\S]*?\\n  \\},')) || [''])[0];
-    ok(/formants:/.test(v), n + ' is voiced through formants, not a bare lowpass');
-  });
+  /* ONE MUTE AND ONE PICKER PER CARD. Dan: "make the mute/unmute toggles
+     separate for each widget, some might want to hear sounds for a widget and
+     not the others." Three cards, three boxes — and the count is what fails if
+     one of them is ever wired back to a shared piece of state. */
+  ok(/const \[muted, setMuted\] = useState\(\(\) => \{[\s\S]{0,200}LIVE_MUTE_KEY\(card\)/.test(code),
+     "each card's mute is stored under its OWN key");
+  /* THE KEY HAS TO CONTAIN THE CARD, not merely take it as an argument. A
+     `card => 'rec-dash-live-muted'` that ignores its own parameter survived
+     the first version of this assertion: three cards would then share one
+     stored preference and unmuting any of them would unmute all three on the
+     next reload — which is the bug, arriving a refresh late. */
+  ok(/const LIVE_MUTE_KEY  = card => 'rec-dash-live-muted:' \+ card;/.test(code) &&
+     /const LIVE_CHIME_KEY = card => 'rec-dash-live-chime:' \+ card;/.test(code),
+     '...and each key is BUILT from the card rather than merely taking it');
+  ok(/data-live-mute=\{card\}/.test(code),
+     'the mute box carries which card it belongs to');
+  ok((code.match(/<LiveCardHeader/g) || []).length >= 3,
+     'all three cards render the header that owns those controls');
+  ok((code.match(/useLiveSound\('(enrollments|programs|checkins)'/g) || []).length === 3,
+     'enrollments, programs and check-ins each own a sound');
 
   /* THE PICKER CANNOT OUTLIVE THE SOUND. A menu of sounds beside a ticked Mute
      box is a control that does nothing. */
-  ok(/\{muted \|\| !sound \? null : \(/.test(code),
+  ok(/\{muted \? null : \(/.test(code),
      'the sound menu is hidden while muted');
-  ok((code.match(/data-live-mute="1"/g) || []).length === 1,
-     'one mute box in one shared header — two copies is how Pause and the bolt drifted');
+
+  /* THEY RING TOGETHER, WHICH IS THE POINT. Dan: "hear them going off like
+     it's a las vegas casino during busy times." The ring is an effect on the
+     feed's published arrivals rather than a call inside the fetch, so three
+     cards react to one batch with three sounds instead of the fetch having to
+     decide how many times to ring. */
+  ok(/setFreshRows\(fresh\.map/.test(code),
+     'the feed PUBLISHES its fresh arrivals rather than ringing them itself');
+  ok(!/liveChimeBurst/.test(code.slice(code.indexOf('const load = React.useCallback'),
+                                       code.indexOf('useEffect(() => { load(); }'))),
+     '...and no longer rings inside the fetch, where it could only have one opinion');
+  ok(/if \(muted \|\| !freshRows \|\| !freshRows\.length\) return;/.test(code),
+     'a muted card is silent, and a load with no arrivals rings nothing');
+  ok(/const hits = worthy \? freshRows\.filter\(worthy\) : freshRows;/.test(code),
+     'each card decides which arrivals are worth a sound');
+  ok(/liveChimeBurst\(hits\.length\)\.forEach\(hit =>/.test(code),
+     '...and still rings them as one burst');
 }
 
 /* ── the trend arrow ────────────────────────────────────────────────────────
@@ -1211,7 +1288,14 @@ process.on('exit', () => {
      you money", and a beep on every desk scan would train a busy gym to mute
      the section and lose the registrations chime with it. */
   const ciCard = code.slice(code.indexOf('function MembershipCheckins'), code.indexOf('function LiveSection'));
-  ok(!/sound/.test(ciCard), 'the check-ins card offers no sound');
+  /* IT HAS A SOUND NOW, and its own. Dan: "Add the soundbar to the programs
+     and memberships check-in widgets. Ideally I'd be able to set a separate
+     sound for each." What it must NOT ring for is a refusal — a chime when the
+     desk turns somebody away announces the opposite of what happened. */
+  ok(/useLiveSound\('checkins', feed\.freshRows, r => liveCheckinState\(r\) === 'ok'\)/.test(ciCard),
+     'the check-ins card owns a sound, and only an ACCEPTED scan rings it');
+  ok(/card="checkins" sound=\{sound\}/.test(ciCard),
+     '...wired to its own header controls');
 
   /* THE WINDOW IS TWO DAYS, NOT ONE. `liveWindow` builds dates in the VIEWER's
      zone and the card windows on the ORG's, so a one-day window asks for a
