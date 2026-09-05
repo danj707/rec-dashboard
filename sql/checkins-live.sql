@@ -6,19 +6,26 @@
 -- back here. The 17294 mirror was 53 lines stale once and pushing the repo copy
 -- would have silently deleted a whole feature.
 --
--- STATUS 2026-09-05: TAGS FLIPPED, WIDGET BUILT, AWAITING THE PUBLIC LINK.
---   1. DONE — Dan flipped Start Date and End Date to type Date. It came back
---      CLEAN: three parameters, not six. Worth recording, because this is the
---      first card in either repo where the flip did not leave string/=
---      duplicates behind; the six-parameter mess is common but not inevitable.
---   2. OUTSTANDING — a public link. Its uuid goes into CHECKINS_LIVE_UUID in
---      server.js and nothing else changes.
--- The widget is ABSENT until then, deliberately: SHARED_UUIDS omits the key
--- while the uuid is empty, so `availableReports` has no entry, the route 404s,
--- the card renders nothing and the hook does not even poll. A confident
--- "0 check-ins today" on a morning when the desk is scanning people through is
--- the reading that had to be impossible. Filling in the uuid is the whole
--- wiring — no redeploy of anything else (card 21055 landed exactly this way).
+-- STATUS 2026-09-05: LIVE. Tags flipped, public link published, widget wired.
+--   * The flip came back CLEAN — three parameters, not six. Worth recording,
+--     because this is the first card in either repo where an API-created
+--     card's flip did not leave string/= duplicates behind; the six-parameter
+--     mess is common but not inevitable.
+--   * Public UUID d9891f69-897e-4d60-985c-50b31ad6d280, in CHECKINS_LIVE_UUID.
+--
+-- SIGNED OFF cache-independently through the public endpoint with the app's
+-- own date/single parameters: apex 1,150 scans in 7.7s cold and 0.9s warm,
+-- el-segundo 198 in 1.7s. Photo coverage in that live sample was 29/1150 at
+-- apex (2.5%) and 0/198 at el-segundo, which is the measured 7.5%-and-bimodal
+-- figure showing through — initials-first was the right call.
+--
+-- AND THE SIGN-OFF CAUGHT A BUG BEFORE IT SHIPPED. Asking for the VIEWER's
+-- today returned ZERO rows at both orgs while the previous day returned 1,150
+-- and 198: the page builds the window in the viewer's zone and this card
+-- windows on the ORG's, so from the org's midnight-in-viewer-time onwards a
+-- one-day window asks for a date the rec centre has not reached. The widget
+-- asks for TWO days now and derives "today" from the newest row's own stamp.
+-- A warm-cache render would never have shown this.
 --
 -- WHY A SEPARATE CARD FROM 18151. Card 18151 is the Memberships Check-In
 -- REPORT: it returns every check-in in a window (apex: 23,525 rows in 22.3s)

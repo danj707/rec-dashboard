@@ -1227,6 +1227,17 @@ if (failures.length) {
   const ciCard = code.slice(code.indexOf('function MembershipCheckins'), code.indexOf('function LiveSection'));
   ok(!/sound/.test(ciCard), 'the check-ins card offers no sound');
 
+  /* THE WINDOW IS TWO DAYS, NOT ONE. `liveWindow` builds dates in the VIEWER's
+     zone and the card windows on the ORG's, so a one-day window asks for a
+     date the org has not reached yet once it is tomorrow for the viewer — and
+     the card comes back empty. Measured against the live card: today's window
+     returned 0 rows at apex and el-segundo while the previous day returned
+     1,150 and 198. */
+  ok(/const w = liveWindow\(2\);/.test(code),
+     'the check-ins feed asks for two days, so an org behind the viewer is never empty');
+  ok(/const today = rows\.length \? liveDay\(rows\[0\]\['Checked In At'\]\) : ''/.test(code),
+     "...and TODAY is the newest row's own org-timezone day, never the viewer's clock");
+
   /* NO CARD, NO REQUEST. Polling a 404 every sixty seconds for every org
      without a public link is a self-inflicted error rate that reads exactly
      like a broken feed in the logs. */

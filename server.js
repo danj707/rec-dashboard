@@ -314,10 +314,11 @@ setTimeout(() => { reconcileWithReporting().catch(e => console.warn('[reporting]
 setInterval(() => { reconcileWithReporting().catch(() => {}); }, REPORTING_RECONCILE_MS);
 
 // Reports available to ALL orgs via shared Metabase cards (need org_id param)
-/* Set this to card 21517's public UUID once the link exists. Empty until then:
-   see the note on the 'checkins-live' key below for why an absent key is the
-   right shape rather than a placeholder. */
-const CHECKINS_LIVE_UUID = '';
+/* Card 21517's public link. Verified through the public endpoint with the
+   app's own date/single parameters before wiring: apex 1,150 scans in 7.7s
+   cold and 0.9s warm, el-segundo 198 in 1.7s, three registered parameters.
+   Empty here means the widget is absent — see the 'checkins-live' key below. */
+const CHECKINS_LIVE_UUID = 'd9891f69-897e-4d60-985c-50b31ad6d280';
 
 const SHARED_UUIDS = {
   facility: 'f6787f45-3a36-4501-8a5f-b0f647451a85',

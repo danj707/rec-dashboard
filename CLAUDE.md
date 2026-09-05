@@ -9,6 +9,31 @@ checked in. And add their tiny photos, orgs love that."*
 
 Card **21517**, its own feed, sitting beside the two enrollment cards.
 
+### LIVE, AND THE SIGN-OFF CAUGHT A BUG BEFORE IT SHIPPED
+
+Public UUID `d9891f69-897e-4d60-985c-50b31ad6d280`, verified
+cache-independently through the public endpoint with the app's own
+`date/single` parameters: **apex 1,150 scans in 7.7s cold and 0.9s warm,
+el-segundo 198 in 1.7s**, three registered parameters.
+
+**Asking for the VIEWER's today returned ZERO rows at both orgs**, while the
+previous day returned 1,150 and 198. `liveWindow` builds dates in the viewer's
+zone and the card windows on the ORG's, so from the org's midnight-in-viewer-
+time onwards — for a Denver org read from Eastern that is 22:00 to 00:00 every
+night, and longer for a Pacific one — a one-day window asks for a date the rec
+centre has not reached yet. An empty live card at 10pm is exactly the confident
+zero this widget exists not to render.
+
+It asks for **two** days now and derives `today` from the newest row's own
+org-timezone stamp, which is how the registrations card already absorbs this by
+asking for seven. **No render check or spec could have caught it** — the fixture
+supplies whatever day it likes. Only a live probe of the real card does.
+
+The live sample also confirmed the design call: photo coverage was **29/1150 at
+apex (2.5%) and 0/198 at el-segundo**, the measured 7.5%-and-bimodal figure
+showing through. And **zero refusals** in 1,348 real scans, which is what 58
+denials platform-wide *ever* looks like from the inside.
+
 ### IT IS ABSENT UNTIL SOMEBODY PUBLISHES THE LINK, and that is the design
 
 `CHECKINS_LIVE_UUID` is a literal in server.js and `SHARED_UUIDS` **omits the

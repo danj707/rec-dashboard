@@ -3871,7 +3871,24 @@ function useLiveCheckins(onAvailable, enabled) {
        self-inflicted error rate that looks exactly like a broken feed in the
        logs. The caller knows from `availableReports`; the hook is told. */
     if (!enabled) { setLoading(false); if (onAvailable) onAvailable(false); return; }
-    const w = liveWindow(1);   // TODAY. "Who is in the building" is a question about now.
+    /* TWO DAYS, NOT ONE, AND THE SECOND ONE IS NOT OPTIONAL. `liveWindow`
+       builds dates in the VIEWER's zone; the card windows on the ORG's. So
+       once it is tomorrow for the viewer and still today at the rec centre —
+       every night from the org's midnight-in-viewer-time onwards, which for a
+       Denver org read from Eastern is 22:00 to 00:00 daily and worse for a
+       Pacific one — a one-day window asks for a date the org has not reached
+       and the card comes back EMPTY.
+
+       Measured against the live card while writing this: today's window
+       returned 0 rows at apex and el-segundo, and the previous day returned
+       1,150 and 198. An empty live card at 10pm is exactly the confident zero
+       this widget was built not to render.
+
+       Asking for yesterday too costs one more day of rows and fixes it for
+       every zone, because `today` below is derived from the newest row's own
+       org-timezone stamp rather than from the viewer's clock. Same shape as
+       the registrations card, which absorbs this by asking for seven. */
+    const w = liveWindow(2);
     const qs = new URLSearchParams({ start: w.start, end: w.end });
     const url = IS_SHARE
       ? `/share/${SHARE_TOKEN}/data/checkins-live?${qs}`
