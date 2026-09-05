@@ -144,6 +144,15 @@ const ENROLLMENTS = [
      recency — plausible, but unable to tell the two apart. */
   { 'Signed Up At': liveIso(0, '06:12:00'), 'Customer Name': 'Early Bird', 'Participant': 'Wren Bird',
     'Section': 'Boys (Grades 4-5) Tryouts', 'Program': 'SBA Travel Teams', 'Price': 25, 'Paid': 25 },
+  /* A FREE REGISTRATION, TODAY. Dan, on Lesline Mullings' Trunk or Treat:
+     "we're picking up free registrations, which is fine, but we should call
+     them 'Free' on the card, not 'not yet paid'." Priced at 0 and paid 0 —
+     which is exactly what the card emits for a comped booking, because it
+     COALESCEs both figures. No source assertion can tell "Free" from a dash;
+     only the rendered cell can. */
+  { 'Signed Up At': liveIso(0, '18:39:00'), 'Customer Name': 'Lesline Mullings', 'Participant': null,
+    'User ID': 'user-lesline', 'Section Id': 'sec-trunk',
+    'Section': 'Trunk or Treat', 'Program': 'Community Events', 'Price': 0, 'Paid': 0 },
   { 'Signed Up At': liveIso(1, '20:15:37'), 'Customer Name': 'Kaitlin Gentile', 'Participant': 'Cecelia Gentile',
     'User ID': 'user-kaitlin', 'Section Id': 'sec-girls78',
     'Section': 'Girls Grades 7-8', 'Program': 'Shrewsbury Rec Youth Basketball', 'Price': 170, 'Paid': 0 },
@@ -362,14 +371,21 @@ const CASES = [
      printing the row count, on a sparkline drawn from the wrong days, and on a
      list wired to the wrong feed. */
   { name: 'live · the section is on the page', needs: '[data-live-section]' },
-  /* TODAY, NOT THE WHOLE FEED. The fixture holds 30 rows of which 14 are
+  /* TODAY, NOT THE WHOLE FEED. The fixture holds 31 rows of which 15 are
      today — different numbers on purpose, so a card that still rendered the
-     seven-day list reads 30 here and fails. */
+     seven-day list reads 31 here and fails. */
   { name: 'live · the registrations card shows TODAY, not the whole feed',
-    needs: '[data-live-regs="14"]',
-    absent: '[data-live-regs="30"]' },
-  // 14 of the 16 rows are today. A widget printing rows.length reads 16.
-  { name: 'live · and counts TODAY, not the list', needs: '[data-live-today="14"]' },
+    needs: '[data-live-regs="15"]',
+    absent: '[data-live-regs="31"]' },
+  { name: 'live · and counts TODAY, not the list', needs: '[data-live-today="15"]' },
+  /* FREE, NOT "NOT YET PAID". Keyed on the CELL, because the state and the
+     word are two different things that can disagree — and on the dot, because
+     a free row sharing the unpaid grey is the bug wearing the fix's clothes. */
+  { name: 'live · a free registration says Free',
+    needs: '[data-live-price="free"]' },
+  { name: 'live · ...and Free is not the unpaid dash',
+    needs: 'td.live-free',
+    absent: '[data-live-price="free"][data-live-paid="\u2014"]' },
   { name: 'live · above the date-ranged sections', needs: '.dashboard-section[data-live-section] + .dashboard-section' },
   // HALF WIDTH (Dan). widget-lg spans all four columns; this is a list of
   // eight short rows, not a chart, and full-bleed it dwarfed the dashboard.
@@ -453,8 +469,8 @@ const CASES = [
      been injected, so 15 of the feed's 17 rows are today — and 17 is exactly
      what a revert to the seven-day lane would render. */
   { name: 'live · the timeline plots today, not the week',
-    needs: '[data-live-regs] .live-timeline[data-live-marks="15"]',
-    absent: '[data-live-regs] .live-timeline[data-live-marks="17"]' },
+    needs: '[data-live-regs] .live-timeline[data-live-marks="16"]',
+    absent: '[data-live-regs] .live-timeline[data-live-marks="18"]' },
   /* THREE PAYMENT STATES, ALL DOTS (Dan: "change the dollar signs to a green
      dot for paid, and an orange dot for a partial payment/payment plan").
      Every one of the three has to be PRESENT, or a build that collapsed part

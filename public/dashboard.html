@@ -208,6 +208,10 @@ body { font-family: var(--font-body); background: var(--bg-page); color: var(--t
                           border-radius: 50%; background: var(--border); }
 .live-timeline .lt-mark.paid { background: #16a34a; box-shadow: 0 0 0 2px rgba(22,163,74,.18); }
 .live-timeline .lt-mark.part { background: #f59e0b; box-shadow: 0 0 0 2px rgba(245,158,11,.20); }
+/* FREE IS NOT "NOT YET PAID" — it is the opposite fact, so it does not share the
+   unpaid dot. Slate rather than a fourth bright colour: a comped registration is
+   a normal, finished thing and must not compete for attention with the money. */
+.live-timeline .lt-mark.free { background: #64748b; box-shadow: 0 0 0 2px rgba(100,116,139,.18); }
 /* THE LEGEND SITS BELOW THE HOUR LABELS, not on top of them. The tick labels
    are absolutely placed at `bottom: -14px` — OUTSIDE the timeline's own box —
    so a legend pulled up under it lands in the same 14 pixels and the two read
@@ -220,6 +224,7 @@ body { font-family: var(--font-body); background: var(--bg-page); color: var(--t
                  margin-right: 4px; vertical-align: middle; background: var(--border); }
 .live-legend .lg-paid i { background: #16a34a; }
 .live-legend .lg-part i { background: #f59e0b; }
+.live-legend .lg-free i { background: #64748b; }
 .live-legend .lg-fail i { background: #dc2626; }
 
 /* ── MEMBERSHIP CHECK-INS ──────────────────────────────────────────────────
@@ -306,6 +311,7 @@ body { font-family: var(--font-body); background: var(--bg-page); color: var(--t
    because they are saying the same thing about the same registration. */
 .live-table .lm.live-paid { color: #16a34a; }
 .live-table .lm.live-part { color: #f59e0b; }
+.live-table .lm.live-free { color: var(--text-muted); font-weight: 500; }
 .live-table th.lm { text-align: right; }
 /* THE PROGRAMS CARD REUSES THIS TABLE WITH A LONGER MONEY COLUMN STILL. Dan:
    "look at the alignment on the headers and revenue section" — with
@@ -2763,6 +2769,37 @@ function liveWindow(days) {
 // reformatted — that would re-apply the viewer's zone and shift an evening
 // signup onto the wrong day.
 function liveDay(ts)  { return String(ts || '').slice(0, 10); }
+
+/* WHICH DAY THE CARD IS SHOWING. It used to be the day of the NEWEST ROW, which
+   is right for most of a busy afternoon and wrong every single morning: the feed
+   holds seven days, so before the first registration of the day the newest row
+   is yesterday evening's, and the card labelled 26 of YESTERDAY's signups
+   "signups today". Dan, on Clarkstown at 9:18am: "these enrollments are all from
+   YESTERDAY. I should only be seeing today's enrollments."
+
+   SO THE DAY IS THE CALENDAR DAY, from the viewer's own clock and built from
+   PARTS — `toISOString()` is UTC and is already tomorrow through the evening
+   west of it. The one correction applied: if the feed carries a stamp LATER than
+   that, the org is genuinely ahead of the viewer (the card stamps every row in
+   the ORG's timezone), and the feed's day wins. A row dated past the viewer's
+   today is proof of that; the reverse is not proof of anything, so nothing is
+   inferred in the other direction.
+
+   THE RESIDUAL GAP, stated rather than papered over: a viewer WEST of the org,
+   late in their own day, is shown an org-tomorrow that has barely started.
+   Closing it properly means the card emitting `(now() AT TIME ZONE cfg.tz)::date`
+   — one column on card 21286, whose cfg CTE already resolves that timezone — and
+   that is a push and a tag flip, so it is written down rather than guessed at. */
+function liveTodayFor(rows, key) {
+  const now = new Date();
+  let day = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0')
+          + '-' + String(now.getDate()).padStart(2, '0');
+  (rows || []).forEach(function (r) {
+    const d = liveDay(r && r[key]);
+    if (d && d > day) day = d;
+  });
+  return day;
+}
 function liveClock(ts) {
   const m = String(ts || '').match(/^\d{4}-\d{2}-\d{2}T(\d{2}):(\d{2})/);
   if (!m) return '';
@@ -3140,9 +3177,18 @@ function liveWhen(ts, todayKey) {
 function liveMarkState(r) {
   const charged = Number(r['Price']);
   const paid    = Number(r['Paid']);
-  const hasPaid = Number.isFinite(paid) && paid > 0;
-  if (!hasPaid) return 'unpaid';
-  if (Number.isFinite(charged) && charged > 0 && paid + 0.005 < charged) return 'part';
+  const hasPaid   = Number.isFinite(paid) && paid > 0;
+  const hasCharge = Number.isFinite(charged) && charged > 0;
+  /* NOTHING PAID AND NOTHING CHARGED IS *FREE*, NOT UNPAID. Dan, on Lesline
+     Mullings' Trunk or Treat: "we're picking up free registrations, which is
+     fine, but we should call them 'Free' on the card, not 'not yet paid'."
+     Rec's own household page says Free for the same booking. The two are
+     opposite facts — one is finished, the other is owed — and a comped
+     registration sitting in the "not yet" bucket makes an org look behind on
+     collection when it is not. A row that is charged and unpaid still reads
+     "not yet"; only the zero-charge case moves. */
+  if (!hasPaid) return hasCharge ? 'unpaid' : 'free';
+  if (hasCharge && paid + 0.005 < charged) return 'part';
   return 'paid';
 }
 
@@ -3158,8 +3204,11 @@ function liveMarkState(r) {
    for yet. At module scope so the spec can RUN it — a regex over a branch
    passes on an inverted one. */
 function livePriceCell(r) {
+  const st = liveMarkState(r);
+  // A free registration says so in words. An em dash reads as missing data.
+  if (st === 'free') return { paid: '', price: 'Free' };
   const price = liveMoney(r['Price']);
-  if (liveMarkState(r) !== 'part') return { paid: '', price: price || '\u2014' };
+  if (st !== 'part') return { paid: '', price: price || '\u2014' };
   const paid = liveMoney(r['Paid']);
   // A part-paid row whose PAID figure will not render (under a dollar, say)
   // falls back to the charge alone rather than to a bare slash.
@@ -3470,7 +3519,7 @@ function LiveRegistrations({ feed, recOrgId }) {
     );
   }
 
-  const today   = rows.length ? liveDay(rows[0]['Signed Up At']) : '';
+  const today   = liveTodayFor(rows, 'Signed Up At');
   const todayRows = rows.filter(r => liveDay(r['Signed Up At']) === today);
   const todayVal  = todayRows.reduce((n, r) => n + (Number(r['Price']) || 0), 0);
 
@@ -3483,9 +3532,11 @@ function LiveRegistrations({ feed, recOrgId }) {
      THE FEED STILL FETCHES SEVEN, and that is deliberate rather than lazy: the
      Programs card beside this one is a leaderboard over the week and reads the
      SAME feed, so narrowing the query would break it while narrowing the CARD
-     costs nothing. One query, two windows. It also means `today` is still
-     derived from the newest row's own org-timezone stamp rather than the
-     viewer's clock. */
+     costs nothing. One query, two windows.
+
+     WHICH day is `liveTodayFor`'s problem, and it is the calendar day — NOT the
+     newest row's, which is what shipped and what showed a quiet morning
+     yesterday's twenty-six signups under the word "today". */
   return (
     <div className="widget-card widget-md live-card" data-live-regs={String(todayRows.length)}>
       <LiveCardHeader icon={'\u{1F4DD}'} title="Live Enrollments" feed={feed} card="enrollments" sound={sound}
@@ -3520,6 +3571,7 @@ function LiveRegistrations({ feed, recOrgId }) {
         <span className="lg-paid"><i />paid</span>
         <span className="lg-part"><i />part-paid</span>
         <span className="lg-none"><i />not yet</span>
+        <span className="lg-free"><i />free</span>
       </div>
 
       {/* FIXED COLUMNS, because the rows change under the reader. With natural
@@ -3545,6 +3597,16 @@ function LiveRegistrations({ feed, recOrgId }) {
               with the seven-day list: over one day it can never fire, and a
               class nothing can apply is what sends the next reader looking for
               the feature it belonged to. */}
+          {/* NOTHING YET TODAY IS A REAL STATE NOW, and it was unreachable
+              before: with `today` taken from the newest row there was always at
+              least one row in it. An empty tbody under live headers reads as a
+              broken card, so it says what is true — the feed answered, the day
+              is young. */}
+          {todayRows.length === 0 ? (
+            <tr data-live-empty="1"><td className="lt" colSpan={4}>
+              No signups yet today.
+            </td></tr>
+          ) : null}
           {todayRows.slice(0, LIVE_ROWS).map(r => {
             const k = liveKey(r);
             return (
@@ -3614,7 +3676,11 @@ function ProgramsLive({ feed, recOrgId }) {
     );
   }
 
-  const today = rows.length ? liveDay(rows[0]['Signed Up At']) : '';
+  /* SAME DAY RULE AS THE OTHER TWO CARDS. This one keeps its SEVEN-day
+     leaderboard (Dan: "Programs can stay 7 days") but its per-program "today"
+     count had the identical defect — on a quiet morning it counted yesterday's
+     signups as today's, in a column headed today. */
+  const today = liveTodayFor(rows, 'Signed Up At');
   const progs = liveBySection(rows, today);
   // A row is fresh if any registration behind it is one of the arrivals the
   // shared feed just diffed — so a program lights up when it takes a signup,
@@ -3917,7 +3983,7 @@ function MembershipCheckins({ feed, recOrgId }) {
     );
   }
 
-  const today = rows.length ? liveDay(rows[0]['Checked In At']) : '';
+  const today = liveTodayFor(rows, 'Checked In At');
   const todayRows = rows.filter(r => liveDay(r['Checked In At']) === today);
   /* THE HEADLINE COUNTS ACCEPTED SCANS ONLY. A denial is not attendance. The
      refusals are still on screen — they are the interesting rows — but they
