@@ -34,8 +34,9 @@
  *   3. THE DATE PICKER. These widgets deliberately ignore it, and the section
  *      says so on screen — mixing "this quarter" and "right now" under one
  *      range is how a number comes to mean two things.
- *   4. THE VIEWER'S CLOCK. The card stamps each signup in the ORG's timezone,
- *      so "today" is read off the newest ROW, not off the browser — a viewer
+ *   4. THE VIEWER'S CLOCK. The card stamps each signup in the ORG's timezone.
+ *      "Today" is the calendar day, raised to the feed's own latest stamp when
+ *      the org is ahead of the viewer — it was read off the newest ROW, which
  *      in another zone must not be told a different number from the person
  *      sitting in the rec centre. And nothing here parses a date string
  *      through `new Date()`: that is UTC midnight and lands on the previous
@@ -115,6 +116,7 @@ try {
     liftFn(src, 'liveKey') + '\n' + liftFn(src, 'liveSectionKey') + '\n' +
     liftFn(src, 'liveBySection') + '\n' +
     liftFn(src, 'liveMarkState') + '\n' + liftFn(src, 'liveChimeWorthy') + '\n' +
+    liftFn(src, 'liveTodayFor') + '\n' +
     liftFn(src, 'livePriceCell') + '\n' + liftFn(src, 'liveParticipant') + '\n' +
     liftFn(src, 'liveCheckinKey') + '\n' + liftFn(src, 'liveCheckinState') + '\n' +
     liftFn(src, 'liveInitials') + '\n' + liftFn(src, 'liveDayAxis') + '\n' +
@@ -134,7 +136,7 @@ try {
         if (!m) throw new Error(n + ' is not declared in the page');
         return 'const ' + n + ' = ' + m[1] + ';\n';
       }).join('') +
-    'return { liveWindow, liveDay, liveClock, liveMoney, liveKey, liveSectionKey, liveBySection, liveMarkState,' +
+    'return { liveWindow, liveDay, liveClock, liveMoney, liveKey, liveSectionKey, liveBySection, liveMarkState, liveTodayFor,' +
     ' liveChimeWorthy, livePriceCell, liveParticipant, liveDayShift, liveProgramTrend, liveChimeBurst,' +
     ' liveCheckinKey, liveCheckinState, liveInitials, liveDayAxis, liveCheckinTimeline,' +
     ' LIVE_CHIME_MAX, LIVE_CHIME_GAP_MS, LIVE_CHIME_JITTER_MS, LIVE_CHIME_RING_MS };')();
@@ -314,10 +316,22 @@ if (H.liveWindow) {
      'and it renders ABOVE the stored sections: live data is what you want on arrival, not below the fold');
 }
 
-/* ── 8. TODAY COMES FROM THE FEED, NOT THE BROWSER ────────────────────────*/
+/* ── 8. TODAY IS THE CALENDAR DAY ─────────────────────────────────────────
+   THIS BLOCK USED TO REQUIRE THE OPPOSITE, and the assertion is why the bug
+   survived: it pinned `liveDay(rows[0])` as correct on the argument that the
+   card stamps rows in the ORG's timezone and a viewer elsewhere must not see a
+   different day. The premise is true and the conclusion did not follow — the
+   newest row is not "today" on any clock, it is the last time anything
+   happened. See liveTodayFor for what replaced it and for the one residual
+   timezone gap, which is a card column rather than a guess. */
 {
-  ok(/const today\s+= rows\.length \? liveDay\(rows\[0\]\['Signed Up At'\]\) : '';/.test(code),
-     "\"today\" is the newest ROW's own day — the card stamps it in the ORG's timezone, so a viewer elsewhere must not be shown a different number");
+  /* COUNTED, NOT MATCHED. Both the enrollments card and the Programs card
+     derive a day from 'Signed Up At', so a single `.test()` passes while one of
+     them is reverted — which is exactly what happened when this was mutated. */
+  ok((code.match(/liveTodayFor\(rows, 'Signed Up At'\)/g) || []).length === 2,
+     'BOTH cards reading the signup column take their day from liveTodayFor');
+  ok((code.match(/liveTodayFor\(rows, '[^']+'\)/g) || []).length === 3,
+     '...and all three live cards do, counting the check-ins one');
   ok(/rows\.filter\(r => liveDay\(r\['Signed Up At'\]\) === today\)/.test(code),
      'and the count is the rows sharing that day');
   /* SCOPED TO THE WIDGET. A file-wide test fails on correct code — other tiles
@@ -353,7 +367,15 @@ if (H.liveWindow) {
     eq(H.liveMarkState({ Price: 65, Paid: null }), 'unpaid', '...and so is a missing figure');
     eq(H.liveMarkState({ Price: null, Paid: 40 }), 'paid',
        'MONEY ARRIVED WITH NO READABLE CHARGE IS STILL PAID — a row we cannot price is not evidence the payment did not land');
-    eq(H.liveMarkState({ Price: 0, Paid: 0 }), 'unpaid', 'a $0 row has nothing to arrive');
+    /* THIS ASSERTION USED TO READ 'unpaid', AND IT WAS PINNING THE BUG — the
+       spec had encoded "a comped registration is money we are waiting for" as
+       the desired behaviour, which is how it survived. Dan, on Lesline
+       Mullings' Trunk or Treat: it should say Free. */
+    eq(H.liveMarkState({ Price: 0, Paid: 0 }), 'free', 'nothing charged and nothing paid is FREE');
+    eq(H.liveMarkState({ Price: null, Paid: null }), 'free',
+       '...and so is a staff-added registration the feed prices at nothing');
+    eq(H.liveMarkState({ Price: 3380, Paid: 0 }), 'unpaid',
+       'but a CHARGED row with nothing in is still "not yet" — Harper McKibben\'s real shape');
     eq(H.liveMarkState({ Price: 65, Paid: 64.999 }), 'paid',
        'a half-cent epsilon, or two independently rounded figures make a fully-paid registration read as a plan');
   } else {
@@ -844,8 +866,13 @@ if (H.liveBySection) {
        'an unpaid row shows no paid figure');
     ok(livePriceCell({ Price: 325 }).price === '$325',
        '...and still prints the charge');
-    ok(livePriceCell({}).price === '\u2014',
-       'a row with no money at all is a dash, not an empty cell');
+    /* A ROW WITH NO MONEY AT ALL NOW READS "Free", and that is the correct
+       answer rather than a regression: the card COALESCEs price to 0, so a
+       real feed row always carries a number, and a zero charge means nothing
+       was charged. The dash is kept for the one shape that is genuinely
+       unknown — a charged row whose figure will not render. */
+    ok(livePriceCell({}).price === 'Free',
+       'a row the feed prices at nothing reads Free');
     /* THE STATE AND THE CELL CANNOT DISAGREE. Both read liveMarkState, so a
        row the dots call part-paid is exactly the row that gets two figures. */
     const rows = [{ Price: 325, Paid: 195 }, { Price: 45, Paid: 45 }, { Price: 50, Paid: 0 }];
@@ -1307,8 +1334,14 @@ process.on('exit', () => {
      1,150 and 198. */
   ok(/const w = liveWindow\(2\);/.test(code),
      'the check-ins feed asks for two days, so an org behind the viewer is never empty');
-  ok(/const today = rows\.length \? liveDay\(rows\[0\]\['Checked In At'\]\) : ''/.test(code),
-     "...and TODAY is the newest row's own org-timezone day, never the viewer's clock");
+  /* ...AND THE DAY IS THE CALENDAR DAY, corrected upward by the feed's own
+     org-timezone stamps. This assertion used to require the NEWEST ROW's day,
+     which is the bug Dan hit on the enrollments card and which this card
+     carried too — it only ever looked right because somebody had scanned in
+     that morning. The two-day window above is what makes the correction
+     reachable for an org ahead of the viewer. */
+  ok(/const today = liveTodayFor\(rows, 'Checked In At'\)/.test(code),
+     "...and TODAY is the calendar day, not whichever day the newest scan landed on");
 
   /* NO CARD, NO REQUEST. Polling a 404 every sixty seconds for every org
      without a public link is a self-inflicted error rate that reads exactly
@@ -1317,6 +1350,117 @@ process.on('exit', () => {
      'the check-ins feed does not fetch when the org has no such card');
   ok(/if \(paused \|\| !enabled\) return;/.test(code),
      '...and does not start a poll clock either');
+
+  /* ── WHICH DAY THE CARD CALLS TODAY ────────────────────────────────────
+     The bug Dan hit on Clarkstown at 9:18am: 26 signups on screen under the
+     word "today", every one of them from yesterday evening. `today` was the
+     newest ROW's day, and the feed holds seven of them, so before the first
+     registration of the morning the card confidently relabelled yesterday.
+
+     LIFTED AND RUN against a fixed clock rather than regexed — a regex over
+     this passes just as happily on `rows[0]`. */
+  if (H.liveTodayFor) {
+    const { liveTodayFor } = H;
+    const now = new Date();
+    const localToday = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0')
+                     + '-' + String(now.getDate()).padStart(2, '0');
+
+    eq(liveTodayFor([], 'Signed Up At'), localToday,
+       'an empty feed still knows what day it is');
+
+    /* THE BUG, EXACTLY AS IT SHIPPED: a feed whose newest row is yesterday.
+       The old rule returned yesterday here and the card then called yesterday's
+       26 signups "today". */
+    const y = new Date(now.getTime() - 86400000);
+    const yesterday = y.getFullYear() + '-' + String(y.getMonth() + 1).padStart(2, '0')
+                    + '-' + String(y.getDate()).padStart(2, '0');
+    eq(liveTodayFor([{ 'Signed Up At': yesterday + 'T22:02:00' },
+                     { 'Signed Up At': yesterday + 'T19:26:00' }], 'Signed Up At'),
+       localToday,
+       'a quiet morning is still TODAY, not the day of the newest row');
+
+    /* THE ONE CORRECTION THAT IS EVIDENCE RATHER THAN INFERENCE: the card
+       stamps every row in the ORG's timezone, so a row dated past the viewer's
+       today proves the org is ahead. Nothing is inferred the other way. */
+    const t = new Date(now.getTime() + 86400000);
+    const tomorrow = t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0')
+                   + '-' + String(t.getDate()).padStart(2, '0');
+    eq(liveTodayFor([{ 'Signed Up At': tomorrow + 'T00:14:00' }], 'Signed Up At'),
+       tomorrow,
+       'an org AHEAD of the viewer wins, because its own stamp proves it');
+
+    eq(liveTodayFor([{ 'Signed Up At': null }, { 'Signed Up At': '' }], 'Signed Up At'),
+       localToday, 'unreadable stamps are ignored rather than winning');
+
+    eq(liveTodayFor([{ 'Checked In At': yesterday + 'T08:30:00' }], 'Checked In At'),
+       localToday, 'the check-ins card reads the same rule off its own column');
+  } else {
+    ok(false, 'liveTodayFor should be liftable — it decides which day both cards show');
+  }
+
+  /* BOTH CARDS MUST ASK IT. The check-ins card carried the identical bug and
+     only looked right because somebody had scanned in that morning. */
+  ok(/const today\s+= liveTodayFor\(rows, 'Signed Up At'\)/.test(code),
+     'the enrollments card takes its day from liveTodayFor');
+  ok(/const today = liveTodayFor\(rows, 'Checked In At'\)/.test(code),
+     '...and so does the check-ins card');
+  ok(!/liveDay\(rows\[0\]/.test(code),
+     'neither card derives its day from the newest row any more');
+
+  /* AN EMPTY TODAY IS A STATE THAT ONLY EXISTS NOW, and an empty tbody under
+     live headers reads as a broken card. */
+  ok(/data-live-empty="1"/.test(code) && /No signups yet today\./.test(code),
+     'a day with no signups yet says so instead of rendering nothing');
+
+  /* ── FREE ─────────────────────────────────────────────────────────────── */
+  ok(/if \(st === 'free'\) return \{ paid: '', price: 'Free' \};/.test(code),
+     'a free registration prints the word Free, not an em dash');
+  ok(/\.live-table \.lm\.live-free/.test(code),
+     '...with its own colour, so it does not read as unpaid ink');
+  ok(/\.lt-mark\.free/.test(code),
+     '...and its own dot, because free and unpaid are opposite facts');
+  ok(/lg-free/.test(code),
+     '...named in the legend, or it is a fourth colour nothing explains');
+  if (H.livePriceCell) {
+    eq(H.livePriceCell({ Price: 0, Paid: 0 }).price, 'Free',
+       'Lesline Mullings\' Trunk or Treat reads Free');
+    eq(H.livePriceCell({ Price: 3380, Paid: 0 }).price, '$3,380',
+       '...while a charged, unpaid registration still shows what is owed');
+  }
+
+  /* ── EVERY CARD THAT RINGS MUST BE FED ─────────────────────────────────
+     Dan: "no sounds playing from the check-in widget, only the live
+     enrollments one is playing sound."
+
+     `useLiveCheckins` computed its `fresh` diff for the highlight and never
+     returned it, so `useLiveSound('checkins', feed.freshRows, ...)` was handed
+     `undefined` and bailed on its own `!freshRows` guard on every poll. The
+     card could not make a noise, ever — and nothing caught it, because both
+     halves read correctly on their own: the hook diffs, the card rings, and
+     the value that joins them simply was not passed.
+
+     SO THE GUARD IS THE CONTRACT, not either half: a hook whose feed is handed
+     to useLiveSound has to publish the arrivals. Counted, because a single
+     `.test()` passes while one of the two hooks is missing it — which is
+     exactly how this shipped. */
+  {
+    const ringers = (code.match(/useLiveSound\('[a-z]+', feed\.freshRows/g) || []).length;
+    ok(ringers === 3, 'all three live cards ring off their feed\'s freshRows');
+
+    const returns = (code.match(/return \{ rows, err, at, paused, setPaused, flash, freshRows, loading/g) || []).length;
+    ok(returns === 2, 'BOTH live feed hooks return freshRows — the check-ins one did not, and its card was silent');
+
+    ok((code.match(/setFreshRows\(fresh\.map\(k => j\.rows\[keys\.indexOf\(k\)\]\)\.filter\(Boolean\)\);/g) || []).length === 2,
+       '...and both actually publish the arrivals they already diffed');
+    ok((code.match(/const \[freshRows, setFreshRows\] = useState\(null\);/g) || []).length === 2,
+       '...off state both hooks declare');
+
+    /* THE RING IS OFF THE SAME DIFF AS THE HIGHLIGHT, in both hooks — that is
+       what stops a card ringing for a row it does not light up, and what keeps
+       the FIRST load silent instead of playing a coin per row. */
+    ok((code.match(/if \(muted \|\| !freshRows \|\| !freshRows\.length\) return;/g) || []).length === 1,
+       'one guard, shared: no feed, no sound');
+  }
 
   /* THE TWO HOOKS MUST NOT DRIFT on the two things that were just fixed. A
      feed that keeps serving a stale answer, or one that sleeps through a

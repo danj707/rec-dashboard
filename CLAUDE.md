@@ -1,5 +1,126 @@
 # Project notes for Claude
 
+## THE LIVE CARDS CALLED YESTERDAY "TODAY" (2026-09-05)
+
+Dan, on Clarkstown at 9:18am: *"these enrollments are all from YESTERDAY. I
+should only be seeing today's enrollments."* The card read **26 signups today ·
+$1,838** over a list whose newest row was 10:02pm the night before.
+
+**`today` WAS THE NEWEST ROW'S DAY.**
+
+```js
+const today = rows.length ? liveDay(rows[0]['Signed Up At']) : '';
+```
+
+The feed fetches SEVEN days (deliberately — the Programs card beside it is a
+week-long leaderboard on the same feed), and the card narrows to one. So before
+the first registration of the morning the newest row is yesterday evening's, and
+the card relabels yesterday as today — **every single day, for the whole quiet
+stretch between midnight and the first signup**, which is exactly when somebody
+opens a dashboard to watch a registration day start.
+
+**IT WAS A DELIBERATE CHOICE, AND THE PREMISE WAS TRUE.** The comment argued
+that the card stamps each row in the ORG's timezone, so a viewer elsewhere must
+not be shown a different day from the person in the rec centre. That is correct
+and the conclusion did not follow: the newest row is not "today" on anybody's
+clock, it is the last time anything happened. **A spec assertion pinned it**
+(*"today is the newest ROW's own day"*), which is why it survived review — the
+guard had encoded the bug as the desired behaviour, the third instance of that
+in these two repos.
+
+`liveTodayFor(rows, key)` is the calendar day from the viewer's clock, built
+from PARTS (`toISOString()` is UTC and is already tomorrow west of it), **raised
+to the feed's own latest stamp when that is later** — a row dated past the
+viewer's today proves the org is ahead, because the card stamps in the org's
+zone. Nothing is inferred in the other direction, because nothing there is
+evidence.
+
+- **ALL THREE CARDS HAD IT.** Check-ins looked right only because somebody had
+  scanned in that morning; Programs Live counted yesterday's signups in a column
+  headed today. One helper, three readers.
+- **THE RESIDUAL GAP IS STATED, NOT PAPERED OVER**: a viewer WEST of the org,
+  late in their own day, is shown an org-tomorrow that has barely started. The
+  honest fix is one column on card 21286 — `(now() AT TIME ZONE cfg.tz)::date`,
+  whose `cfg` CTE already resolves that timezone — and that is a push plus a tag
+  flip, so it is written down rather than guessed at.
+- **AN EMPTY TODAY IS A NEW STATE.** With `today` taken from the newest row
+  there was always at least one row in it, so an empty tbody under live headers
+  was unreachable. It now says *"No signups yet today."*
+
+## THE CHECK-INS CARD COULD NEVER MAKE A SOUND (2026-09-05)
+
+Dan: *"no sounds playing from the check-in widget, only the live enrollments one
+is playing sound."*
+
+`useLiveCheckins` computed its `fresh` diff — it used it to drive the highlight —
+and **never returned it**. So `useLiveSound('checkins', feed.freshRows, ...)` was
+handed `undefined` and bailed on its own `!freshRows` guard on every poll. The
+mute box rendered, the sound picker rendered, the card lit up new rows, and it
+was structurally incapable of playing anything.
+
+**BOTH HALVES READ CORRECTLY ON THEIR OWN**, which is why review missed it and
+why no existing assertion caught it: the hook diffs, the card rings, and the one
+value that joins them was simply not in the return object. The enrollments hook
+had `setFreshRows(...)`; this one did not.
+
+**So the guard is the CONTRACT, not either half** — a hook whose feed is handed
+to `useLiveSound` must publish its arrivals. Counted, not matched: a single
+`.test()` passes while one of the two hooks is missing it, which is exactly how
+this shipped. Mutation-tested both ways (the return field dropped, the publish
+dropped); both fail by name.
+
+**Generalise it:** when two correct components are joined by a value passed
+between them, assert the JOIN. Nothing about either end tells you the wire is
+connected.
+
+## FREE IS NOT "NOT YET PAID" (2026-09-05)
+
+Dan, on Lesline Mullings' Trunk or Treat: *"we're picking up free
+registrations, which is fine, but we should call them 'Free' on the card, not
+'not yet paid'."* Rec's own household page says **Free** for the same booking.
+
+`liveMarkState` tested `paid > 0` and filed everything else as `unpaid`. The two
+are opposite facts — one is finished, the other is owed — and a comped
+registration in the "not yet" bucket makes an org look behind on collection when
+it is not. Now: **nothing paid AND nothing charged is `free`**; nothing paid
+with a charge is still `unpaid`. Own slate dot, own legend entry, own cell
+colour, and the cell prints the word rather than an em dash (which reads as
+missing data).
+
+**The spec assertion here was ALSO pinning the old rule** — `Price: 0, Paid: 0`
+was asserted to be `unpaid`, described as *"a $0 row has nothing to arrive"*.
+Second instance in one afternoon.
+
+## PAYMENT PLANS ARE INVISIBLE TO THE FEED — needs a card column (2026-09-05)
+
+Dan, on Harper McKibben at Essex Junction: *"it's a payment plan, we need a
+colored dot for that and an associated colored text when they pay. Shouldn't
+that be orange?"* Yes — and **the card cannot currently tell.** Measured:
+
+| | |
+|---|---|
+| Price | **$3,380** |
+| Paid (what card 21286 emits) | **$0.00** |
+| installments | **11** |
+| installments marked paid | 1, for **$0.00** |
+
+So a real, running eleven-installment plan is **arithmetically identical to an
+unpaid registration** — `Price > 0, Paid = 0` — and renders as the grey "not
+yet" dot. The existing `part` state only fires once money has actually landed,
+which for a plan with a $0 first installment is never at signup.
+
+**Card 21286 emits no plan indicator at all**: Signed Up At, Customer Name, User
+ID, Email, Participant, Section, Section Id, Section Code, Program, Activity,
+Price, Paid, Status. So this is a card change — one additive column, e.g.
+`EXISTS (SELECT 1 FROM payment_plan_installment i WHERE i.order_item_id = oi.id)
+AS "On Plan"`, or the installment counts — plus the usual push, date-tag flip
+and downtime on the live widget until a human re-saves. **NOT DONE**; it needs
+Dan at the keyboard, and the client-side half (an orange dot and orange text for
+a plan, at every stage) lands the moment the column exists.
+
+**Do not fake it from `Price > 0 && Paid === 0`** — that is also every genuinely
+unpaid registration, and the two need opposite reactions from an admin.
+
 ## Live widgets, round three — seven fixes from Dan (2026-09-05)
 
 ### ONE MUTE AND ONE SOUND PER CARD
