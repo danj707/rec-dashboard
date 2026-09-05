@@ -2574,7 +2574,14 @@ function liveChimeBurst(n, rnd) {
    revenue figure already read. A cha-ching for an unpaid hold would claim money
    that is not there, out loud. */
 function liveChimeWorthy(r) {
-  return liveMarkState(r) !== 'unpaid';
+  if (liveMarkState(r) === 'unpaid') return false;
+  /* A PLAN THAT HAS COLLECTED NOTHING YET IS SILENT. v4 turned those rows
+     orange, and keying the chime on the colour would have quietly started
+     ringing for registrations where no money arrived. The cha-ching claims
+     money OUT LOUD, so it stays on money — the same reason an unpaid hold has
+     always been silent. */
+  if (!(Number(r['Paid']) > 0) && livePlanOn(r)) return false;
+  return true;
 }
 
 // Local calendar dates, built from PARTS. `new Date("2026-09-03")` is UTC
@@ -2683,11 +2690,7 @@ function liveTimeline(rows, today) {
       lane: n++ % 3,
       state: liveMarkState(r),
       label: liveClock(r['Signed Up At']) + ' \u00b7 ' + (r['Customer Name'] || '') +
-             ' \u00b7 ' + (r['Section'] || '') + ' \u00b7 ' + (
-               liveMarkState(r) === 'paid' ? 'paid ' + liveMoney(r['Paid'])
-             : liveMarkState(r) === 'part' ? liveMoney(r['Paid']) + ' of ' + liveMoney(r['Price'])
-                                            + ' paid \u00b7 payment plan'
-             : 'not yet paid'),
+             ' \u00b7 ' + (r['Section'] || '') + ' \u00b7 ' + livePayPhrase(r),
     });
   });
   return { marks, tickLabels: ax.tickLabels, nowLeft: ax.nowLeft };
@@ -2998,6 +3001,33 @@ function liveWhen(ts, todayKey) {
 
    At module scope so the spec can RUN it — a regex over a three-branch
    comparison passes on an inverted one. */
+/* IS THIS REGISTRATION ON A PAYMENT PLAN? Card 21286 v4 answers it; anything
+   served from a pre-v4 cache entry carries no such column, and `undefined`
+   falls through to false — which is EXACTLY the behaviour this replaces, so a
+   warm old entry degrades instead of guessing. That is why there is no
+   separate presence gate here: absence and "not on a plan" want the same
+   answer, unlike the columns elsewhere in these repos where a missing column
+   would render a confident zero.
+
+   Tolerant about the shape because the value crosses Metabase, the feed cache
+   and JSON before it gets here, and a boolean that arrives as the string
+   "true" must not silently mean not-on-a-plan. */
+function livePlanOn(r) {
+  const v = r && r['On Plan'];
+  return v === true || v === 1 || v === 'true' || v === 't' || v === '1';
+}
+
+/* HOW FAR THROUGH THE SCHEDULE, for the hover text. Counts, never money: the
+   installment amounts are the plan's own schedule and reconciling them against
+   `Price` is a revenue question this feed does not answer. Null when the feed
+   cannot say, so the caller prints nothing rather than "0 of 0". */
+function livePlanProgress(r) {
+  const n    = Number(r && r['Plan Installments']);
+  const paid = Number(r && r['Plan Installments Paid']);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return { n: n, paid: Number.isFinite(paid) ? paid : 0 };
+}
+
 function liveMarkState(r) {
   const charged = Number(r['Price']);
   const paid    = Number(r['Paid']);
@@ -3011,9 +3041,32 @@ function liveMarkState(r) {
      registration sitting in the "not yet" bucket makes an org look behind on
      collection when it is not. A row that is charged and unpaid still reads
      "not yet"; only the zero-charge case moves. */
-  if (!hasPaid) return hasCharge ? 'unpaid' : 'free';
+  if (!hasPaid) {
+    if (!hasCharge) return 'free';
+    /* A PLAN THAT HAS TAKEN NOTHING YET IS NOT A DEBT. Dan, on Jan Denner:
+       "I enrolled in a payment plan section, it was $5 due as a future
+       installment, but I paid $0 now. I'd expect that to show $5 in orange,
+       with the price showing $0/$5... the dot for that should be orange, not
+       grey."
+
+       He is right and the feed simply could not tell before v4: a running plan
+       reads Price 5 / Paid 0, which is byte for byte an unpaid registration.
+       So the card drew "not yet paid" over somebody who had paid exactly what
+       was due, which is the opposite of what happened. */
+    return livePlanOn(r) ? 'part' : 'unpaid';
+  }
   if (hasCharge && paid + 0.005 < charged) return 'part';
   return 'paid';
+}
+
+/* $0 IS A REAL ANSWER ON A PLAN ROW, and `liveMoney` suppresses it on purpose
+   — "$0 / $325" on an ordinary unpaid row reads as a refund rather than as a
+   booking nobody has paid for. On a plan the zero IS the fact: nothing has
+   been collected yet against a schedule that exists. Separate function rather
+   than a flag on liveMoney, so no other caller can start printing zeros. */
+function liveMoneyZ(v) {
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 0 ? '$' + Math.round(n).toLocaleString() : '';
 }
 
 /* WHAT THE MONEY COLUMN SAYS. A part-paid row shows BOTH figures — what has
@@ -3033,10 +3086,31 @@ function livePriceCell(r) {
   if (st === 'free') return { paid: '', price: 'Free' };
   const price = liveMoney(r['Price']);
   if (st !== 'part') return { paid: '', price: price || '\u2014' };
-  const paid = liveMoney(r['Paid']);
+  const paid = livePlanOn(r) ? liveMoneyZ(r['Paid']) : liveMoney(r['Paid']);
   // A part-paid row whose PAID figure will not render (under a dollar, say)
   // falls back to the charge alone rather than to a bare slash.
   return paid ? { paid: paid, price: price } : { paid: '', price: price || '\u2014' };
+}
+
+/* WHAT THE DOT SAYS ON HOVER. Beside livePriceCell rather than inline in the
+   timeline, because the dot and the cell describe the same row and two copies
+   of that sentence drift the first time one of them learns about a new state
+   — which is exactly what happened here: the old inline version read
+   "$0 of $5 paid" as " of $5 paid", because liveMoney suppresses a zero. */
+function livePayPhrase(r) {
+  const st = liveMarkState(r);
+  if (st === 'free') return 'free';
+  if (st === 'paid') return 'paid ' + liveMoney(r['Paid']);
+  if (st !== 'part')  return 'not yet paid';
+  const plan = livePlanOn(r);
+  const paid = plan ? liveMoneyZ(r['Paid']) : liveMoney(r['Paid']);
+  const line = paid + ' of ' + liveMoney(r['Price']) + ' paid';
+  if (!plan) return line + ' \u00b7 payment plan';
+  // The schedule where the feed carries it: "1 of 3 installments paid" says
+  // how far through a plan is, which the money alone cannot.
+  const prog = livePlanProgress(r);
+  return line + ' \u00b7 payment plan' +
+         (prog ? ' \u00b7 ' + prog.paid + ' of ' + prog.n + ' installments paid' : '');
 }
 
 function liveMoney(v) {
@@ -3393,7 +3467,7 @@ function LiveRegistrations({ feed, recOrgId }) {
           read. */}
       <div className="live-legend" data-live-legend="1">
         <span className="lg-paid"><i />paid</span>
-        <span className="lg-part"><i />part-paid</span>
+        <span className="lg-part"><i />part-paid / on a plan</span>
         <span className="lg-none"><i />not yet</span>
         <span className="lg-free"><i />free</span>
       </div>

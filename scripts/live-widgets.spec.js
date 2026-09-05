@@ -115,6 +115,8 @@ try {
     liftFn(src, 'liveClock') + '\n' + liftFn(src, 'liveMoney') + '\n' +
     liftFn(src, 'liveKey') + '\n' + liftFn(src, 'liveSectionKey') + '\n' +
     liftFn(src, 'liveBySection') + '\n' +
+    liftFn(src, 'livePlanOn') + '\n' + liftFn(src, 'livePlanProgress') + '\n' +
+    liftFn(src, 'liveMoneyZ') + '\n' + liftFn(src, 'livePayPhrase') + '\n' +
     liftFn(src, 'liveMarkState') + '\n' + liftFn(src, 'liveChimeWorthy') + '\n' +
     liftFn(src, 'liveTodayFor') + '\n' +
     liftFn(src, 'livePriceCell') + '\n' + liftFn(src, 'liveParticipant') + '\n' +
@@ -138,6 +140,7 @@ try {
       }).join('') +
     'return { liveWindow, liveDay, liveClock, liveMoney, liveKey, liveSectionKey, liveBySection, liveMarkState, liveTodayFor,' +
     ' liveChimeWorthy, livePriceCell, liveParticipant, liveDayShift, liveProgramTrend, liveChimeBurst,' +
+    ' livePlanOn, livePlanProgress, liveMoneyZ, livePayPhrase,' +
     ' liveCheckinKey, liveCheckinState, liveInitials, liveDayAxis, liveCheckinTimeline,' +
     ' LIVE_CHIME_MAX, LIVE_CHIME_GAP_MS, LIVE_CHIME_JITTER_MS, LIVE_CHIME_RING_MS };')();
   pass++;
@@ -379,7 +382,34 @@ if (H.liveWindow) {
     eq(H.liveMarkState({ Price: null, Paid: null }), 'free',
        '...and so is a staff-added registration the feed prices at nothing');
     eq(H.liveMarkState({ Price: 3380, Paid: 0 }), 'unpaid',
-       'but a CHARGED row with nothing in is still "not yet" — Harper McKibben\'s real shape');
+       'but a CHARGED row with nothing in, and no plan behind it, is still "not yet"');
+    /* ── PAYMENT PLANS (card 21286 v4) ────────────────────────────────────
+       Dan, on Jan Denner: "it was $5 due as a future installment, but I paid
+       $0 now. I'd expect that to show $5 in orange, with the price showing
+       $0/$5... the dot for that should be orange, not grey."
+
+       THE TWO SHAPES ARE OTHERWISE IDENTICAL, which is the whole reason the
+       card had to change: Price 5 / Paid 0 is byte for byte an unpaid
+       registration, so nothing on the page could tell them apart. These two
+       assertions differ ONLY in the "On Plan" key. */
+    eq(H.liveMarkState({ Price: 5, Paid: 0, 'On Plan': true }), 'part',
+       'a plan that has collected nothing yet is a PLAN, not a debt — Jan Denner\'s real shape');
+    eq(H.liveMarkState({ Price: 5, Paid: 0, 'On Plan': false }), 'unpaid',
+       '...and the same row without the plan is still unpaid, so the key is what decides it');
+    eq(H.liveMarkState({ Price: 5, Paid: 5, 'On Plan': true }), 'paid',
+       'a plan paid off in full is PAID — the schedule existing does not keep it orange forever');
+    eq(H.liveMarkState({ Price: 0, Paid: 0, 'On Plan': true }), 'free',
+       'nothing charged still reads FREE even with a plan flag — "$0 / $0" is not an answer');
+    /* PRE-v4 FEEDS DEGRADE, THEY DO NOT GUESS. A warm cache entry carries no
+       "On Plan" column at all, and `undefined` falls through to false — which
+       is exactly the behaviour this replaces. Absence and not-on-a-plan want
+       the same answer here, which is why there is no separate presence gate
+       (unlike every other column question in these two repos, where a missing
+       column would render a confident zero). */
+    eq(H.liveMarkState({ Price: 5, Paid: 0 }), 'unpaid',
+       'a pre-v4 feed with no On Plan column reads exactly as it did before');
+    eq(H.liveMarkState({ Price: 5, Paid: 0, 'On Plan': 'true' }), 'part',
+       'the flag is read tolerantly — it crosses Metabase, the feed cache and JSON before it gets here');
     eq(H.liveMarkState({ Price: 65, Paid: 64.999 }), 'paid',
        'a half-cent epsilon, or two independently rounded figures make a fully-paid registration read as a plan');
   } else {
@@ -850,7 +880,15 @@ if (H.liveBySection) {
     ok(H.liveChimeWorthy({ Price: 40, Paid: 10 }) === true,  'a partial payment rings — money did arrive');
     ok(H.liveChimeWorthy({ Price: 40, Paid: 0 })  === false, 'an UNPAID enrollment is silent');
     ok(H.liveChimeWorthy({ Price: 40 })           === false, '...and so is one with no payment field at all');
-    ok(/liveMarkState\(r\)\s*!==\s*'unpaid'/.test(code),
+    /* AND A PLAN THAT HAS COLLECTED NOTHING IS SILENT TOO. v4 turned those
+       rows orange, so a chime keyed on the COLOUR would have quietly started
+       ringing for registrations where no money arrived. The cha-ching claims
+       money out loud; it stays on money. */
+    ok(H.liveChimeWorthy({ Price: 5, Paid: 0, 'On Plan': true }) === false,
+       'a payment plan that has taken $0 so far is silent, though its dot is orange');
+    ok(H.liveChimeWorthy({ Price: 5, Paid: 1, 'On Plan': true }) === true,
+       '...and rings once an installment actually lands');
+    ok(/liveMarkState\(r\)\s*===\s*'unpaid'\)\s*return false/.test(code),
        "...via liveMarkState, not its own arithmetic — one predicate, three readers");
   }
 
@@ -1433,6 +1471,42 @@ process.on('exit', () => {
     eq(H.livePriceCell({ Price: 3380, Paid: 0 }).price, '$3,380',
        '...while a charged, unpaid registration still shows what is owed');
   }
+
+  /* ── PAYMENT PLANS ON SCREEN ───────────────────────────────────────────
+     Dan asked for two things and they are separate: the DOT goes orange
+     (liveMarkState, above) and the CELL reads "$0 / $5". The second needs its
+     own rule, because liveMoney suppresses a zero on purpose — "$0 / $325" on
+     an ordinary unpaid row reads as a refund rather than as a booking nobody
+     has paid for. On a plan row that zero IS the answer. */
+  if (H.livePriceCell) {
+    const jan = { Price: 5, Paid: 0, 'On Plan': true, 'Plan Installments': 2, 'Plan Installments Paid': 0 };
+    eq(H.livePriceCell(jan).paid,  '$0', 'a plan that has taken nothing shows its ZERO, not an empty half');
+    eq(H.livePriceCell(jan).price, '$5', '...against the full charge');
+    /* THE DISCRIMINATING PAIR. Identical but for the flag — if the cell ever
+       stops reading it, this is the assertion that moves. */
+    eq(H.livePriceCell({ Price: 5, Paid: 0 }).paid, '',
+       'the same row with no plan behind it shows the charge alone, exactly as before');
+    eq(H.livePriceCell({ Price: 100, Paid: 25, 'On Plan': true }).paid, '$25',
+       'a plan part-way through still reads its real figure');
+  }
+  if (H.livePayPhrase) {
+    /* THE HOVER TEXT AND THE CELL DESCRIBE THE SAME ROW, and the old inline
+       version got this wrong the moment a zero appeared: it read " of $5 paid"
+       with nothing in front of it. */
+    ok(/^\$0 of \$5 paid/.test(H.livePayPhrase({ Price: 5, Paid: 0, 'On Plan': true })),
+       'the dot\'s hover text leads with the zero too, rather than a bare " of $5"');
+    ok(/2 installments paid/.test(H.livePayPhrase({ Price: 5, Paid: 0, 'On Plan': true, 'Plan Installments': 2, 'Plan Installments Paid': 0 })),
+       '...and says how far through the schedule is, which the money alone cannot');
+    ok(!/installments/.test(H.livePayPhrase({ Price: 5, Paid: 0, 'On Plan': true })),
+       '...but prints nothing about a schedule the feed did not carry, rather than "0 of 0"');
+    eq(H.livePayPhrase({ Price: 40, Paid: 0 }), 'not yet paid',
+       'an unpaid row still says so');
+    eq(H.livePayPhrase({ Price: 0, Paid: 0 }), 'free', 'and a free one says free');
+  }
+  ok(!/liveMarkState\(r\) === 'part' \? liveMoney\(r\['Paid'\]\)/.test(code),
+     'the timeline no longer builds that sentence inline — one phrase, two readers');
+  ok(/on a plan/.test(code),
+     'the legend names what the orange now covers, or a plan row looks like a colour nothing explains');
 
   /* ── EVERY CARD THAT RINGS MUST BE FED ─────────────────────────────────
      Dan: "no sounds playing from the check-in widget, only the live
