@@ -340,6 +340,22 @@ const server = http.createServer((req, res) => {
 
 const CASES = [
   { name: 'dashboard renders', needs: '.widget-card' },
+  /* A LAYOUT SAVED BEFORE CUSTOMER SUPPORT WAS REMOVED. Org layouts live on the
+     volume and are not rewritten by the deploy that deletes the widgets, so the
+     page has to survive ids and a section it no longer knows.
+
+     THIS IS A SMOKE TEST, NOT A GUARD, and the difference is worth stating: I
+     could not make it fail. Removing the widget renderer's `if (!def)`, the
+     section renderer's `if (!sec)`, and the metric/chart filter's `W[id] &&` —
+     separately and together — left it green, because the unknown ids are
+     dropped by several independent layers and something upstream of all of them
+     catches this shape first. Defence in depth is why the removal is safe; it
+     is also why no single mutation discriminates here. The exact-text
+     assertions in support-removed.spec.js are what actually pin the guards. */
+  { name: 'dashboard · a retired support layout still renders',
+    retiredSupport: true, needs: '.widget-card' },
+  { name: 'dashboard · ...and the retired widgets are simply absent',
+    retiredSupport: true, needs: '.widget-card', absent: '[data-widget-id^="sup-"]' },
   // Keyed on COMPUTED VALUES, not "a widget rendered" — every regression these
   // guard against leaves a perfectly good-looking tile behind.
   // Read the TILE'S OWN value, not the page text: "a widget rendered" passes on
@@ -1191,6 +1207,9 @@ const CASES = [
     executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/opt/pw-browsers/chromium',
   });
   let failures = [];
+  /* The request handler is installed once, before the case loop, so a case that
+     needs a different stub reaches it through this. */
+  let currentCase = {};
   const page = await browser.newPage();
   await page.setViewport({ width: 1400, height: 1400 });
   await page.setRequestInterception(true);
@@ -1207,7 +1226,25 @@ const CASES = [
     }
     if (/\/api\//.test(u)) {
       const json = (o) => req.respond({ status: 200, contentType: 'application/json', body: JSON.stringify(o) });
-      if (/\/api\/config/.test(u)) return json(CONFIG);
+      if (/\/api\/config/.test(u)) {
+        /* A SAVED LAYOUT FROM BEFORE CUSTOMER SUPPORT WAS REMOVED. Orgs'
+           layouts live on the volume, so the deploy that deletes the widgets
+           does NOT rewrite them — the page has to survive ids it no longer
+           knows. Serving the retired shape here is the only way to prove that;
+           a source assertion about guard clauses cannot. */
+        if (currentCase.retiredSupport) {
+          /* TWO different guards have to hold, and an earlier version of this
+             fixture only reached one: a whole unknown SECTION is dropped before
+             its widget ids are ever looked at, so retired ids also have to sit
+             inside a section that still EXISTS. */
+          const surviving = CONFIG.config.sections.map(sec => ({ ...sec,
+            widgets: ['sup-total', ...sec.widgets, 'tbl-support-topics'] }));
+          return json({ ...CONFIG, config: { ...CONFIG.config,
+            sections: [{ id: 'support', widgets: ['sup-hours-saved'] }, ...surviving] },
+            availableReports: { ...CONFIG.availableReports, support: true } });
+        }
+        return json(CONFIG);
+      }
       // fetchReportData reads json.rows off /:org/api/data/:reportType.
       const m = /\/api\/data\/([a-z-]+)/.exec(u);
       const rt = m ? m[1] : null;
@@ -1260,6 +1297,7 @@ const CASES = [
   }
 
   for (const c of CASES) {
+    currentCase = c;
     let bad = null;
     /* A per-case `act` hook, ported from the sibling repo's render check. Some
        states only exist after an interaction — the widget editor is behind a

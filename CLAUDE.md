@@ -47,6 +47,64 @@ evidence.
   there was always at least one row in it, so an empty tbody under live headers
   was unreachable. It now says *"No signups yet today."*
 
+## CUSTOMER SUPPORT IS REMOVED FROM THE DASHBOARD (2026-09-05)
+
+Dan: *"lets turn off the intercom thing entirely, and remove the customer
+support stuff from the dashboard project. my bad."*
+
+**IT WAS TWO FEATURES SHARING A NAME**, and the scope was worth confirming
+before deleting:
+
+* **Intercom operations** — a 3-minute poller that emailed org admins about
+  escalated conversations, plus seven inbox routes (list, read, forward, set
+  status, add note).
+* **An org-facing dashboard section** — thirteen widgets including *Resident
+  Conversations*, *AI Resolution Rate*, **Admin Hours Saved** and **Admin $
+  Saved**. That pair is a Rec-value story rather than support plumbing, which is
+  why it was put to Dan rather than assumed. He chose everything.
+
+**WHAT WENT:** three modules (`intercom-live.js`, `support-data.js`,
+`support-inbox-data.js`), the notifier, the seven routes, the section and its
+thirteen widgets, the `supportNotify` / `intercomOrg` / `supportReadOnly` org
+config, the AI-insights prompt for the report type, and the Support tab.
+
+**AND THE TAB STRIP WENT WITH IT.** With Customer Support gone there was one tab
+left, and a one-button tab strip is a control that cannot do anything — the dead
+end this file keeps writing down.
+
+**THE SAFETY PROPERTY: saved layouts are NOT rewritten by the deploy.** Org
+layouts live in `dashboards.json` on the volume, so a dashboard still listing
+`sup-*` ids and a `support` section has to keep rendering. It does — verified by
+reading every `W[...]` and `SECTIONS[...]` lookup before deleting anything, and
+they all guard. That is what made this safe without a data migration.
+
+**A GUARD I COULD NOT MAKE FAIL, recorded honestly.** The render case
+`dashboard · a retired support layout still renders` is a SMOKE TEST, not a
+guard. Removing the widget renderer's `if (!def)`, the section renderer's
+`if (!sec)`, and the metric/chart filter's `W[id] &&` — separately and all three
+together — left it green, because the unknown ids are dropped by several
+independent layers. Defence in depth is why the removal is safe and also why no
+single mutation discriminates. The exact-text assertions in
+`support-removed.spec.js` are what actually pin the guards, and the case says so
+in its own comment rather than claiming a proof it does not deliver.
+
+**TWO SELF-INFLICTED CUTS WORTH REMEMBERING**, both from deleting by pattern:
+
+1. Brace-counting to find a block's end **counts braces inside strings and
+   template literals**, so a route with `${...}` in it ended in the wrong place
+   and took the next route's opener with it. Cutting on a top-level terminator
+   (`});` at column 0) is what worked.
+2. Cutting a CSS block "to the next `/* ── */` banner" swallowed **98 lines of
+   shared CSS** — the loading bar, its keyframes and the print rules — because
+   the following blocks had no banner. The spec caught it (`the inner bar is
+   hidden by default`) and so did a render case. *When you delete by pattern,
+   diff what actually left.*
+
+Guard: `scripts/support-removed.spec.js` (**25 assertions**) — the modules are
+deleted rather than merely unreferenced, nothing requires them, no route or
+notifier symbol survives, no `sup-*` widget or section remains, and the lookup
+guards that make a stale layout safe are pinned by their exact text.
+
 ## THE CHECK-INS CARD COULD NEVER MAKE A SOUND (2026-09-05)
 
 Dan: *"no sounds playing from the check-in widget, only the live enrollments one

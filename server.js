@@ -28,9 +28,6 @@ const _recTracer = otelApi.trace.getTracer('rec-dashboard');
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
-const { getSupportRows } = require('./support-data');
-const { getSupportInbox, getSupportThread } = require('./support-inbox-data');
-const intercomLive = require('./intercom-live');
 
 const app = express();
 app.use(express.json());
@@ -138,10 +135,6 @@ const ORGS = {
     state: 'NY',
     logoUrl: 'https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/organization-a976a11a-5303-4785-838a-1b281ca77678/fullLogo.png',
     reports: {},
-    // Support testbed: Niagara's Intercom contacts are Rec test accounts —
-    // safe to exercise forwards, tags, and escalation emails here.
-    intercomOrg: 'city-of-niagara-falls',
-    supportNotify: ['dan@rec.us'],
   },
   torrance: {
     name: 'City of Torrance',
@@ -149,11 +142,6 @@ const ORGS = {
     token: 'Xq3RtBnW8vKdM2Ly',
     city: 'Torrance',
     state: 'CA',
-    intercomOrg: 'city-of-torrance', // Intercom contact attribute `Organization` — enables live support data
-    // Torrance is a LIVE org: support tab stays read-only (no forwards, no
-    // tags/notes written to their real conversations, no escalation emails)
-    // until the flow is proven out on the Niagara testbed. No supportNotify.
-    supportReadOnly: true,
     logoUrl: 'https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/organization-4246b144-a4e2-4bf1-bb7f-a89f47d71973/fullLogo.png',
     reports: {}
   }
@@ -420,32 +408,6 @@ function saveAllConfigs(configs) {
 
 let dashboardConfigs = loadAllConfigs();
 
-// ── Support enablement (code + admin config merged) ─────────────────
-// An org has Customer Support if it carries a code-level intercomOrg
-// mapping OR the admin panel's "Customer Support" toggle is on. The
-// Intercom `Organization` attribute defaults to the slug (code override
-// wins for mismatches like torrance → city-of-torrance). Escalation
-// recipients come from admin/org-managed config first, code fallback.
-function supportSettings(slug) {
-  const org = ORGS[slug] || {};
-  const cfg = dashboardConfigs[slug] || {};
-  const enabled = !!(org.intercomOrg || cfg.toggles?.support);
-  const notify = (Array.isArray(cfg.supportNotify) && cfg.supportNotify.length ? cfg.supportNotify : org.supportNotify) || [];
-  return {
-    enabled,
-    intercomOrg: enabled ? (org.intercomOrg || slug) : null,
-    notify,
-    readOnly: !!org.supportReadOnly,
-  };
-}
-
-// Org object with the effective support fields resolved — what the
-// intercom-live client expects.
-function effectiveSupportOrg(slug) {
-  const ss = supportSettings(slug);
-  return { ...(ORGS[slug] || {}), intercomOrg: ss.intercomOrg, supportNotify: ss.notify };
-}
-
 // ═══════════════════════════════════════════
 //  AUTH MIDDLEWARE
 // ═══════════════════════════════════════════
@@ -507,27 +469,6 @@ function excludeStaffAndGuests(rows) {
 
 async function fetchMetabaseData(orgSlug, reportType, query) {
   const org = ORGS[orgSlug];
-  const eff = effectiveSupportOrg(orgSlug);
-  // Support data comes from Intercom, not Metabase — short-circuit before the card lookup.
-  // Live API when INTERCOM_ACCESS_TOKEN is set (cached), else the baked snapshot.
-  if (reportType === 'support') {
-    if (intercomLive.liveEnabled() && eff.intercomOrg) {
-      const cacheKey = `${orgSlug}:support:${query.start}:${query.end}`;
-      const cached = getCached(cacheKey);
-      if (cached) return cached;
-      try {
-        const rows = await intercomLive.liveSupportRows(eff, query, orgSlug);
-        console.log(`[DATA] ${orgSlug}/support: ${rows.length} rows (intercom LIVE)`);
-        setCache(cacheKey, rows, 15 * 60 * 1000);
-        return rows;
-      } catch (e) {
-        console.error(`[intercom] live rows failed, falling back to snapshot:`, e.message);
-      }
-    }
-    const rows = getSupportRows(orgSlug, query);
-    if (rows) console.log(`[DATA] ${orgSlug}/support: ${rows.length} rows (intercom snapshot)`);
-    return rows;
-  }
   // Per-org UUID takes priority; fall back to shared
   const isShared = !org.reports?.[reportType];
   const uuid = org.reports?.[reportType] || SHARED_UUIDS[reportType];
@@ -823,10 +764,6 @@ app.get('/admin/api/orgs', adminAuth, (req, res) => {
       theme: config?.theme || 'dark',
       cacheTTL: config?.cacheTTL || 15,
       toggles: config?.toggles || { ai: true, reportLinks: false, aiBriefing: false, emailDigest: false },
-      support: supportSettings(slug).enabled,
-      supportNotify: supportSettings(slug).notify,
-      supportReadOnly: !!org.supportReadOnly,
-      supportLockedOn: !!org.intercomOrg, // code-level mapping — toggle can't turn it off
       updatedAt: config?.updatedAt || null,
     };
   });
@@ -849,7 +786,6 @@ const FEATURE_META = {
   aiBriefing:  { label: 'AI Briefing',      emoji: '📋' },
   emailDigest: { label: 'Email Digest',     emoji: '📧' },
   reportLinks: { label: 'Report Linkage',   emoji: '🔗' },
-  support:     { label: 'Customer Support', emoji: '💬' },
 };
 const FEATURE_EMOJI_FALLBACK = '✨';
 
@@ -871,7 +807,6 @@ function enabledFeaturesForOrg(slug) {
   if (t.aiBriefing) out.push('aiBriefing');
   if (t.emailDigest) out.push('emailDigest');
   if (t.reportLinks) out.push('reportLinks');
-  try { if (supportSettings(slug).enabled) out.push('support'); } catch (e) {}
   return out;
 }
 
@@ -1084,11 +1019,6 @@ app.post('/admin/api/orgs/:slug/toggles', adminAuth, (req, res) => {
   dashboardConfigs[slug].toggles = { ...dashboardConfigs[slug].toggles, ...req.body };
   dashboardConfigs[slug].updatedAt = new Date().toISOString();
   saveAllConfigs(dashboardConfigs);
-  // Enabling support spins up the org's routing tag in Intercom right away
-  if (req.body.support === true && intercomLive.liveEnabled()) {
-    intercomLive.ensureOrgTags(ORGS).then(t => console.log(`[intercom] tags ensured after enabling support for ${slug}`))
-      .catch(e => console.error('[intercom] tag provisioning failed:', e.message));
-  }
   res.json({ ok: true, toggles: dashboardConfigs[slug].toggles });
 });
 
@@ -1101,33 +1031,9 @@ function parseNotifyEmails(body) {
   return { emails };
 }
 
-function setSupportNotify(slug, emails) {
-  if (!dashboardConfigs[slug]) dashboardConfigs[slug] = {};
-  dashboardConfigs[slug].supportNotify = emails;
-  dashboardConfigs[slug].updatedAt = new Date().toISOString();
-  saveAllConfigs(dashboardConfigs);
-}
-
 // Rec side (admin panel)
-app.post('/admin/api/orgs/:slug/support-notify', adminAuth, (req, res) => {
-  const { slug } = req.params;
-  if (!ORGS[slug]) return res.status(404).json({ error: 'Not found' });
-  const parsed = parseNotifyEmails(req.body);
-  if (parsed.error) return res.status(400).json({ ok: false, error: parsed.error });
-  setSupportNotify(slug, parsed.emails);
-  console.log(`[support] ${slug}: escalation recipients set via admin → ${parsed.emails.join(', ') || '(none)'}`);
-  res.json({ ok: true, emails: parsed.emails });
-});
 
 // Org side (their dashboard's notification settings)
-app.post('/:org/api/support/notify-emails', authMiddleware, (req, res) => {
-  const parsed = parseNotifyEmails(req.body);
-  if (parsed.error) return res.status(400).json({ ok: false, error: parsed.error });
-  setSupportNotify(req.orgSlug, parsed.emails);
-  track_server(req.orgSlug, 'support_notify_updated', { count: parsed.emails.length });
-  console.log(`[support] ${req.orgSlug}: escalation recipients set by org → ${parsed.emails.join(', ') || '(none)'}`);
-  res.json({ ok: true, emails: parsed.emails });
-});
 
 // ── POST /admin/api/orgs — add new org via admin panel ───────────────
 // First place to look when a report link 404s: what does the reporting project
@@ -1356,186 +1262,14 @@ app.get('/:org/api/data/:reportType', authMiddleware, async (req, res) => {
   }
 });
 
-// ── Support Inbox (Intercom) ─────────────────────────────────────────
-// List: live Intercom when INTERCOM_ACCESS_TOKEN is set, snapshot otherwise.
-app.get('/:org/api/support/inbox', authMiddleware, async (req, res) => {
-  const org = ORGS[req.orgSlug];
-  const eff = effectiveSupportOrg(req.orgSlug);
-  const query = { start: req.query.start || new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10), end: req.query.end };
-  if (intercomLive.liveEnabled() && eff.intercomOrg) {
-    const fresh = req.query.fresh === '1'; // manual refresh: skip caches, still repopulate them
-    const cacheKey = `${req.orgSlug}:support-inbox:${query.start}:${query.end}`;
-    const cached = fresh ? null : getCached(cacheKey);
-    if (cached) return res.json({ conversations: cached, live: true });
-    try {
-      const list = await intercomLive.liveSupportInbox(eff, query, req.orgSlug, fresh);
-      console.log(`[DATA] ${req.orgSlug}/support-inbox: ${list.length} conversations (intercom LIVE)`);
-      setCache(cacheKey, list, 5 * 60 * 1000);
-      return res.json({ conversations: list, live: true });
-    } catch (e) {
-      console.error('[intercom] live inbox failed, falling back to snapshot:', e.message);
-    }
-  }
-  const list = getSupportInbox(req.orgSlug);
-  if (!list) return res.status(404).json({ error: 'Support inbox not available for this org' });
-  res.json({ conversations: list, live: false });
-});
-
-app.get('/:org/api/support/inbox/:id', authMiddleware, async (req, res) => {
-  const org = ORGS[req.orgSlug];
-  const eff = effectiveSupportOrg(req.orgSlug);
-  if (intercomLive.liveEnabled() && eff.intercomOrg) {
-    const cacheKey = `${req.orgSlug}:support-thread:${req.params.id}`;
-    const cached = getCached(cacheKey);
-    if (cached) return res.json({ conversation: cached, live: true });
-    try {
-      const thread = await intercomLive.liveSupportThread(eff, req.params.id, req.orgSlug);
-      if (thread) { setCache(cacheKey, thread, 5 * 60 * 1000); return res.json({ conversation: thread, live: true }); }
-      return res.status(404).json({ error: 'Conversation not found' });
-    } catch (e) {
-      console.error('[intercom] live thread failed, falling back to snapshot:', e.message);
-    }
-  }
-  const thread = getSupportThread(req.orgSlug, req.params.id);
-  if (!thread) return res.status(404).json({ error: 'Conversation not found' });
-  res.json({ conversation: thread, live: false });
-});
-
-// Forward a conversation to an org admin via email (Resend) — the "tag your
-// staff on a resident question" action.
-app.post('/:org/api/support/inbox/:id/forward', authMiddleware, async (req, res) => {
-  const { to, note } = req.body || {};
-  if (!to || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) return res.status(400).json({ ok: false, error: 'Valid "to" email required' });
-  const org = ORGS[req.orgSlug];
-  const eff = effectiveSupportOrg(req.orgSlug);
-  if (org?.supportReadOnly) return res.status(403).json({ ok: false, error: 'Support actions are disabled for this org while the feature is in testing' });
-  let thread = null;
-  if (intercomLive.liveEnabled() && eff.intercomOrg) {
-    try { thread = await intercomLive.liveSupportThread(eff, req.params.id, req.orgSlug); } catch (e) { /* fall through to snapshot */ }
-  }
-  if (!thread) thread = getSupportThread(req.orgSlug, req.params.id);
-  if (!thread) return res.status(404).json({ ok: false, error: 'Conversation not found' });
-  if (!RESEND_API_KEY) return res.status(503).json({ ok: false, error: 'RESEND_API_KEY not configured' });
-
-  const esc = s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
-  const ROLE_LABEL = { resident: 'Resident', ai: 'Rec AI Agent', agent: 'Rec Support', note: 'Internal Note' };
-  const msgsHtml = thread.messages.map(m => `
-    <div style="margin:0 0 14px 0;padding:10px 14px;border-radius:8px;background:${m.role === 'resident' ? '#f4f4f2' : m.role === 'note' ? '#fffbe6' : '#eef4fd'};border:1px solid #e5e2db">
-      <div style="font-size:11px;font-weight:700;color:#666;margin-bottom:4px">${esc(m.name)} · ${ROLE_LABEL[m.role] || m.role} · ${new Date(m.at * 1000).toLocaleString('en-US', { timeZone: 'America/Los_Angeles', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</div>
-      <div style="font-size:13px;color:#222;line-height:1.5">${esc(m.text)}</div>
-    </div>`).join('');
-  const html = `
-    <div style="font-family:Arial,Helvetica,sans-serif;max-width:640px;margin:0 auto;padding:20px">
-      <p style="font-size:13px;color:#444">A resident support conversation was forwarded to you from the ${esc(org.name)} dashboard.</p>
-      ${note ? `<div style="padding:12px 14px;background:#fef3e2;border:1px solid #f5d9a8;border-radius:8px;margin:0 0 16px 0"><div style="font-size:11px;font-weight:700;color:#92600a;margin-bottom:4px">Note from your team</div><div style="font-size:13px;color:#333">${esc(note)}</div></div>` : ''}
-      <h2 style="font-size:16px;margin:0 0 2px 0">${esc(thread.subject)}</h2>
-      <p style="font-size:12px;color:#777;margin:0 0 16px 0">${esc(thread.contact.name)} &lt;${esc(thread.contact.email)}&gt; · ${thread.channel} · ${esc(thread.topic)} · ${thread.state}</p>
-      ${msgsHtml}
-      <p style="font-size:11px;color:#999;margin-top:20px">Handled by Rec Support on behalf of ${esc(org.name)}. Hitting reply on this email goes straight to the resident — you'll be writing as yourself, not as Rec. Or start fresh: <a href="mailto:${encodeURIComponent(thread.contact.email)}?subject=${encodeURIComponent('Re: ' + thread.subject)}">email ${esc(thread.contact.email)}</a>.</p>
-    </div>`;
-  try {
-    const resp = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        from: `${FROM_NAME} <${FROM_EMAIL}>`,
-        to: [to],
-        // The whole point of forwarding is org staff replying to the
-        // resident as themselves — make "Reply" in their mail client
-        // address the resident, not Rec.
-        reply_to: thread.contact.email || undefined,
-        subject: `[${org.name} Support] Fwd: ${thread.subject}`,
-        html,
-      }),
-    });
-    const json = await resp.json();
-    if (!resp.ok) throw new Error(json?.message || `Resend ${resp.status}`);
-    track_server(req.orgSlug, 'support_forwarded', { to, conversationId: req.params.id });
-    // Best-effort Intercom write-back: tag the conversation + internal note so
-    // Rec staff see the escalation in Intercom, and the dashboard reads the
-    // tag back on refresh. Email already went out — never fail on this.
-    let escalated = false;
-    if (intercomLive.liveEnabled()) {
-      try {
-        escalated = await intercomLive.markEscalatedToOrg(req.params.id, { orgName: org.name, to, note });
-        // Bust cached views so the tag shows without waiting out the TTL
-        cache.delete(`${req.orgSlug}:support-thread:${req.params.id}`);
-        for (const key of cache.keys()) if (key.startsWith(`${req.orgSlug}:support-inbox:`)) cache.delete(key);
-        // The org admin was just emailed directly — don't let the notifier double-send
-        markNotified(req.params.id);
-      } catch (e) {
-        console.error('[intercom] escalate write-back failed (email was sent):', e.message);
-      }
-    }
-    res.json({ ok: true, id: json.id, escalated });
-  } catch (e) {
-    console.error('[support] forward failed:', e.message);
-    res.status(502).json({ ok: false, error: e.message });
-  }
-});
-
-// Org staff set a conversation's status from their dashboard. Mirrors into
-// Intercom (Org Resolved tag + internal note + close/reopen) so Rec CS sees
-// the outcome, and clears the conversation off the org's action list.
-app.post('/:org/api/support/inbox/:id/status', authMiddleware, async (req, res) => {
-  const { status, note } = req.body || {};
-  if (!['resolved', 'no_action', 'reopen'].includes(status)) return res.status(400).json({ ok: false, error: 'Invalid status' });
-  const org = ORGS[req.orgSlug];
-  const eff = effectiveSupportOrg(req.orgSlug);
-  if (org?.supportReadOnly) return res.status(403).json({ ok: false, error: 'Support actions are disabled for this org while the feature is in testing' });
-  if (!intercomLive.liveEnabled() || !eff.intercomOrg) return res.status(503).json({ ok: false, error: 'Live Intercom not configured' });
-  try {
-    // Access check: only conversations visible to this org can be acted on
-    const thread = await intercomLive.liveSupportThread(eff, req.params.id, req.orgSlug);
-    if (!thread) return res.status(404).json({ ok: false, error: 'Conversation not found' });
-    const result = await intercomLive.markOrgStatus(req.params.id, status, { orgName: org.name, note });
-    cache.delete(`${req.orgSlug}:support-thread:${req.params.id}`);
-    for (const key of cache.keys()) if (key.startsWith(`${req.orgSlug}:support-inbox:`)) cache.delete(key);
-    track_server(req.orgSlug, 'support_status_set', { conversationId: req.params.id, status });
-    console.log(`[support] ${req.orgSlug}: conversation ${req.params.id} marked ${status} by org staff`);
-    res.json({ ok: true, ...result });
-  } catch (e) {
-    console.error('[support] status change failed:', e.message);
-    res.status(502).json({ ok: false, error: e.message });
-  }
-});
-
-// Org staff add an internal note from their dashboard — Rec CS sees it in
-// Intercom; the resident never does. The org→Rec communication channel.
-app.post('/:org/api/support/inbox/:id/note', authMiddleware, async (req, res) => {
-  const text = (req.body?.text || '').trim();
-  if (!text) return res.status(400).json({ ok: false, error: 'Note text required' });
-  if (text.length > 4000) return res.status(400).json({ ok: false, error: 'Note too long (4000 chars max)' });
-  const org = ORGS[req.orgSlug];
-  const eff = effectiveSupportOrg(req.orgSlug);
-  if (org?.supportReadOnly) return res.status(403).json({ ok: false, error: 'Support actions are disabled for this org while the feature is in testing' });
-  if (!intercomLive.liveEnabled() || !eff.intercomOrg) return res.status(503).json({ ok: false, error: 'Live Intercom not configured' });
-  try {
-    const thread = await intercomLive.liveSupportThread(eff, req.params.id, req.orgSlug);
-    if (!thread) return res.status(404).json({ ok: false, error: 'Conversation not found' });
-    await intercomLive.addOrgNote(req.params.id, { orgName: org.name, text });
-    cache.delete(`${req.orgSlug}:support-thread:${req.params.id}`);
-    track_server(req.orgSlug, 'support_note_added', { conversationId: req.params.id });
-    res.json({ ok: true });
-  } catch (e) {
-    console.error('[support] note failed:', e.message);
-    res.status(502).json({ ok: false, error: e.message });
-  }
-});
-
 // --- Dashboard config ---
 app.get('/:org/api/config', authMiddleware, async (req, res) => {
   const config = dashboardConfigs[req.orgSlug] || null;
   // Also send available report types for this org
   const availableReports = {};
   const org = ORGS[req.orgSlug];
-  const eff = effectiveSupportOrg(req.orgSlug);
   for (const [r, uuid] of Object.entries(org.reports || {})) availableReports[r] = true;
   for (const [r, uuid] of Object.entries(SHARED_UUIDS)) availableReports[r] = true;
-  // Support is Intercom-backed — offered to orgs with a snapshot, or any
-  // org with a live Intercom mapping when the token is configured
-  const ss = supportSettings(req.orgSlug);
-  if (getSupportRows(req.orgSlug) || (intercomLive.liveEnabled() && ss.enabled)) availableReports.support = true;
   // Fetch report visibility from rental-report
   let reportVisibility = null;
   try {
@@ -1561,8 +1295,6 @@ app.get('/:org/api/config', authMiddleware, async (req, res) => {
     // which are the dashboard's names for the same organisation and can drift.
     reportingSlug: reportingIdentity(req.orgSlug).slug || req.orgSlug,
     reportingToken: reportingIdentity(req.orgSlug).token || org.token,
-    supportReadOnly: !!org.supportReadOnly,
-    supportNotify: ss.notify,
     announcements: activeAnnouncementsForOrg(req.orgSlug),
     reportVisibility: reportVisibility?.available || null });
 });
@@ -1674,7 +1406,6 @@ const INSIGHT_PROMPTS = {
   memberships: 'Analyze these membership metrics. The book splits into MEMBERSHIPS and PASSES: a pass (day pass, gate fee) has no subscription field in the schema at all, so it can never auto-renew and must never be described as a conversion opportunity. "Churn Per Renewal" is a hazard rate — the share of renewal OPPORTUNITIES that ended in a cancellation — not the share of members who have ever cancelled; do not describe it as monthly unless a plan\'s own cadence says so, and never rank a weekly plan\'s rate against a monthly one without naming both periods. Renewal counts are derived from the billing period dates, not logged, so treat them as estimates. Converting somebody to auto-renew means getting a card on file, not flipping a plan setting: auto-renew is only available on card payments. Focus on: which plans hold the book and what they earn a month, which plans leak members fastest in their own period, anyone scheduled to leave at period end and what that is worth, and plans with no auto-renew configured at all.',
   products: 'Analyze these product/POS sales metrics. Focus on: top sellers, revenue trends, refund rates, and sales volume patterns.',
   instructors: 'Analyze these instructor payout metrics. Focus on: revenue per instructor, section coverage, top performers, and refund exposure.',
-  support: 'Analyze these resident support metrics. Rec\'s support team handles these conversations on the org\'s behalf, so frame insights around what residents are struggling with and what the org could fix upstream. Focus on: which topics drive the most volume, whether AI resolution is holding up or escalating, how fast residents get resolved, and any topic that looks like a self-service or documentation gap rather than a one-off.',
   'executive-briefing': 'You are writing an executive briefing for a parks and recreation director. The data below is organized by dashboard section. IMPORTANT: "Revenue Overview" (GL data) is the authoritative financial revenue — use those numbers for headline revenue. "Programs & Enrollment" revenue is enrollment-specific and should be called "program revenue" not just "revenue." Do not conflate the two. Synthesize ALL sections into exactly 3 concise sentences. Sentence 1: the headline financial picture from Revenue Overview. Sentence 2: the most notable positive signal across any section. Sentence 3: the single biggest risk or item needing attention. Be specific with numbers. No bullets, no headers, no emoji — just 3 clean sentences a director can read in 10 seconds.',
 };
 
@@ -2004,118 +1735,6 @@ async function warmCache() {
 }
 
 // ═══════════════════════════════════════════
-//  ESCALATION NOTIFIER
-//
-//  Rec staff tag a conversation "Org Escalated" in Intercom → the org's
-//  configured admins (org.supportNotify) get a Resend email with a deep
-//  link that opens the dashboard on that exact conversation. Polls every
-//  3 minutes; notified conversation IDs persist to DATA_DIR so restarts
-//  don't re-send. Dashboard-initiated forwards mark themselves notified
-//  (the admin was already emailed directly).
-// ═══════════════════════════════════════════
-const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || 'https://rec-dashboard-production.up.railway.app';
-
-// Current month in YYYY-MM-DD, matching the frontend's default date preset
-function getMonthRangeServer() {
-  const now = new Date();
-  const start = new Date(now.getFullYear(), now.getMonth(), 1);
-  const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-  const iso = d => d.toISOString().slice(0, 10);
-  return { start: iso(start), end: iso(end) };
-}
-// v2: v1 wrongly marked unmatched conversations as processed forever; fresh
-// file so tagged-but-unrouted test conversations become eligible again.
-const NOTIFIED_FILE = path.join(DATA_DIR, 'support-notified-v2.json');
-let _notified = null;
-function loadNotified() {
-  if (_notified) return _notified;
-  try { _notified = new Set(JSON.parse(fs.readFileSync(NOTIFIED_FILE, 'utf8'))); }
-  catch (e) { _notified = new Set(); }
-  return _notified;
-}
-function markNotified(id) {
-  const set = loadNotified();
-  set.add(String(id));
-  try {
-    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(NOTIFIED_FILE, JSON.stringify([...set]));
-  } catch (e) { console.error('[notify] persist failed:', e.message); }
-}
-
-async function sendEscalationEmail(orgSlug, org, entry) {
-  const esc = s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  const link = `${PUBLIC_BASE_URL}/${orgSlug}?token=${org.token}&tab=support&conversation=${entry.id}`;
-  const html = `
-    <div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;padding:24px">
-      <div style="font-size:11px;font-weight:700;letter-spacing:1px;color:#f59e0b;text-transform:uppercase;margin-bottom:6px">Rec Customer Support</div>
-      <h2 style="font-size:18px;margin:0 0 14px 0;color:#111">You have a new Customer Support inquiry via Rec</h2>
-      <div style="padding:14px 16px;background:#f9f9f7;border:1px solid #e8e5df;border-radius:10px;margin-bottom:18px">
-        <div style="font-size:14px;font-weight:700;color:#111;margin-bottom:3px">${esc(entry.subject)}</div>
-        <div style="font-size:12px;color:#777;margin-bottom:8px">${esc(entry.contact.name)} · ${entry.channel} · ${esc(entry.topic)}</div>
-        <div style="font-size:13px;color:#333;line-height:1.5">${esc(entry.preview)}</div>
-      </div>
-      <a href="${link}" style="display:inline-block;background:#f59e0b;color:#000;font-weight:700;font-size:14px;padding:11px 24px;border-radius:8px;text-decoration:none">View the conversation →</a>
-      <p style="font-size:11px;color:#999;margin-top:20px">Rec's support team flagged this resident conversation for ${esc(org.name)}. The link opens your Rec dashboard with the conversation pulled up.</p>
-    </div>`;
-  const resp = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      from: `${FROM_NAME} <${FROM_EMAIL}>`,
-      to: org.supportNotify,
-      subject: `You have a new Customer Support inquiry via Rec — ${entry.subject}`,
-      html,
-    }),
-  });
-  if (!resp.ok) throw new Error(`Resend ${resp.status}`);
-}
-
-async function pollEscalations() {
-  if (!intercomLive.liveEnabled() || !RESEND_API_KEY) return;
-  try {
-    const tagged = await intercomLive.liveEscalatedConversations();
-    if (!tagged) return;
-    const notified = loadNotified();
-    for (const { conv, contact } of tagged) {
-      // "Org Notify" is an explicit re-ping: bypasses the notified-set and
-      // the resolved-skip, and the tag is removed after sending.
-      const isPing = intercomLive.hasTagNamed(conv, intercomLive.ORG_NOTIFY_TAG);
-      if (!isPing) {
-        if (notified.has(String(conv.id))) continue;
-        if (intercomLive.hasTagNamed(conv, intercomLive.ORG_RESOLVED_TAG)) continue; // org already handled it
-      }
-      const attrs = contact.custom_attributes || {};
-      // Routing: an explicit org:<slug> tag wins (staff override for
-      // conversations whose author has missing/wrong Organization data —
-      // those attributes are synced from the Rec app, not editable in
-      // Intercom). Otherwise route by the author's contact attributes.
-      // Unmatched conversations are skipped but stay eligible for later.
-      const candidates = Object.keys(ORGS).map(slug => [slug, supportSettings(slug)])
-        .filter(([slug, c]) => c.enabled && c.notify.length && !c.readOnly);
-      const match =
-        candidates.find(([slug]) => intercomLive.hasOrgRouteTag(conv, slug, ORGS[slug])) ||
-        candidates.find(([slug, c]) => attrs.Organization === c.intercomOrg && attrs.user_role === 'user');
-      if (!match) continue;
-      const [orgSlug, matchSettings] = match;
-      const org = { ...ORGS[orgSlug], supportNotify: matchSettings.notify };
-      const { _first, ...entry } = intercomLive.toInboxEntry(conv);
-      await sendEscalationEmail(orgSlug, org, entry);
-      markNotified(conv.id);
-      if (isPing) {
-        try { await intercomLive.clearNotifyTag(conv.id); }
-        catch (e) { console.error('[notify] failed to clear Org Notify tag:', e.message); }
-        // the tag change should reflect in the org inbox promptly
-        for (const key of cache.keys()) if (key.startsWith(`${orgSlug}:support-`)) cache.delete(key);
-      }
-      track_server(orgSlug, 'support_escalation_notified', { conversationId: String(conv.id), recipients: org.supportNotify.length });
-      console.log(`[notify] ${orgSlug}: escalation email sent for conversation ${conv.id} → ${org.supportNotify.join(', ')}`);
-    }
-  } catch (e) {
-    console.error('[notify] escalation poll failed:', e.message);
-  }
-}
-
-// ═══════════════════════════════════════════
 //  START
 // ═══════════════════════════════════════════
 app.listen(PORT, () => {
@@ -2123,39 +1742,6 @@ app.listen(PORT, () => {
   console.log(`Orgs: ${Object.keys(ORGS).join(', ')}`);
   // Pre-warm cache 5s after startup
   setTimeout(warmCache, 5000);
-  if (intercomLive.liveEnabled()) {
-    console.log('[notify] escalation notifier active — polling Intercom every 3 minutes');
-    setTimeout(pollEscalations, 15000);
-    setInterval(pollEscalations, 3 * 60 * 1000);
-    // Provision routing tags so they're ready in the Intercom tag picker
-    setTimeout(async () => {
-      try {
-        const tags = await intercomLive.ensureOrgTags(ORGS);
-        console.log(`[intercom] ensured ${tags.length} routing tag(s): ${tags.join(' | ')}`);
-      } catch (e) { console.error('[intercom] tag provisioning failed:', e.message); }
-      // Resolve (and log) the acting teammate at boot so attribution
-      // issues show up in logs before anyone performs an action
-      try { await intercomLive.getActingAdminId(); } catch (e) { console.error('[intercom] admin lookup failed:', e.message); }
-    }, 10000);
-    // Pre-warm the support sweeps so the first visitor doesn't eat the
-    // cold classification pass: rolling 30d (inbox default) + current month
-    // (the date picker's default). Contact classifications persist to the
-    // volume, so even a cold sweep after this is mostly search pages.
-    setTimeout(async () => {
-      const rolling = { start: new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10) };
-      const month = getMonthRangeServer();
-      for (const slug of Object.keys(ORGS)) {
-        if (!supportSettings(slug).enabled) continue;
-        const org = effectiveSupportOrg(slug);
-        for (const q of [rolling, month]) {
-          try {
-            const rows = await intercomLive.liveSupportRows(org, q, slug);
-            console.log(`[WARM] ${slug}/support ${q.start}..${q.end || 'now'}: ${rows?.length ?? 0} rows`);
-          } catch (e) { console.error(`[WARM] ${slug}/support failed:`, e.message); }
-        }
-      }
-    }, 25000);
-  }
 });
 
 // ═══════════════════════════════════════════

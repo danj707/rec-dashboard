@@ -281,7 +281,11 @@ if (H.liveWindow) {
 
 /* ── 7. NOT IN PRINT, and ABOVE the stored sections ───────────────────────*/
 {
-  ok(/\{!IS_PRINT && activeTab === 'dashboard' && config\.liveWidgets !== false/.test(code),
+  /* The `activeTab === 'dashboard'` half of this test went with the Customer
+     Support tab — with one tab left there is nothing to switch between, so the
+     tab strip was removed too. `!IS_PRINT` is the part that was ever load
+     bearing here and it still guards. */
+  ok(/\{!IS_PRINT && config\.liveWidgets !== false/.test(code),
      'the live section is excluded from print — a printed "right now" is a lie the moment the paper leaves the printer');
   /* AND IT CAN BE TURNED OFF. Dan: "need a way to toggle off these live
      widgets in the UI/edit dashboard section, as cool as they are, not
@@ -463,9 +467,11 @@ if (H.liveWindow) {
      '...saying which state it is in rather than a widget count');
   ok(/if \(s\.id === 'live'\) return false;/.test(code),
      'and it is excluded from the addable list, or the editor offers to add what is already there');
+  /* It used to be pinned above the Customer Support row; with that gone, the
+     invariant is that it still leads the section list in the editor. */
   const editIdx = code.indexOf('data-edit-live');
-  const supIdx  = code.indexOf('availableReports.support && (');
-  ok(editIdx > 0 && supIdx > editIdx,
+  const firstSec = code.indexOf('displaySections.map((sec, i) => (');
+  ok(editIdx > 0 && firstSec > editIdx,
      'it is the FIRST pinned row, which is where the section itself sits on the page');
 }
 

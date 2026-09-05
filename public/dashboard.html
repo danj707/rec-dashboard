@@ -491,57 +491,6 @@ body { font-family: var(--font-body); background: var(--bg-page); color: var(--t
   min-width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; padding: 0 5px;
   box-shadow: 0 0 0 2px var(--bg-main, transparent); }
 
-/* ── Support Inbox ── */
-.inbox-wrap { display: grid; grid-template-columns: 340px 1fr; gap: 14px; min-height: 480px; }
-@media (max-width: 900px) { .inbox-wrap { grid-template-columns: 1fr; } }
-.inbox-list { background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: 12px; overflow-y: auto; max-height: 640px; }
-.inbox-item { padding: 12px 14px; border-bottom: 1px solid var(--border-subtle); cursor: pointer; transition: background 0.12s; }
-.inbox-item:hover { background: var(--bg-hover, rgba(128,128,128,0.06)); }
-.inbox-item.selected { background: var(--amber-glow); border-left: 3px solid var(--amber); padding-left: 11px; }
-.inbox-item .ii-top { display: flex; align-items: center; gap: 6px; }
-.inbox-item .ii-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-.inbox-item .ii-name { font-size: 12.5px; font-weight: 700; color: var(--text-primary); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.inbox-item .ii-time { font-size: 10px; color: var(--text-muted); flex-shrink: 0; }
-.inbox-item .ii-subject { font-size: 12px; font-weight: 600; color: var(--text-primary); margin: 3px 0 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.inbox-item .ii-preview { font-size: 11px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.inbox-item .ii-chips { display: flex; gap: 5px; margin-top: 6px; flex-wrap: wrap; }
-.ii-chip { font-size: 9.5px; font-weight: 600; padding: 1.5px 7px; border-radius: 8px; background: rgba(128,128,128,0.12); color: var(--text-secondary); }
-.ii-chip.ai { background: rgba(20,184,166,0.15); color: #14b8a6; }
-.ii-chip.esc { background: rgba(245,158,11,0.15); color: var(--amber); }
-.ii-chip.org { background: rgba(59,130,246,0.15); color: #3b82f6; }
-.ii-chip.done { background: rgba(34,197,94,0.15); color: var(--green); }
-.status-menu { position: absolute; top: 100%; right: 0; margin-top: 6px; background: var(--bg-modal); border: 1px solid var(--border);
-  border-radius: 10px; padding: 6px; width: 250px; z-index: 60; box-shadow: 0 12px 32px rgba(0,0,0,0.4); }
-.status-menu button { display: flex; align-items: flex-start; gap: 8px; width: 100%; text-align: left; background: none; border: none;
-  border-radius: 7px; padding: 9px 10px; cursor: pointer; font-family: var(--font-body); color: var(--text-primary); font-size: 12px; }
-.status-menu button:hover { background: rgba(128,128,128,0.1); }
-.status-menu .sm-sub { font-size: 10px; color: var(--text-muted); margin-top: 1px; }
-.inbox-thread { background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: 12px; display: flex; flex-direction: column; max-height: 640px; }
-.thread-head { padding: 14px 18px; border-bottom: 1px solid var(--border-subtle); display: flex; align-items: flex-start; gap: 12px; }
-.thread-head .th-subject { font-size: 15px; font-weight: 700; color: var(--text-primary); }
-.thread-head .th-meta { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
-.thread-body { flex: 1; overflow-y: auto; padding: 16px 18px; }
-.msg { max-width: 82%; margin-bottom: 14px; }
-.msg .msg-meta { font-size: 10px; color: var(--text-muted); margin-bottom: 3px; display: flex; gap: 6px; align-items: center; }
-.msg .msg-bubble { padding: 10px 14px; border-radius: 12px; font-size: 12.5px; line-height: 1.55; color: var(--text-primary); white-space: pre-wrap; word-break: break-word; }
-.msg.resident .msg-bubble { background: rgba(128,128,128,0.10); border: 1px solid var(--border-subtle); border-top-left-radius: 4px; }
-.msg.ai { margin-left: auto; }
-.msg.ai .msg-meta { justify-content: flex-end; }
-.msg.ai .msg-bubble { background: rgba(20,184,166,0.10); border: 1px solid rgba(20,184,166,0.25); border-top-right-radius: 4px; }
-.msg.agent { margin-left: auto; }
-.msg.agent .msg-meta { justify-content: flex-end; }
-.msg.agent .msg-bubble { background: var(--amber-glow); border: 1px solid rgba(245,158,11,0.3); border-top-right-radius: 4px; }
-.msg.note { margin-left: auto; }
-.msg.note .msg-meta { justify-content: flex-end; }
-.msg.note .msg-bubble { background: transparent; border: 1.5px dashed var(--border); color: var(--text-secondary); font-style: italic; }
-.msg-role-badge { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; padding: 1px 6px; border-radius: 6px; }
-.msg-role-badge.ai { background: rgba(20,184,166,0.15); color: #14b8a6; }
-.msg-role-badge.agent { background: var(--amber-glow); color: var(--amber); }
-.msg-role-badge.note { background: rgba(128,128,128,0.15); color: var(--text-muted); }
-/* Fixed height (not % of card): a %-height canvas inside an auto-sized grid row
-   creates a resize feedback loop with Chart.js and the row grows unbounded. */
-.chart-container { position: relative; width: 100%; height: 240px; }
-
 /* Skeleton */
 .skeleton { background: linear-gradient(90deg, var(--bg-surface) 25%, #222 50%, var(--bg-surface) 75%);
   background-size: 200% 100%; animation: shimmer 1.5s infinite; border-radius: 8px; }
@@ -640,6 +589,7 @@ body { font-family: var(--font-body); background: var(--bg-page); color: var(--t
   .dashboard-section { break-inside: avoid; }
 }
 .print-header .dash-header-center, .print-header .dash-header-right { display: none !important; }
+
 /* ── Revenue Streams Widget ── */
 .streams-wrap { border-radius: 8px; padding: 0; }
 .streams-row { display: grid; grid-template-columns: 140px 1fr 120px; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background 0.15s; }
@@ -910,9 +860,6 @@ const SECTIONS = {
   instructors: { id: 'instructors', label: 'Instructor Payout', icon: '\uD83C\uDF93', color: '#22c55e',
     description: 'Instructor revenue splits and performance',
     defaultWidgets: ['instr-net','instr-payout','instr-org-ret','instr-fill','instr-top'] },
-  support: { id: 'support', label: 'Customer Support', icon: '\ud83d\udcac', color: '#14b8a6',
-    description: 'Resident support conversations Rec handles on your behalf',
-    defaultWidgets: ['sup-total','sup-ai-resolution','sup-hours-saved','sup-dollars-saved','sup-escalated','sup-median-resolution','sup-volume-trend','sup-by-topic','sup-resolution-mix','sup-by-channel','sup-top-articles','tbl-support-topics'] },
   'ai-briefing': { id: 'ai-briefing', label: 'AI Executive Briefing', icon: '\u2728', color: '#a855f7',
     description: 'AI-generated narrative summary from all dashboard data',
     defaultWidgets: [], _special: true },
@@ -1751,129 +1698,6 @@ const W = {
           '$'+Math.round(pf(r['Total Refunds'])).toLocaleString(), '$'+Math.round(pf(r['Net Amount'])).toLocaleString()]) };
     }},
 
-  // ── Customer Support (Intercom) ──
-  // Every widget here reads the support row shape: one row per resident
-  // support conversation. See support-data.js for the column contract.
-  //
-  // Savings assumptions, kept deliberately visible in the widget notes:
-  // each conversation Rec handles is one an org admin didn't — triage,
-  // lookup, reply, follow-up runs ~20 min of staff time, at a ~$35/hr
-  // fully-loaded parks & rec admin cost.
-  'sup-total': { label: 'Resident Conversations', description: 'Support conversations opened by your residents', note: 'Email + in-app chat started by residents of your org. Conversations from your own staff are excluded.', section: 'support',
-    reportType: 'support', size: 'sm', icon: '💬', component: 'metric',
-    transform: rows => ({ value: rows.length, format: 'number',
-      sub: `${rows.filter(r => r.State === 'open').length} still open` }) },
-  'sup-ai-resolution': { label: 'AI Resolution Rate', description: 'Share resolved by Rec AI without a human', note: 'Conversations Rec’s AI agent resolved end-to-end, as a share of all resident conversations. Higher means fewer residents waiting on a person.', section: 'support',
-    reportType: 'support', size: 'sm', icon: '✨', component: 'metric',
-    transform: rows => {
-      const resolved = rows.filter(r => r['Resolution State'] === 'Resolved by AI').length;
-      return { value: rows.length ? (resolved / rows.length) * 100 : 0, format: 'percent', colorClass: 'metric-green',
-        sub: `${resolved} of ${rows.length} conversations` };
-    }},
-  'sup-escalated': { label: 'Escalated to Staff', description: 'Conversations the AI handed to a Rec agent', note: 'Resident asked something the AI could not close out, so a Rec support agent took over.', section: 'support',
-    reportType: 'support', size: 'sm', icon: '🙋', component: 'metric',
-    transform: rows => {
-      const esc = rows.filter(r => r.Escalated === 1).length;
-      return { value: esc, format: 'number', colorClass: esc ? 'metric-amber' : '',
-        sub: rows.length ? `${((esc / rows.length) * 100).toFixed(1)}% of volume` : '' };
-    }},
-  'sup-median-resolution': { label: 'Median Time to Resolve', description: 'Median minutes from first message to resolution', note: 'Median across conversations that reached a resolution. Median rather than average so one long-running edge case does not distort the picture.', section: 'support',
-    reportType: 'support', size: 'sm', icon: '⏱️', component: 'metric',
-    transform: rows => {
-      const mins = rows.map(r => r['Time to Close Minutes']).filter(v => v != null).sort((a, b) => a - b);
-      if (!mins.length) return { value: 0, format: 'number', sub: 'no resolved conversations' };
-      const mid = Math.floor(mins.length / 2);
-      const med = mins.length % 2 ? mins[mid] : (mins[mid - 1] + mins[mid]) / 2;
-      return { value: med, format: 'number', colorClass: 'metric-green', sub: `minutes · median of ${mins.length} resolved` };
-    }},
-  'sup-hours-saved': { label: 'Admin Hours Saved', description: 'Staff time your team didn’t spend on support', note: 'Every resident conversation Rec handled is one your staff didn’t: triage, account lookup, reply, and follow-up average ~20 minutes each. Hours = conversations × 20 min.', section: 'support',
-    reportType: 'support', size: 'sm', icon: '⏳', component: 'metric',
-    transform: rows => {
-      const MIN_PER_CONVO = 20;
-      const hours = rows.length * MIN_PER_CONVO / 60;
-      return { value: Math.round(hours * 10) / 10, format: 'number', colorClass: 'metric-green',
-        sub: `${rows.length} conversations × ${MIN_PER_CONVO} min each` };
-    }},
-  'sup-dollars-saved': { label: 'Admin $ Saved', description: 'Estimated staff cost avoided', note: 'Hours saved × $35/hr fully-loaded staff cost (wage + benefits for a typical parks & rec admin). Conservative — excludes after-hours coverage and the cost of missed inquiries.', section: 'support',
-    reportType: 'support', size: 'sm', icon: '💵', component: 'metric',
-    transform: rows => {
-      const MIN_PER_CONVO = 20, HOURLY = 35;
-      const dollars = rows.length * MIN_PER_CONVO / 60 * HOURLY;
-      return { value: Math.round(dollars), format: 'currency', colorClass: 'metric-green',
-        sub: `${(rows.length * MIN_PER_CONVO / 60).toFixed(1)} hrs × $${HOURLY}/hr` };
-    }},
-  'sup-ai-involvement': { label: 'AI Involvement Rate', description: 'Share of conversations the AI agent touched', note: 'Whether Rec’s AI agent participated at all — separate from whether it resolved the conversation.', section: 'support',
-    reportType: 'support', size: 'sm', icon: '🤖', component: 'metric',
-    transform: rows => {
-      const inv = rows.filter(r => r['Fin Involved'] === 1).length;
-      return { value: rows.length ? (inv / rows.length) * 100 : 0, format: 'percent',
-        sub: `${inv} of ${rows.length} conversations` };
-    }},
-  'sup-volume-trend': { label: 'Support Volume Over Time', description: 'Resident conversations opened per day', note: 'Daily count of new resident conversations. Spikes usually track a registration opening or a program change.', section: 'support',
-    reportType: 'support', size: 'md', icon: '📈', component: 'line',
-    transform: rows => {
-      const g = {};
-      rows.forEach(r => { g[r.Date] = (g[r.Date] || 0) + 1; });
-      const days = Object.keys(g).sort();
-      return { labels: days.map(shortDate), values: days.map(d => g[d]), format: 'number' };
-    }},
-  'sup-by-topic': { label: 'Conversations by Topic', description: 'What residents are contacting support about', note: 'Topic comes from the support tag when the conversation has one, otherwise it is classified from the subject line.', section: 'support',
-    reportType: 'support', size: 'md', icon: '🏷️', component: 'bar',
-    transform: rows => {
-      const g = {};
-      rows.forEach(r => { g[r.Topic] = (g[r.Topic] || 0) + 1; });
-      const s = Object.entries(g).sort((a, b) => b[1] - a[1]);
-      return { labels: s.map(e => e[0]), values: s.map(e => e[1]), format: 'number' };
-    }},
-  'sup-resolution-mix': { label: 'How Conversations Resolved', description: 'AI vs. staff resolution split', note: 'Resolved by AI, escalated to a Rec agent mid-conversation, or routed straight to staff because the AI never engaged.', section: 'support',
-    reportType: 'support', size: 'md', icon: '🎯', component: 'donut',
-    transform: rows => {
-      const order = ['Resolved by AI', 'Escalated to Staff', 'Handled by Staff'];
-      const g = {};
-      rows.forEach(r => { g[r['Resolution State']] = (g[r['Resolution State']] || 0) + 1; });
-      const s = order.filter(k => g[k]);
-      return { labels: s, values: s.map(k => g[k]), format: 'number' };
-    }},
-  'sup-by-channel': { label: 'Conversations by Channel', description: 'Email vs. in-app chat', note: 'How residents reached support. Email skews toward billing and refunds; chat skews toward in-the-moment registration questions.', section: 'support',
-    reportType: 'support', size: 'md', icon: '📨', component: 'donut',
-    transform: rows => {
-      const g = {};
-      rows.forEach(r => { g[r.Channel] = (g[r.Channel] || 0) + 1; });
-      const s = Object.entries(g).sort((a, b) => b[1] - a[1]);
-      return { labels: s.map(e => e[0]), values: s.map(e => e[1]), format: 'number' };
-    }},
-  'sup-top-articles': { label: 'Help Articles Used Most', description: 'Support content the AI leaned on', note: 'Help center articles the AI agent cited when answering your residents. A heavily-cited article is a good candidate to surface directly in your own registration flow.', section: 'support',
-    reportType: 'support', size: 'md', icon: '📖', component: 'bar',
-    transform: rows => {
-      const g = {};
-      rows.forEach(r => (r['Help Articles'] || []).forEach(a => { g[a] = (g[a] || 0) + 1; }));
-      const s = Object.entries(g).sort((a, b) => b[1] - a[1]).slice(0, 8);
-      return { labels: s.map(e => e[0].length > 34 ? e[0].slice(0, 33) + '…' : e[0]), values: s.map(e => e[1]), format: 'number' };
-    }},
-  'tbl-support-topics': { label: 'Topic Breakdown', description: 'Volume, AI resolution, and speed by topic', note: 'Per-topic view of where volume concentrates and how well it self-serves. A topic with high volume and low AI resolution is the one worth fixing upstream.', section: 'support',
-    reportType: 'support', size: 'lg', icon: '📋', component: 'table',
-    transform: rows => {
-      const g = {};
-      rows.forEach(r => {
-        const t = (g[r.Topic] = g[r.Topic] || { n: 0, ai: 0, esc: 0, mins: [] });
-        t.n++;
-        if (r['Resolution State'] === 'Resolved by AI') t.ai++;
-        if (r.Escalated === 1) t.esc++;
-        if (r['Time to Close Minutes'] != null) t.mins.push(r['Time to Close Minutes']);
-      });
-      const median = a => {
-        if (!a.length) return null;
-        const s = [...a].sort((x, y) => x - y), m = Math.floor(s.length / 2);
-        return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
-      };
-      return { columns: ['Topic', 'Conversations', '% of Volume', 'Resolved by AI', 'Escalated', 'Median Resolve'],
-        data: Object.entries(g).sort((a, b) => b[1].n - a[1].n).map(([topic, t]) => {
-          const med = median(t.mins);
-          return [topic, t.n, ((t.n / rows.length) * 100).toFixed(1) + '%',
-            ((t.ai / t.n) * 100).toFixed(0) + '%', t.esc,
-            med == null ? '—' : (med >= 60 ? (med / 60).toFixed(1) + ' hr' : Math.round(med) + ' min')];
-        }) };
-    }},
 };
 
 // ═══════════════════════════════════════════════════════
@@ -4498,7 +4322,6 @@ function EditModal({ sections, onSave, onClose, availableReports, toggles, focus
   const availableSections = Object.values(SECTIONS).filter(s => {
       if (activeSectionIds.has(s.id)) return false;
       if (s.id === 'ai-briefing') return false;  // disabled until data pipeline audit
-      if (s.id === 'support') return false;      // lives in its own tab, not section config
       // Always on and rendered outside config.sections — offering to "add" it
       // would create a duplicate that renders nothing.
       if (s.id === 'live') return false;
@@ -4545,17 +4368,6 @@ function EditModal({ sections, onSave, onClose, availableReports, toggles, focus
                   {live ? 'refreshes every minute' : 'hidden'}
                 </span>
               </label>
-            </div>
-          )}
-          {availableReports.support && (
-            <div className="edit-section" style={{opacity:0.85,cursor:'default'}}
-              title="Included with every dashboard — Rec runs resident support for your org">
-              <div style={{display:'flex',alignItems:'center',gap:10,padding:'12px 14px'}}>
-                <span style={{fontSize:15}}>{SECTIONS.support.icon}</span>
-                <span style={{fontSize:13,fontWeight:600,color:'var(--text-primary)'}}>{SECTIONS.support.label}</span>
-                <span style={{fontSize:10,fontWeight:600,padding:'2px 8px',borderRadius:8,background:'var(--amber-glow)',color:'var(--amber)'}}>{'🔒'} Always included {'·'} its own tab</span>
-                <span style={{fontSize:11,color:'var(--text-muted)',marginLeft:'auto'}}>{SECTIONS.support.defaultWidgets.length} widgets + inbox</span>
-              </div>
             </div>
           )}
           {draft.map((sec, si) => {
@@ -4632,7 +4444,7 @@ function EditModal({ sections, onSave, onClose, availableReports, toggles, focus
 // ═══════════════════════════════════════════════════════
 //  TEMPLATE CHOOSER
 // ═══════════════════════════════════════════════════════
-function TemplateChooser({ onSelect, orgMeta, hasSupport }) {
+function TemplateChooser({ onSelect, orgMeta }) {
   const org = orgMeta || {};
   const [selected, setSelected] = useState(() => {
     const defaults = new Set(['revenue', 'facility', 'programs', 'users-demographics']);
@@ -4678,20 +4490,6 @@ function TemplateChooser({ onSelect, orgMeta, hasSupport }) {
         <div className="template-heading">Build Your Dashboard</div>
         <div className="template-sub">Select the sections you want. Each comes with default widgets you can customize later.</div>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,margin:'20px 0'}}>
-          {hasSupport && (() => { const sec = SECTIONS.support; return (
-            <div key="support" title="Included with every dashboard — Rec runs resident support for your org"
-              style={{display:'flex',alignItems:'flex-start',gap:12,padding:'14px 16px',cursor:'default',
-                border:'2px solid var(--accent, #3b82f6)',background:'var(--bg-accent-subtle, rgba(59,130,246,0.05))',
-                borderRadius:10,opacity:0.92}}>
-              <div style={{fontSize:10,marginTop:2,width:18,height:18,borderRadius:4,border:'2px solid var(--accent, #3b82f6)',
-                background:'var(--accent, #3b82f6)',color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontWeight:700}}>{'✓'}</div>
-              <div style={{flex:1,minWidth:0}}>
-                <div style={{fontSize:13,fontWeight:600,color:'var(--text-primary)'}}>{sec.icon} {sec.label} <span style={{fontSize:10,opacity:0.7}}>{'🔒'}</span></div>
-                <div style={{fontSize:11,color:'var(--text-secondary)',marginTop:2}}>{sec.description}</div>
-                <div style={{fontSize:10,color:'var(--text-muted)',marginTop:4}}>Always included {'·'} shown as its own tab</div>
-              </div>
-            </div>
-          ); })()}
           {['revenue','facility','programs','users-demographics','courts','fasttrack','memberships','products','instructors']
            .filter(key => SECTIONS[key])
            .map(key => { const sec = SECTIONS[key]; const totalW = Object.values(W).filter(w => w.section === key).length; const addlW = totalW - sec.defaultWidgets.length; return (
@@ -4972,50 +4770,6 @@ function msgTime(ts) {
   return new Date(ts * 1000).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
-function ForwardModal({ conv, onClose, onSent }) {
-  const [to, setTo] = useState('');
-  const [note, setNote] = useState('');
-  const [status, setStatus] = useState(null); // null | 'sending' | 'sent' | error string
-  async function send() {
-    if (!to) return;
-    setStatus('sending');
-    try {
-      const resp = await fetch(`/${ORG_SLUG}/api/support/inbox/${conv.id}/forward?token=${TOKEN}`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ to, note }) });
-      const json = await resp.json();
-      if (json.ok) { setStatus('sent'); track('support_forwarded', { conversationId: conv.id }); if (onSent) onSent(conv.id); setTimeout(onClose, 1200); }
-      else setStatus(json.error || 'Failed to send');
-    } catch (e) { setStatus('Failed to send'); }
-  }
-  return (
-    <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="modal-panel" style={{maxWidth:440}}>
-        <div className="modal-header">
-          <span className="modal-title">Forward to your team</span>
-          <button className="modal-close" onClick={onClose}>{'✕'}</button>
-        </div>
-        <div className="modal-body" style={{padding:'18px 24px'}}>
-          <div style={{fontSize:12,color:'var(--text-secondary)',marginBottom:14}}>
-            Emails this conversation — <b style={{color:'var(--text-primary)'}}>{conv.subject}</b> from {conv.contact.name} — to a member of your staff, with the full thread included.
-          </div>
-          <label style={{fontSize:11,fontWeight:600,color:'var(--text-muted)',display:'block',marginBottom:4}}>Send to</label>
-          <input type="email" className="date-input" style={{width:'100%',marginBottom:12}} placeholder="staff@torranceca.gov"
-            value={to} onChange={e => setTo(e.target.value)} autoFocus />
-          <label style={{fontSize:11,fontWeight:600,color:'var(--text-muted)',display:'block',marginBottom:4}}>Note (optional)</label>
-          <textarea className="date-input" style={{width:'100%',height:70,resize:'vertical',fontFamily:'var(--font-body)'}}
-            placeholder="Can you take a look at this one? Resident needs a residency badge approved." value={note} onChange={e => setNote(e.target.value)} />
-          {status && status !== 'sending' && status !== 'sent' && <div style={{fontSize:11,color:'var(--red)',marginTop:8}}>{status}</div>}
-        </div>
-        <div className="modal-footer">
-          <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn btn-amber" disabled={status === 'sending' || status === 'sent'} onClick={send}>
-            {status === 'sending' ? 'Sending…' : status === 'sent' ? '✓ Sent' : '✉ Forward'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 function NotifySettings({ initialEmails }) {
   const [open, setOpen] = useState(false);
@@ -5053,267 +4807,7 @@ function NotifySettings({ initialEmails }) {
   );
 }
 
-function SupportInbox({ actionsDisabled, onConversationSeen, notifyEmails, dateRange, refreshNonce }) {
-  const [convs, setConvs] = useState(null);
-  const [selectedId, setSelectedId] = useState(null);
-  const [thread, setThread] = useState(null);
-  const [isLive, setIsLive] = useState(false);
-  const [filter, setFilter] = useState('open'); // all | open | closed — default to Open; no one wants to land on closed tickets
-  const [search, setSearch] = useState('');
-  const [sort, setSort] = useState('newest'); // newest | oldest | activity
-  const [forwardOpen, setForwardOpen] = useState(false);
-  const [statusOpen, setStatusOpen] = useState(false);
-  const [statusBusy, setStatusBusy] = useState(false);
-  const [noteText, setNoteText] = useState('');
-  const [noteBusy, setNoteBusy] = useState(false);
 
-  async function sendNote() {
-    const text = noteText.trim();
-    if (!thread || !text || noteBusy) return;
-    setNoteBusy(true);
-    try {
-      const resp = await fetch(`/${ORG_SLUG}/api/support/inbox/${thread.id}/note?token=${TOKEN}`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
-      const json = await resp.json();
-      if (json.ok) {
-        setThread(t => t && t.id === thread.id ? { ...t, messages: [...t.messages,
-          { role: 'note', name: 'Your team', at: Math.floor(Date.now() / 1000), text: `💬 Note to Rec Support: ${text}` }] } : t);
-        setNoteText('');
-        track('support_note_added', { conversationId: thread.id });
-      }
-    } catch (e) {}
-    setNoteBusy(false);
-  }
-
-  async function setStatus(status) {
-    if (!thread || statusBusy) return;
-    setStatusBusy(true);
-    try {
-      const resp = await fetch(`/${ORG_SLUG}/api/support/inbox/${thread.id}/status?token=${TOKEN}`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) });
-      const json = await resp.json();
-      if (json.ok) {
-        const patch = { orgResolved: !!json.resolved, state: json.state };
-        setThread(t => t && t.id === thread.id ? { ...t, ...patch } : t);
-        setConvs(cs => cs.map(c => c.id === thread.id ? { ...c, ...patch } : c));
-        track('support_status_set', { conversationId: thread.id, status });
-      }
-    } catch (e) {}
-    setStatusBusy(false); setStatusOpen(false);
-  }
-
-  const [loadError, setLoadError] = useState(false);
-  const [lastFetched, setLastFetched] = useState(null);
-  const [refreshing, setRefreshing] = useState(false);
-  function loadInbox(opts) {
-    const { quiet, fresh } = opts || {};
-    setLoadError(false);
-    if (!quiet) setConvs(null); // quiet refreshes update in place, no skeleton flash
-    else setRefreshing(true);
-    const range = dateRange ? `&start=${dateRange.start}&end=${dateRange.end}` : '';
-    fetch(`/${ORG_SLUG}/api/support/inbox?token=${TOKEN}${range}${fresh ? '&fresh=1' : ''}`).then(r => r.json()).then(json => {
-      if (!json.conversations) throw new Error(json.error || 'no data');
-      setConvs(prev => {
-        // keep the current selection when it still exists; only auto-select on first load
-        const deepLink = params.get('conversation');
-        setSelectedId(sel => {
-          if (json.conversations.some(c => c.id === sel)) return sel;
-          if (deepLink && json.conversations.some(c => c.id === deepLink)) return deepLink;
-          return json.conversations[0]?.id || null;
-        });
-        return json.conversations;
-      });
-      setIsLive(!!json.live); setLastFetched(Date.now()); setRefreshing(false);
-    }).catch(() => { setRefreshing(false); if (!quiet) { setConvs([]); setLoadError(true); } });
-  }
-  useEffect(() => loadInbox(), [dateRange?.start, dateRange?.end]); // inbox follows the dashboard date picker
-  useEffect(() => { if (refreshNonce) loadInbox({ quiet: true, fresh: true }); }, [refreshNonce]); // header Refresh button
-  // Quiet auto-refresh every 60s while the browser tab is visible
-  useEffect(() => {
-    const t = setInterval(() => { if (document.visibilityState === 'visible') loadInbox({ quiet: true }); }, 60000);
-    return () => clearInterval(t);
-  }, [dateRange?.start, dateRange?.end]);
-
-  useEffect(() => {
-    if (!selectedId) return;
-    setThread(null);
-    fetch(`/${ORG_SLUG}/api/support/inbox/${selectedId}?token=${TOKEN}`).then(r => r.json())
-      .then(json => setThread(json.conversation || null)).catch(() => {});
-    if (onConversationSeen) onConversationSeen(selectedId); // shrink the tab's escalation badge
-    track('support_thread_viewed', { conversationId: selectedId });
-  }, [selectedId]);
-
-  if (!convs) return (
-    <div className="dashboard-section">
-      <div className="section-header"><span className="section-icon">{'📥'}</span><span className="section-label">Support Inbox</span><div className="section-line" /></div>
-      <div className="skeleton skeleton-chart" style={{height:420}} />
-      <div style={{fontSize:11,color:'var(--text-muted)',marginTop:8}}>Loading resident conversations from Intercom — the first load can take a minute…</div>
-    </div>
-  );
-  if (loadError) return (
-    <div className="dashboard-section">
-      <div className="section-header"><span className="section-icon">{'📥'}</span><span className="section-label">Support Inbox</span><div className="section-line" /></div>
-      <div style={{padding:24,fontSize:12,color:'var(--text-secondary)',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:12}}>
-        Couldn't load conversations. <button className="btn btn-sm" style={{marginLeft:8}} onClick={loadInbox}>{'↻'} Retry</button>
-      </div>
-    </div>
-  );
-
-  const q = search.trim().toLowerCase();
-  const SORTS = {
-    newest: (a, b) => b.createdAt - a.createdAt,
-    oldest: (a, b) => a.createdAt - b.createdAt,
-    activity: (a, b) => b.updatedAt - a.updatedAt,
-  };
-  const shown = convs
-    .filter(c => filter === 'all' || c.state === filter)
-    .filter(c => !q || [c.subject, c.contact.name, c.contact.email, c.topic, c.preview]
-      .some(v => (v || '').toLowerCase().includes(q)))
-    .sort(SORTS[sort] || SORTS.newest);
-  const openCount = convs.filter(c => c.state === 'open').length;
-
-  return (
-    <div className="dashboard-section">
-      <div className="section-header">
-        <span className="section-icon">{'📥'}</span>
-        <span className="section-label">Support Inbox</span>
-        <div className="section-line" />
-        <span style={{fontSize:10,fontWeight:600,padding:'2px 8px',borderRadius:8,
-          background: isLive ? 'rgba(34,197,94,0.15)' : 'rgba(128,128,128,0.15)',
-          color: isLive ? 'var(--green)' : 'var(--text-muted)'}}>
-          {isLive ? '● LIVE · Intercom' : 'Snapshot'}{dateRange ? ` · ${shortDate(dateRange.start)} – ${shortDate(dateRange.end)}` : ''}</span>
-        <button className="btn btn-sm" title="Refresh conversations now" disabled={refreshing}
-          onClick={() => { loadInbox({ quiet: true, fresh: true }); track('support_inbox_refreshed'); }}>
-          {refreshing ? '⏳' : '↻'}</button>
-        {lastFetched && <span style={{fontSize:10,color:'var(--text-muted)'}} title="Auto-refreshes every minute">
-          updated {Math.max(0, Math.round((Date.now() - lastFetched) / 60000))}m ago</span>}
-        {!IS_SHARE && <NotifySettings initialEmails={notifyEmails} />}
-        <span className="section-badge">{convs.length} conversations {'·'} {openCount} open</span>
-      </div>
-      <div style={{display:'flex',gap:6,margin:'10px 0',alignItems:'center',flexWrap:'wrap'}}>
-        {['all','open','closed'].map(f => (
-          <button key={f} className={`btn-quick ${filter===f?'active':''}`} onClick={()=>setFilter(f)}>
-            {f === 'all' ? `All (${convs.length})` : f === 'open' ? `Open (${openCount})` : `Closed (${convs.length - openCount})`}
-          </button>
-        ))}
-        <input type="search" className="date-input" style={{flex:'1 1 160px',minWidth:140,maxWidth:280}}
-          placeholder="🔍 Search name, subject, topic…" value={search} onChange={e => setSearch(e.target.value)} />
-        <select className="date-input" style={{cursor:'pointer'}} value={sort} onChange={e => { setSort(e.target.value); track('support_sort_changed', { sort: e.target.value }); }}>
-          <option value="newest">Newest first</option>
-          <option value="oldest">Oldest first</option>
-          <option value="activity">Recent activity</option>
-        </select>
-        {q && <span style={{fontSize:11,color:'var(--text-muted)'}}>{shown.length} match{shown.length === 1 ? '' : 'es'}</span>}
-      </div>
-      <div className="inbox-wrap">
-        <div className="inbox-list">
-          {shown.map(c => (
-            <div key={c.id} className={`inbox-item ${c.id === selectedId ? 'selected' : ''}`} onClick={() => setSelectedId(c.id)}>
-              <div className="ii-top">
-                <span className="ii-dot" style={{background: c.state === 'open' ? 'var(--green)' : 'var(--text-muted)'}} />
-                <span className="ii-name">{c.contact.name}</span>
-                <span className="ii-time">{timeAgo(c.updatedAt)}</span>
-              </div>
-              <div className="ii-subject">{c.subject}</div>
-              <div className="ii-preview">{c.preview}</div>
-              <div className="ii-chips">
-                <span className="ii-chip">{c.channel}</span>
-                <span className="ii-chip">{c.topic}</span>
-                {c.resolution === 'Resolved by AI' && <span className="ii-chip ai">{'✨'} AI resolved</span>}
-                {c.resolution === 'Escalated to Staff' && <span className="ii-chip esc">{'↑'} Escalated</span>}
-                {c.orgEscalated && !c.orgResolved && <span className="ii-chip org">{'📤'} Sent to staff</span>}
-                {c.orgResolved && <span className="ii-chip done">{'✅'} Resolved by staff</span>}
-              </div>
-            </div>
-          ))}
-          {!shown.length && <div style={{padding:20,fontSize:12,color:'var(--text-muted)'}}>{q ? `No matches for “${search.trim()}”.` : `No ${filter} conversations.`}</div>}
-        </div>
-        <div className="inbox-thread">
-          {thread ? (
-            <React.Fragment>
-              <div className="thread-head">
-                <div style={{flex:1}}>
-                  <div className="th-subject">{thread.subject}
-                    {' '}{thread.orgEscalated && !thread.orgResolved && <span className="ii-chip org" style={{verticalAlign:'middle'}}>{'📤'} Sent to staff</span>}
-                    {' '}{thread.orgResolved && <span className="ii-chip done" style={{verticalAlign:'middle'}}>{'✅'} Resolved by staff</span>}</div>
-                  <div className="th-meta">
-                    {thread.recProfileUrl ? (
-                      <a href={thread.recProfileUrl} target="_blank" rel="noopener noreferrer" title="Open this resident's profile in your Rec admin console"
-                        style={{color:'#3b82f6',textDecoration:'none',fontWeight:600}}
-                        onClick={() => track('support_profile_opened', { conversationId: thread.id })}>
-                        {thread.contact.name} {'·'} {thread.contact.email} {'↗'}</a>
-                    ) : (<span>{thread.contact.name} {'·'} {thread.contact.email}</span>)}
-                    {' ·'} {thread.channel} {'·'} {thread.topic}
-                    {'·'} <span style={{color: thread.state === 'open' ? 'var(--green)' : 'var(--text-muted)', fontWeight:600}}>{thread.state}</span></div>
-                </div>
-                {!actionsDisabled && (
-                  <div style={{display:'flex',gap:8,alignItems:'center'}}>
-                    <div style={{position:'relative'}}>
-                      <button className="btn" disabled={statusBusy} onClick={() => setStatusOpen(o => !o)}>
-                        {statusBusy ? 'Updating…' : thread.orgResolved ? '✅ Resolved' : '✓ Update status'}</button>
-                      {statusOpen && (
-                        <div className="status-menu" onClick={e => e.stopPropagation()}>
-                          <button onClick={() => setStatus('resolved')}><span>{'✅'}</span>
-                            <span><div>Resolved — close it</div><div className="sm-sub">Handled by your team. Closes in Intercom, clears from your list.</div></span></button>
-                          <button onClick={() => setStatus('no_action')}><span>{'⛔'}</span>
-                            <span><div>No action needed — close it</div><div className="sm-sub">Nothing to do here. Closes in Intercom with a note to Rec.</div></span></button>
-                          <button onClick={() => setStatus('reopen')}><span>{'🔄'}</span>
-                            <span><div>Send back to Rec</div><div className="sm-sub">Reopens in Intercom — Rec Support keeps working it.</div></span></button>
-                        </div>
-                      )}
-                    </div>
-                    <button className="btn btn-amber" onClick={() => { setForwardOpen(true); track('support_forward_opened', { conversationId: thread.id }); }}>{'✉'} Forward to team</button>
-                  </div>
-                )}
-              </div>
-              <div className="thread-body">
-                {thread.messages.map((m, i) => (
-                  <div key={i} className={`msg ${m.role}`}>
-                    <div className="msg-meta">
-                      <span style={{fontWeight:700,color:'var(--text-secondary)'}}>{m.name}</span>
-                      {m.role !== 'resident' && <span className={`msg-role-badge ${m.role}`}>{m.role === 'ai' ? '✨ Rec AI' : m.role === 'note' ? 'Note · not visible to resident' : 'Rec Support'}</span>}
-                      <span>{msgTime(m.at)}</span>
-                    </div>
-                    <div className="msg-bubble">{m.text}</div>
-                  </div>
-                ))}
-              </div>
-              {!actionsDisabled && (
-                <div style={{borderTop:'1px solid var(--border-subtle)',padding:'10px 14px',display:'flex',gap:8,alignItems:'flex-end'}}>
-                  <textarea className="date-input" style={{flex:1,height:44,resize:'vertical',fontFamily:'var(--font-body)',fontSize:12}}
-                    placeholder="Note to Rec Support — e.g. 'Residency approved on our side, please let them know.' The resident never sees this."
-                    value={noteText} onChange={e => setNoteText(e.target.value)} />
-                  <button className="btn" disabled={noteBusy || !noteText.trim()} onClick={sendNote}>
-                    {noteBusy ? 'Sending…' : '💬 Send note'}</button>
-                </div>
-              )}
-            </React.Fragment>
-          ) : (
-            <div style={{display:'flex',alignItems:'center',justifyContent:'center',flex:1,color:'var(--text-muted)',fontSize:12}}>
-              {selectedId ? 'Loading conversation…' : 'Select a conversation'}</div>
-          )}
-        </div>
-      </div>
-      {forwardOpen && thread && <ForwardModal conv={thread} onClose={() => setForwardOpen(false)}
-        onSent={id => { // reflect the Intercom tag immediately, without waiting for a refetch
-          setThread(t => t && t.id === id ? { ...t, orgEscalated: true } : t);
-          setConvs(cs => cs.map(c => c.id === id ? { ...c, orgEscalated: true } : c));
-        }} />}
-    </div>
-  );
-}
-
-function SupportTab({ reportData, loading, freshRts, priorReportData, targets, onTargetChange, chartTypes, onChartTypeChange, dateRange, aiEnabled, supportReadOnly, onConversationSeen, notifyEmails, refreshNonce }) {
-  // Inbox first — the conversations are the headline; metrics follow below.
-  return (
-    <React.Fragment>
-      <SupportInbox actionsDisabled={supportReadOnly} onConversationSeen={onConversationSeen} notifyEmails={notifyEmails} dateRange={dateRange} refreshNonce={refreshNonce} />
-      <SectionBlock sectionId="support" widgetIds={SECTIONS.support.defaultWidgets} reportData={reportData} loading={loading} freshRts={freshRts} priorReportData={priorReportData}
-        targets={targets} onTargetChange={onTargetChange} chartTypes={chartTypes} onChartTypeChange={onChartTypeChange} dateRange={dateRange} aiEnabled={aiEnabled}
-        reportLinksEnabled={false} reportingBaseUrl="" />
-    </React.Fragment>
-  );
-}
 
 // One-time dismissible "What's New" popup. Shows the first announcement whose
 // id isn't in this browser's dismissed set (localStorage, per org). Server has
@@ -5495,31 +4989,6 @@ function DashboardApp() {
     track('edit_opened', { from: 'section', section: sectionId });
   }
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState(params.get('tab') === 'support' ? 'support' : 'dashboard');
-  const [supportRefreshNonce, setSupportRefreshNonce] = useState(0);
-
-  // ── Escalation badge: red count on the Customer Support tab ──
-  // Counts escalated conversations this browser hasn't opened yet; viewing
-  // a thread marks it seen (localStorage) and the badge shrinks.
-  const [supportConvs, setSupportConvs] = useState(null);
-  const [seenBump, setSeenBump] = useState(0);
-  const SEEN_KEY = `rec-support-seen-${ORG_SLUG}`;
-  const getSeen = () => { try { return new Set(JSON.parse(localStorage.getItem(SEEN_KEY) || '[]')); } catch (e) { return new Set(); } };
-  const markConversationSeen = useCallback(id => {
-    const seen = getSeen();
-    if (seen.has(id)) return;
-    seen.add(id);
-    try { localStorage.setItem(SEEN_KEY, JSON.stringify([...seen])); } catch (e) {}
-    setSeenBump(b => b + 1);
-  }, []);
-  useEffect(() => {
-    if (!availableReports.support || IS_SHARE || IS_PRINT) return;
-    fetch(`/${ORG_SLUG}/api/support/inbox?token=${TOKEN}&start=${dateRange.start}&end=${dateRange.end}`).then(r => r.json())
-      .then(json => setSupportConvs(json.conversations || [])).catch(() => {});
-  }, [availableReports.support, dateRange.start, dateRange.end]);
-  // Open questions awaiting a reply — surfaced as a red count on the Customer
-  // Support tab so the admin sees pending questions without opening the tab.
-  const openBadge = supportConvs ? supportConvs.filter(c => c.state === 'open').length : 0;
   const [lastRefresh, setLastRefresh] = useState(null);
   const [fetchErrors, setFetchErrors] = useState({});
   const [theme, setTheme] = useState('light');
@@ -5543,7 +5012,7 @@ function DashboardApp() {
         const json = await resp.json();
         setAvailableReports(json.availableReports || {});
         var _m = { name: json.orgName, logoUrl: json.logoUrl, city: json.city, state: json.state, toggles: json.toggles || {}, reportingBaseUrl: json.reportingBaseUrl || '',
-          reportingSlug: json.reportingSlug || '', reportingToken: json.reportingToken || '', reportVisibility: json.reportVisibility || null, readOnly: json.readOnly || false, expiresAt: json.expiresAt || null, supportReadOnly: json.supportReadOnly || false, supportNotify: json.supportNotify || [], announcements: json.announcements || [],
+          reportingSlug: json.reportingSlug || '', reportingToken: json.reportingToken || '', reportVisibility: json.reportVisibility || null, readOnly: json.readOnly || false, expiresAt: json.expiresAt || null, announcements: json.announcements || [],
           // The rec.us org uuid, for admin deep links. Explicitly copied like every
           // other field here — orgMeta is a whitelist, so a key the server sends
           // and this map forgets is simply absent, silently.
@@ -5565,7 +5034,7 @@ function DashboardApp() {
   }, []);
 
   // Only refetch when sections/widgets change or date range changes, NOT theme/cacheTTL
-  const dataKey = config && config !== 'new' ? JSON.stringify(config.sections.map(s=>s.id+':'+s.widgets.join(','))) + (availableReports.support ? '+support' : '') : '';
+  const dataKey = config && config !== 'new' ? JSON.stringify(config.sections.map(s=>s.id+':'+s.widgets.join(','))) : '';
 
   useEffect(() => {
     if (!config || config === 'new') { setLoading(false); return; }
@@ -5574,7 +5043,6 @@ function DashboardApp() {
     allWidgetIds.forEach(id => { var def = W[id]; if (def && def._extraReportTypes) def._extraReportTypes.forEach(function(rt){ baseRts.push(rt); }); });
     const rts = [...new Set(baseRts)];
     // The Customer Support tab is outside section config — load its data whenever the org has it
-    if (availableReports.support && !rts.includes('support')) rts.push('support');
     if (!rts.length) { setLoading(false); return; }
     setLoading(true); clearDataStore(); setPriorReportData(null); setFreshRts({}); setFetchErrors({});
 
@@ -5722,7 +5190,7 @@ function DashboardApp() {
     }
   }, [loading, lastRefresh]);
 
-  if (config === 'new') return <TemplateChooser onSelect={handleSelectTemplate} orgMeta={orgMeta} hasSupport={!!availableReports.support} />;
+  if (config === 'new') return <TemplateChooser onSelect={handleSelectTemplate} orgMeta={orgMeta} />;
   if (!config) return <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',color:'var(--text-secondary)'}}>Loading...</div>;
 
   const isReadOnly = orgMeta.readOnly || IS_SHARE;
@@ -5730,7 +5198,6 @@ function DashboardApp() {
   const displaySections = (() => {
     const filtered = config.sections.filter(sec => {
       if (sec.id === 'ai-briefing') return false;
-      if (sec.id === 'support') return false; // lives in its own tab
       if (PRINT_SECTIONS && !PRINT_SECTIONS.includes(sec.id)) return false;
       if (!orgMeta.reportVisibility) return true;
       const reportType = SECTION_REPORT_MAP[sec.id];
@@ -5815,15 +5282,6 @@ function DashboardApp() {
         </div>
       )}
 
-      {!IS_PRINT && availableReports.support && (
-        <div className="g-tabs" style={{marginBottom:14}}>
-          <button className={`g-tab ${activeTab==='dashboard'?'active':''}`} onClick={()=>{setActiveTab('dashboard');track('tab_changed',{tab:'dashboard'});}}>{'📊'} Dashboard</button>
-          <button className={`g-tab ${activeTab==='support'?'active':''}`} onClick={()=>{setActiveTab('support');track('tab_changed',{tab:'support'});}}>{'💬'} Customer Support
-            {openBadge > 0 && <span className="tab-alert" title={`${openBadge} open question${openBadge > 1 ? 's' : ''} awaiting a reply`}>{openBadge}</span>}
-          </button>
-        </div>
-      )}
-
       <div>
         {false && !IS_PRINT && config.sections.some(s => s.id === 'ai-briefing') && (
           <BriefingSection reportData={reportData} loading={loading} dateRange={dateRange} briefingRef={briefingRef} />
@@ -5839,22 +5297,17 @@ function DashboardApp() {
         {/* `!== false`, never a truthy test: an org that has never opened Edit
             Dashboard has no value saved, and absent has to keep meaning ON or
             the whole section would disappear for everyone the day this shipped. */}
-        {!IS_PRINT && activeTab === 'dashboard' && config.liveWidgets !== false
+        {!IS_PRINT && config.liveWidgets !== false
           && (availableReports.enrollments || availableReports['checkins-live']) && (
           <LiveSection reportingBaseUrl={orgMeta.reportingBaseUrl || ''} recOrgId={orgMeta.recOrgId || ''}
                        hasCheckins={!!availableReports['checkins-live']} />
         )}
-        {(IS_PRINT || activeTab === 'dashboard' || !availableReports.support) && displaySections.map((sec, i) => (
+        {displaySections.map((sec, i) => (
           <SectionBlock key={sec.id+i+theme} sectionId={sec.id} widgetIds={sec.widgets} reportData={reportData} loading={loading} freshRts={freshRts} priorReportData={priorReportData}
             targets={targets} onTargetChange={handleTargetChange} chartTypes={chartTypes} onChartTypeChange={handleChartTypeChange} dateRange={dateRange} aiEnabled={!isReadOnly && orgMeta.toggles?.ai !== false}
             reportLinksEnabled={!isReadOnly && orgMeta.toggles?.reportLinks === true} reportingBaseUrl={orgMeta.reportingBaseUrl || ''}
             onCustomize={isReadOnly || IS_PRINT ? null : openSectionWidgets} />
         ))}
-        {!IS_PRINT && activeTab === 'support' && availableReports.support && (
-          <SupportTab key={'support'+theme} reportData={reportData} loading={loading} freshRts={freshRts} priorReportData={priorReportData} targets={targets}
-            onTargetChange={handleTargetChange} chartTypes={chartTypes} onChartTypeChange={handleChartTypeChange} dateRange={dateRange} aiEnabled={!isReadOnly && orgMeta.toggles?.ai !== false}
-            supportReadOnly={orgMeta.supportReadOnly} onConversationSeen={markConversationSeen} notifyEmails={orgMeta.supportNotify} refreshNonce={supportRefreshNonce} />
-        )}
       </div>
 
       {!isReadOnly && editOpen && <EditModal sections={config.sections.filter(sec => {
