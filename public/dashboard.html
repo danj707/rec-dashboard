@@ -3397,6 +3397,59 @@ function liveHasFacility(a) {
   return !!a['facility-today'];
 }
 
+/* ── WHICH LIVE CARDS THIS ORG SHOWS ──────────────────────────────────
+   ONE registry, read by the resolver, the section and the Edit Dashboard
+   list. Three surfaces asking the same question separately is how a card
+   becomes tickable in the editor and never renders (or renders and cannot be
+   turned off) — the same rule as mbPlanKey and vertRowMatch in the sibling
+   repo.
+
+   `defaultOn` is Dan's call, not a symmetry: Live Enrollments and Membership
+   Check-Ins are the two an org wants on a wall screen, and the other two are
+   opt-in so a dashboard does not arrive with four cards nobody asked for.
+
+   `has` is the PRESENCE test — an org whose Metabase lacks the card cannot be
+   offered it, whatever is saved. Programs Live reads the SAME feed as Live
+   Enrollments, which is why it shares the enrollments test rather than
+   carrying one of its own. */
+const LIVE_CARDS = [
+  { id: 'enrollments', label: 'Live Enrollments', icon: '\uD83D\uDCDD', defaultOn: true,
+    desc: 'Registrations as they happen, today', has: liveHasEnrollments },
+  { id: 'programs', label: 'Programs Live', icon: '\uD83C\uDFAF', defaultOn: false,
+    desc: 'Top sections by money received', has: liveHasEnrollments },
+  { id: 'checkins', label: 'Membership Check-Ins', icon: '\uD83D\uDD04', defaultOn: true,
+    desc: 'Members and passes as they scan in, today', has: liveHasCheckins },
+  { id: 'facility', label: 'Facility Bookings', icon: '\uD83C\uDFDF', defaultOn: false,
+    desc: 'Courts, fields and rooms as they book, today', has: liveHasFacility },
+];
+
+/* ABSENT MEANS THE CARD'S OWN DEFAULT, NOT ON — and this is the one line to
+   get right. Every other toggle in this file reads `!== false`, because absent
+   there means an org that has never opened Edit Dashboard and the answer is
+   yes. Here two of the four default OFF, so a `!== false` test would switch on
+   the two Dan asked to be opt-in for every org on the platform the moment this
+   shipped. A saved `false` is off, a saved `true` is on, and NOTHING SAVED is
+   whatever that card's default says.
+
+   Module scope so a spec can RUN it over the four ids against a saved map,
+   rather than regexing a component — a regex passes on an inverted test. */
+function liveCardOn(id, saved) {
+  const def = LIVE_CARDS.find(c => c.id === id);
+  if (!def) return false;
+  if (!saved || typeof saved !== 'object') return def.defaultOn;
+  const v = saved[id];
+  return v === undefined || v === null ? def.defaultOn : v !== false;
+}
+
+/* Resolved once and handed down: on AND present. The section reads this to
+   decide what to render, and the fetch gates read it too — a card nobody can
+   see must not cost a Metabase query every sixty seconds per viewer. */
+function liveCardsResolved(saved, available) {
+  const out = {};
+  for (const c of LIVE_CARDS) out[c.id] = liveCardOn(c.id, saved) && !!c.has(available);
+  return out;
+}
+
 function liveFeedChoice(available) {
   const a = available || {};
   return {
@@ -3758,7 +3811,12 @@ function liveKey(r) {
    which on a pair of cards sitting side by side is the one thing that would
    make a viewer stop trusting either. Same rule as the reporting project's
    progAutopayCell going through progAutopayShare rather than its own maths. */
-function useLiveEnrollments(onAvailable, feed) {
+/* `enabled` defaults to true so any caller that predates the per-card
+   toggles is unaffected. Two cards share this feed, so the section passes
+   true when EITHER is on — gating on one of them would silently starve the
+   other. */
+function useLiveEnrollments(onAvailable, feed, enabled) {
+  if (enabled === undefined) enabled = true;
   const [rows, setRows] = useState(null);
   /* THE HISTORY, ON ITS OWN CLOCK. Null on the wide feed, where it arrives
      inside `rows` instead — and null is exactly what liveBySection wants there,
@@ -3787,6 +3845,10 @@ function useLiveEnrollments(onAvailable, feed) {
   const [freshRows, setFreshRows] = useState(null);
 
   const load = React.useCallback(() => {
+    /* A CARD NOBODY CAN SEE MUST NOT COST A QUERY. Both readers off means no
+       fetch at all, rather than a poll every sixty seconds per viewer for
+       rows nothing renders. Same gate as useLiveCheckins and useLiveFacility. */
+    if (!enabled) { setLoading(false); return; }
     /* THE LIGHT PATH SENDS NO DATES AT ALL. The card resolves the org's own
        today in SQL, so a window here would be this browser's opinion about a
        day the org is the authority on — which is the bug the card removes.
@@ -3834,7 +3896,7 @@ function useLiveEnrollments(onAvailable, feed) {
         if (onAvailable) onAvailable(true);
       })
       .catch(() => { setErr(true); setLoading(false); if (onAvailable) onAvailable(false); });
-  }, [onAvailable, feed]);
+  }, [onAvailable, feed, enabled]);
 
   /* THE ROLLUP IS FETCHED SEPARATELY AND RARELY, which is the whole saving. It
      covers complete days only, so within a day its answer cannot change; the
@@ -3882,7 +3944,7 @@ function useLiveEnrollments(onAvailable, feed) {
     if (wasPaused) load();
     const t = setInterval(load, LIVE_POLL_MS);
     return () => clearInterval(t);
-  }, [load, paused]);
+  }, [load, paused, enabled]);
   /* AND IT REFRESHES THE MOMENT THE TAB IS LOOKED AT. A 60-second interval in
      a hidden tab is not a 60-second interval: browsers throttle timers in
      backgrounded pages hard, so a dashboard left open on a second monitor can
@@ -4839,7 +4901,12 @@ function FacilityBookings({ feed, recOrgId }) {
   );
 }
 
-function LiveSection({ reportingBaseUrl, recOrgId, hasCheckins, hasFacility, availableReports }) {
+/* `cards` is the RESOLVED map from liveCardsResolved — on AND present — so
+   this component never re-derives the decision. It gates the fetches as well
+   as the render, because a card switched off must stop costing a query rather
+   than merely stop being drawn. */
+function LiveSection({ reportingBaseUrl, recOrgId, hasCheckins, hasFacility, availableReports, cards }) {
+  cards = cards || {};
   const sec = SECTIONS.live;
   /* THE SECTION HIDES WITH ITS WIDGETS. The counter renders nothing when the
      feed cannot answer — that is the absence rule — but a header and an empty
@@ -4861,12 +4928,24 @@ function LiveSection({ reportingBaseUrl, recOrgId, hasCheckins, hasFacility, ava
      two hooks and the leaderboard cannot end up on different opinions about
      which feed they are reading. */
   const choice = liveFeedChoice(availableReports);
-  const feed   = useLiveEnrollments(setAlive, choice.enrollments);
-  const ciFeed = useLiveCheckins(setCiAlive, !!hasCheckins, choice.checkins);
-  const facFeed = useLiveFacility(setFacAlive, !!hasFacility);
-  const showCi  = !!hasCheckins && ciAlive;
-  const showFac = !!hasFacility && facAlive;
-  if (!alive && !showCi && !showFac) return null;
+  /* ONE FEED, TWO READERS. Live Enrollments and Programs Live are the same
+     query, so it runs while EITHER is on and stops only when both are off.
+     Gating it on the enrollments card alone would leave Programs Live drawing
+     from a feed nobody fetched. */
+  const wantEnroll = !!cards.enrollments || !!cards.programs;
+  const feed   = useLiveEnrollments(setAlive, choice.enrollments, wantEnroll);
+  const ciFeed = useLiveCheckins(setCiAlive, !!hasCheckins && !!cards.checkins, choice.checkins);
+  const facFeed = useLiveFacility(setFacAlive, !!hasFacility && !!cards.facility);
+  const showEnroll = !!cards.enrollments && alive;
+  const showProg   = !!cards.programs && alive;
+  const showCi  = !!hasCheckins && !!cards.checkins && ciAlive;
+  const showFac = !!hasFacility && !!cards.facility && facAlive;
+  /* THE SECTION HIDES WITH ITS WIDGETS, and now that each card can be switched
+     off individually the emptiness test has to count the SWITCHES too — the
+     old test asked only whether the feeds were alive, so an org that turned
+     all four off would have kept a heading over an empty grid, which is the
+     dead end the original comment above exists to prevent. */
+  if (!showEnroll && !showProg && !showCi && !showFac) return null;
   return (
     <div className="dashboard-section" data-live-section="1">
       <div className="section-header">
@@ -4876,8 +4955,8 @@ function LiveSection({ reportingBaseUrl, recOrgId, hasCheckins, hasFacility, ava
         <div className="section-line" />
       </div>
       <div className="widget-grid">
-        {alive ? <LiveRegistrations feed={feed} recOrgId={recOrgId} /> : null}
-        {alive ? <ProgramsLive feed={feed} recOrgId={recOrgId} /> : null}
+        {showEnroll ? <LiveRegistrations feed={feed} recOrgId={recOrgId} /> : null}
+        {showProg ? <ProgramsLive feed={feed} recOrgId={recOrgId} /> : null}
         {showCi ? <MembershipCheckins feed={ciFeed} recOrgId={recOrgId} /> : null}
         {showFac ? <FacilityBookings feed={facFeed} recOrgId={recOrgId} /> : null}
       </div>
@@ -5200,7 +5279,7 @@ function SectionBlock({ sectionId, widgetIds, reportData, loading, freshRts, tar
 const MAX_PER_SECTION = 999;
 const MAX_TOTAL = 999;
 
-function EditModal({ sections, onSave, onClose, availableReports, toggles, focusSection, liveOn }) {
+function EditModal({ sections, onSave, onClose, availableReports, toggles, focusSection, liveOn, liveCardsOn }) {
   const [draft, setDraft] = useState(sections.map(s => ({ ...s, widgets: [...s.widgets] })));
   /* THE LIVE SECTION IS A CHOICE NOW, not a fact. Dan: "need a way to toggle
      off these live widgets in the UI/edit dashboard section, as cool as they
@@ -5212,6 +5291,21 @@ function EditModal({ sections, onSave, onClose, availableReports, toggles, focus
      an org that has never opened this dialog has no value saved, and absent has
      to keep meaning on or the section would vanish for everyone on deploy. */
   const [live, setLive] = useState(liveOn !== false);
+  /* PER-CARD DRAFT, seeded through the resolver rather than from the raw saved
+     map — so an org that has never opened this modal sees the two ON defaults
+     already ticked instead of four empty boxes, and Save then writes an
+     explicit value for all four. Seeding from `liveCardsOn` directly would show
+     everything unticked and a Save would switch off the two that are meant to
+     be on by default. */
+  const [liveCards, setLiveCards] = useState(() => {
+    const out = {};
+    for (const c of LIVE_CARDS) out[c.id] = liveCardOn(c.id, liveCardsOn);
+    return out;
+  });
+  /* Only cards this org's Metabase can actually answer are offerable. A ticked
+     box for a card that can never render is the dead end this repo keeps
+     writing down. */
+  const liveOffer = LIVE_CARDS.filter(c => !!c.has(availableReports));
   // Opening from a section's own "N widgets" badge lands on THAT section rather
   // than on the first one — the whole point of the per-section entry point is
   // not having to hunt for the section you were already looking at.
@@ -5294,6 +5388,28 @@ function EditModal({ sections, onSave, onClose, availableReports, toggles, focus
                   {live ? 'refreshes every minute' : 'hidden'}
                 </span>
               </label>
+              {/* THE FOUR CARDS, same treatment as any other section's widget
+                  list. Only shown while the section itself is on — offering
+                  per-card ticks under a switched-off section is two controls
+                  producing one state, which is a control that looks broken. */}
+              {live && liveOffer.length > 0 && (
+                <div className="widget-list" data-edit-live-cards={liveOffer.filter(c => liveCards[c.id]).length}>
+                  {liveOffer.map(c => (
+                    <label key={c.id} className="widget-list-item" data-edit-live-card={c.id}
+                           data-edit-live-card-on={liveCards[c.id] ? '1' : '0'}
+                           style={{cursor:'pointer'}}>
+                      <input type="checkbox" checked={!!liveCards[c.id]}
+                             data-edit-live-card-toggle={c.id}
+                             onChange={e => setLiveCards(prev => ({ ...prev, [c.id]: e.target.checked }))} />
+                      <span className="widget-list-icon">{c.icon}</span>
+                      <div className="widget-list-info">
+                        <div className="widget-list-name">{c.label}</div>
+                        <div className="widget-list-desc">{c.desc}</div>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              )}
             </div>
           )}
           {draft.map((sec, si) => {
@@ -5360,7 +5476,7 @@ function EditModal({ sections, onSave, onClose, availableReports, toggles, focus
         <div className="modal-footer">
           <span style={{fontSize:11,color:atLimit?'var(--red)':'var(--text-muted)',flex:1}}>{totalWidgets} widgets{MAX_TOTAL < 100 ? ' / '+MAX_TOTAL+(atLimit?' (limit reached)':'') : ''}</span>
           <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn btn-amber" onClick={() => onSave(draft, { liveWidgets: live })}>Save Layout</button>
+          <button className="btn btn-amber" onClick={() => onSave(draft, { liveWidgets: live, liveCards })}>Save Layout</button>
         </div>
       </div>
     </div>
@@ -6223,13 +6339,19 @@ function DashboardApp() {
         {/* `!== false`, never a truthy test: an org that has never opened Edit
             Dashboard has no value saved, and absent has to keep meaning ON or
             the whole section would disappear for everyone the day this shipped. */}
+        {/* THE SECTION SWITCH STAYS THE MASTER GATE. `liveWidgets !== false` is
+            unchanged, so an org that turned the whole section off stays off and
+            never has to re-tick four boxes; the per-card map only decides what
+            renders INSIDE a section that is on. Two gates rather than four
+            independent ones, because collapsing them would silently re-enable
+            the section for every org that had switched it off. */}
         {!IS_PRINT && config.liveWidgets !== false
-          && (liveHasEnrollments(availableReports) || liveHasCheckins(availableReports)
-              || liveHasFacility(availableReports)) && (
+          && Object.values(liveCardsResolved(config.liveCards, availableReports)).some(Boolean) && (
           <LiveSection reportingBaseUrl={orgMeta.reportingBaseUrl || ''} recOrgId={orgMeta.recOrgId || ''}
                        hasCheckins={liveHasCheckins(availableReports)}
                        hasFacility={liveHasFacility(availableReports)}
-                       availableReports={availableReports} />
+                       availableReports={availableReports}
+                       cards={liveCardsResolved(config.liveCards, availableReports)} />
         )}
         {displaySections.map((sec, i) => (
           <SectionBlock key={sec.id+i+theme} sectionId={sec.id} widgetIds={sec.widgets} reportData={reportData} loading={loading} freshRts={freshRts} priorReportData={priorReportData}
@@ -6247,7 +6369,7 @@ function DashboardApp() {
           return !vis || vis.visible;
         })} availableReports={availableReports} toggles={orgMeta.toggles || {}} focusSection={editFocus}
         onSave={handleSaveSections} onClose={()=>{setEditOpen(false);setEditFocus(null);}}
-        liveOn={config.liveWidgets} />}
+        liveOn={config.liveWidgets} liveCardsOn={config.liveCards} />}
     </div>
   );
 }

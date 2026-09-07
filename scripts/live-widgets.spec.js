@@ -244,13 +244,17 @@ if (H.liveWindow) {
      now — registrations and check-ins are different cards on different
      questions — so one of them going down must not take the other off the
      page, and the SECTION goes only when both are gone. */
-  /* THREE FEEDS NOW, so the section goes only when all three are gone. A test
-     that still named two would pass on a build where the facility card alone
-     survives and the section hides anyway. */
-  ok(/if \(!alive && !showCi && !showFac\) return null;/.test(code),
+  /* FOUR SWITCHES NOW AS WELL AS FOUR FEEDS, so the emptiness test has to
+     count both. This assertion used to read `!alive && !showCi && !showFac`,
+     which was right while the cards could only disappear by their feed dying;
+     with per-card toggles an org that switched all four off would have kept a
+     heading over a blank grid, so each `show*` now folds its switch in. Same
+     intent, new shape — the section must never outlive its widgets. */
+  ok(/if \(!showEnroll && !showProg && !showCi && !showFac\) return null;/.test(code),
      'the Live Widgets section hides itself when its widgets have nothing — a heading over a blank space reads as broken, not as absent');
-  ok(/\{alive \? <LiveRegistrations/.test(code) && /\{showCi \? <MembershipCheckins/.test(code),
-     '...and each card is gated on ITS OWN feed, so one failing does not blank the other');
+  ok(/\{showEnroll \? <LiveRegistrations/.test(code) && /\{showCi \? <MembershipCheckins/.test(code)
+     && /\{showProg \? <ProgramsLive/.test(code) && /\{showFac \? <FacilityBookings/.test(code),
+     '...and each card is gated on ITS OWN feed and switch, so one failing does not blank the other');
   ok(/const \[alive, setAlive\] = useState\(true\);/.test(code),
      '...optimistically, so a slow first fetch does not flash the section out and back in');
   ok(/\.catch\(\(\) => \{ setErr\(true\);[^}]*onAvailable\(false\); \}\)/.test(code),
@@ -337,7 +341,11 @@ if (H.liveWindow) {
      '...which opens on the stored choice, not always ticked');
   ok(/liveOn=\{config\.liveWidgets\}/.test(code),
      '...and the stored choice is what the editor is handed');
-  ok(/onSave\(draft, \{ liveWidgets: live \}\)/.test(code),
+  /* Save still carries the section switch; it now carries the per-card map
+     beside it. Asserting the old exact object would fail on the correct build,
+     and asserting only `liveWidgets: live` would pass on one that dropped the
+     card map — so both keys are named. */
+  ok(/onSave\(draft, \{ liveWidgets: live, liveCards \}\)/.test(code),
      '...and Save Layout carries the choice');
   ok(/const cfg = \{ \.\.\.config, sections, \.\.\.\(extra \|\| \{\}\) \}/.test(code),
      '...which is persisted with the layout rather than dropped on the floor');
@@ -2183,4 +2191,132 @@ process.on('exit', () => {
      far right rim of the card, ~800px from the legend it describes. */
   ok(!/\.live-legend \.lg-note \{[^}]*margin-left: auto/.test(src),
      'the legend note sits beside the legend rather than at the far edge of the card');
+}
+
+
+/* ── PER-CARD LIVE WIDGET TOGGLES ─────────────────────────────────────────
+   Dan: "Ability to disable/enable specific widgets from the edit dashboard
+   section... By default the live enrollments and check-in widgets should show
+   up, but the other two must be manually enabled."
+
+   The whole risk here is ONE line. Every other toggle in dashboard.html reads
+   `!== false`, because absent means an org that has never opened Edit Dashboard
+   and the answer is yes. Two of these four default OFF, so a `!== false` test
+   would switch Programs Live and Facility Bookings on for every org on the
+   platform the moment this shipped — the opposite of what was asked, and
+   invisible in review because the code reads like every other gate in the file.
+
+   So the resolver is LIFTED AND RUN over the four ids rather than regexed: a
+   regex passes on an inverted test. */
+{
+  let L = {};
+  try {
+    const arr = src.match(/const LIVE_CARDS = (\[[\s\S]*?\n\];)/);
+    if (!arr) throw new Error('LIVE_CARDS not found at module scope');
+    L = new Function(
+      liftFn(src, 'liveHasEnrollments') + '\n' +
+      liftFn(src, 'liveHasCheckins') + '\n' +
+      liftFn(src, 'liveHasFacility') + '\n' +
+      'const LIVE_CARDS = ' + arr[1] + '\n' +
+      liftFn(src, 'liveCardOn') + '\n' +
+      liftFn(src, 'liveCardsResolved') + '\n' +
+      'return { LIVE_CARDS, liveCardOn, liveCardsResolved };')();
+  } catch (e) {
+    ok(false, 'the live-card resolver could not be lifted and run: ' + e.message);
+  }
+
+  if (L.liveCardOn) {
+    const { LIVE_CARDS, liveCardOn, liveCardsResolved } = L;
+    // every feed present, so presence never masks a switch in these cases
+    const ALL = { 'enrollments-today':1, 'enrollments-rollup':1, 'checkins-today':1, 'facility-today':1 };
+
+    eq(LIVE_CARDS.length, 4, 'four live cards are registered');
+
+    /* THE DEFAULTS, which are the ask itself. */
+    eq(liveCardOn('enrollments', undefined), true,  'nothing saved: Live Enrollments defaults ON');
+    eq(liveCardOn('checkins',    undefined), true,  'nothing saved: Membership Check-Ins defaults ON');
+    eq(liveCardOn('programs',    undefined), false, 'nothing saved: Programs Live must be enabled by hand');
+    eq(liveCardOn('facility',    undefined), false, 'nothing saved: Facility Bookings must be enabled by hand');
+
+    /* ABSENT IS THE CARD'S OWN DEFAULT, NOT ON. This is the assertion that
+       fails on the `!== false` mutation — an empty saved map is exactly what a
+       partially-saved config looks like. */
+    eq(liveCardOn('programs', {}), false, 'an empty saved map leaves an opt-in card OFF, not on');
+    eq(liveCardOn('facility', { enrollments: true }), false,
+       'a saved map that mentions only other cards leaves Facility Bookings OFF');
+    eq(liveCardOn('enrollments', { programs: true }), true,
+       'a saved map that mentions only other cards leaves Live Enrollments ON');
+
+    /* AN EXPLICIT CHOICE BEATS THE DEFAULT, in both directions — or half the
+       control does nothing. */
+    eq(liveCardOn('programs', { programs: true }), true, 'ticking an opt-in card turns it on');
+    eq(liveCardOn('enrollments', { enrollments: false }), false, 'unticking a default-on card turns it off');
+    eq(liveCardOn('checkins', { checkins: false }), false, 'unticking check-ins turns it off');
+
+    /* null is not a choice — a config written by an older build can carry it. */
+    eq(liveCardOn('facility', { facility: null }), false, 'a null saved value falls back to the default');
+    eq(liveCardOn('enrollments', { enrollments: null }), true, 'a null saved value falls back to the default');
+
+    eq(liveCardOn('nope', { nope: true }), false, 'an unknown card id is never on');
+
+    /* PRESENCE STILL GATES. A card the org's Metabase cannot answer is off
+       whatever is saved, or the editor offers a tick that can never render. */
+    const noCi = liveCardsResolved({ checkins: true }, { 'enrollments-today':1, 'enrollments-rollup':1 });
+    eq(noCi.checkins, false, 'check-ins ticked but the card absent resolves OFF');
+    eq(noCi.enrollments, true, 'the enrollments card still resolves ON beside it');
+    const noEnroll = liveCardsResolved(undefined, { 'checkins-today':1 });
+    eq(noEnroll.enrollments, false, 'no enrollments card means Live Enrollments cannot resolve on');
+    eq(noEnroll.checkins, true, 'check-ins alone still resolves on');
+
+    /* PROGRAMS LIVE SHARES THE ENROLLMENTS FEED, so it shares the presence
+       test. Giving it one of its own is how it would light up for an org whose
+       enrollments card is missing and then draw from a feed nobody fetched. */
+    const progOnly = liveCardsResolved({ programs: true }, { 'checkins-today':1 });
+    eq(progOnly.programs, false, 'Programs Live needs the enrollments card, not a test of its own');
+
+    const all = liveCardsResolved(undefined, ALL);
+    eq(Object.values(all).filter(Boolean).length, 2,
+       'a brand-new org with every feed present gets exactly the two default cards');
+  }
+
+  /* ── the wiring a lifted resolver cannot see ── */
+
+  /* THE SECTION SWITCH MUST STAY THE MASTER GATE. Collapsing it into the
+     per-card map would silently re-enable the whole section for every org that
+     had switched it off. */
+  ok(/config\.liveWidgets !== false/.test(src),
+     'the section-level liveWidgets switch is still the master gate');
+
+  /* ONE FEED, TWO READERS. Gating the enrollments fetch on the enrollments
+     card alone starves Programs Live of the feed it draws from. */
+  ok(/cards\.enrollments \|\| !!cards\.programs/.test(src),
+     'the enrollments feed runs while EITHER of its two cards is on');
+
+  /* A CARD THAT IS OFF MUST STOP COSTING A QUERY, not merely stop being drawn
+     — these poll every sixty seconds per viewer. */
+  ok(/function useLiveEnrollments\(onAvailable, feed, enabled\)/.test(src),
+     'the enrollments hook takes an enabled gate');
+  ok(/useLiveCheckins\(setCiAlive, !!hasCheckins && !!cards\.checkins/.test(src),
+     'the check-ins fetch is gated on its card being on');
+  ok(/useLiveFacility\(setFacAlive, !!hasFacility && !!cards\.facility\)/.test(src),
+     'the facility fetch is gated on its card being on');
+
+  /* THE SECTION HIDES WITH ITS WIDGETS. The old emptiness test asked only
+     whether the feeds were ALIVE, so an org that switched all four off would
+     have kept a heading over an empty grid. */
+  ok(/if \(!showEnroll && !showProg && !showCi && !showFac\) return null;/.test(src),
+     'the section hides when every card is switched off, not only when the feeds die');
+
+  /* THE EDITOR MUST PERSIST THE MAP, or every tick is forgotten on Save. */
+  ok(/onSave\(draft, \{ liveWidgets: live, liveCards \}\)/.test(src),
+     'Save Layout writes the per-card map alongside the section switch');
+  ok(/liveCardsOn=\{config\.liveCards\}/.test(src),
+     'the modal is handed the saved per-card map');
+  /* SEEDED THROUGH THE RESOLVER, not from the raw map — or a first-time org
+     sees four empty boxes and a Save switches off the two ON defaults. */
+  ok(/out\[c\.id\] = liveCardOn\(c\.id, liveCardsOn\)/.test(src),
+     'the modal seeds its ticks through the resolver, so defaults show as ticked');
+  /* Only offerable cards are listed. */
+  ok(/LIVE_CARDS\.filter\(c => !!c\.has\(availableReports\)\)/.test(src),
+     'the editor offers only cards this org can actually render');
 }

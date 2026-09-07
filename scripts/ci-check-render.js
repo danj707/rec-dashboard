@@ -465,6 +465,13 @@ const CONFIG = {
                                               'mem-churn','mem-leaving','mem-revenue','mem-kind-donut',
                                               'mem-type-donut','tbl-mem-autorenew'] }],
     toggles: { ai: false, reportLinks: true, aiBriefing: false, emailDigest: false },
+    /* ALL FOUR LIVE CARDS ON, deliberately. Two of them default OFF now, and
+       every case below that asserts a Programs Live or Facility Bookings card
+       is about THAT CARD rather than about the default — so the fixture saves
+       an explicit choice and those cases keep proving what they were written
+       to prove. The DEFAULTS get their own cases at the very end of the list,
+       on a config that saves no liveCards at all. */
+    liveCards: { enrollments: true, programs: true, checkins: true, facility: true },
   },
   // enrollments present = the card has a public link, which is the ONLY
   // thing that puts the Live Widgets section on the page.
@@ -1627,6 +1634,57 @@ const CASES = [
                         + ' \u2014 four cards do not fit \u2014 ' + JSON.stringify(m.each));
     } },
 
+  /* ── THE PER-CARD DEFAULTS, IN A BROWSER ─────────────────────────────────
+     Dan: "By default the live enrollments and check-in widgets should show up,
+     but the other two must be manually enabled."
+
+     NO SOURCE ASSERTION CAN SEE THIS. The resolver is unit-tested over the four
+     ids, but whether the SECTION actually draws two cards and withholds two is
+     a claim about the rendered DOM — a build that resolved correctly and then
+     rendered all four (or a `!== false` slip) reads identically in source.
+
+     LAST IN THE LIST, and that is not tidiness: these reload onto a config with
+     no saved liveCards, and a reload sticks for every case after it. The
+     lightFeeds block above records the same trap catching someone already. */
+  { name: 'live · by default only the enrollments and check-ins cards render',
+    liveDefaults: true, needs: '[data-live-section="1"] [data-live-regs]',
+    act: async page => {
+      await page.reload({ waitUntil: 'networkidle2', timeout: 60000 });
+      await page.waitForSelector('[data-live-section="1"]', { timeout: 20000 });
+    } },
+  { name: 'live · ...check-ins is one of them',
+    liveDefaults: true, needs: '[data-live-section="1"] [data-live-checkins]' },
+  /* ABSENT FROM THE DOM, not merely empty. "Renders nothing" and "renders a
+     card with no rows" are different claims and only one of them is the ask. */
+  { name: 'live · ...and Programs Live is ABSENT until it is switched on',
+    liveDefaults: true, needs: '[data-live-section="1"]', absent: '[data-live-progs]' },
+  { name: 'live · ...and so is Facility Bookings',
+    liveDefaults: true, needs: '[data-live-section="1"]', absent: '[data-live-fac-today]' },
+  /* THE COUNT, so a build that drew three could not pass the two absences by
+     luck of a renamed attribute. */
+  { name: 'live · ...exactly two cards, not four',
+    liveDefaults: true, needs: 'body[data-live-default-cards="2"]',
+    act: async page => {
+      await page.waitForSelector('.widget-card.live-card', { timeout: 20000 });
+      await page.evaluate(() => document.body.setAttribute('data-live-default-cards',
+        String(document.querySelectorAll('.widget-card.live-card').length)));
+    } },
+  /* THE EDITOR AGREES WITH THE PAGE. A modal that opened with four empty boxes
+     would switch the two ON defaults off on the next Save — the seeding bug. */
+  { name: 'live · the editor opens with the two defaults ticked',
+    liveDefaults: true, needs: '[data-edit-live-cards="2"]',
+    act: async page => {
+      await page.evaluate(() => {
+        const b = [...document.querySelectorAll('button')].find(x => /Edit Dashboard/.test(x.textContent || ''));
+        if (b) b.click();
+      });
+      await page.waitForSelector('.modal-body', { timeout: 15000 }).catch(() => {});
+    } },
+  { name: 'live · ...with Programs Live offered but clear',
+    liveDefaults: true, needs: '[data-edit-live-card="programs"][data-edit-live-card-on="0"]' },
+  { name: 'live · ...and Live Enrollments offered and ticked',
+    liveDefaults: true, needs: '[data-edit-live-card="enrollments"][data-edit-live-card-on="1"]' },
+
 ];
 
 (async () => {
@@ -1668,6 +1726,18 @@ const CASES = [
            history. */
         if (currentCase.lightFeeds) {
           return json({ ...CONFIG, availableReports: { memberships: true,
+            'enrollments-today': true, 'enrollments-rollup': true, 'checkins-today': true,
+            'facility-today': true } });
+        }
+        /* AN ORG THAT HAS NEVER OPENED EDIT DASHBOARD. Every feed present, so
+           presence cannot be what hides a card — the only thing deciding is
+           the per-card default. `liveCards` is DELETED rather than set empty,
+           because an empty object and an absent key are different inputs to
+           the resolver and the absent one is what a real untouched org has. */
+        if (currentCase.liveDefaults) {
+          const cfg = { ...CONFIG.config };
+          delete cfg.liveCards;
+          return json({ ...CONFIG, config: cfg, availableReports: { memberships: true,
             'enrollments-today': true, 'enrollments-rollup': true, 'checkins-today': true,
             'facility-today': true } });
         }
