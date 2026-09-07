@@ -1,5 +1,56 @@
 # Project notes for Claude
 
+## THE DASHBOARD IS DELIBERATELY NOT ROLLED OUT TO LARGE ORGS (Dan, 2026-09-07)
+
+Dan, on apex: *"none of the apex widgets except for the live ones ever render.
+guessing all the apex reports time out"* — and then the decision: *"we've held
+off on deploying the dashboard for larger orgs like apex. I suspect the switch
+off MB->API will fix this within the next few months."*
+
+**So blank widgets on a large org are EXPECTED, not a bug to chase.** Written
+down because the symptom is alarming and the diagnosis is quick but not
+obvious.
+
+### The numbers, measured 2026-09-07 without adding any load
+
+| | |
+|---|---|
+| this dashboard's only fetch budget | **15 s** (`AbortSignal.timeout(15000)`, server.js) |
+| apex's OWN recorded history for `facility` | **48.2 s** (`basis: "org"`, its real loads) |
+
+48 > 15 every time, so the fetch aborts before the card can answer. Read the
+estimates straight out of any report page's injected `ORG_CONFIG.loadEstimate`
+in the sibling repo — no Metabase query needed, which is how these were taken.
+
+### ZERO SAMPLES IS NOT "NOBODY LOOKS AT IT"
+
+Every other apex report shows `basis: "report"` or `"default"` — i.e. **no apex
+history at all.** That is not evidence the report is unused: the reporting
+project records only loads that SUCCEEDED (status < 400, 1.5s–300s, cache
+misses). An abort or a 400 is never recorded, so a report that always fails can
+never accumulate history and looks identical to one nobody opens. Do not read
+an empty sample count as low usage.
+
+**And it is self-sustaining:** the dashboard caches for 15 minutes, but a fetch
+that never completes never populates the cache, so a large org stays
+permanently cold.
+
+### WHY THE LIVE WIDGETS ARE THE EXCEPTION
+
+They run on the purpose-built single-day cards — `org_id` only, no date
+parameters — which answer in about a second and fit inside 15s with room to
+spare. That is the whole reason those cards exist, and it is why the live
+section works on an org where nothing else does.
+
+### DO NOT RAISE THE TIMEOUT
+
+It trades a blank widget for a page that hangs for a minute and may still fail,
+which is worse. The real fixes, in order: the heavy cards themselves (17295 v9
+and 17301 v7.1 in the sibling repo are exactly the apex-scale ones — norman's
+memberships aggregate measured 25.8s -> 3.5s), the `materialized` index ask
+which fixes them wholesale, and then the Metabase -> API/semantic-layer switch
+Dan expects to settle it.
+
 ## EACH LIVE CARD HAS ITS OWN SWITCH — AND TWO OF THEM DEFAULT OFF (2026-09-07)
 
 Dan: *"Ability to disable/enable specific widgets from the edit dashboard
