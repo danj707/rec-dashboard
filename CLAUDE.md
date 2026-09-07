@@ -1,5 +1,112 @@
 # Project notes for Claude
 
+## EACH LIVE CARD HAS ITS OWN SWITCH — AND TWO OF THEM DEFAULT OFF (2026-09-07)
+
+Dan: *"Ability to disable/enable specific widgets from the edit dashboard
+section, same treatment as the other widgets. By default the live enrollments
+and check-in widgets should show up, but the other two must be manually
+enabled."*
+
+Edit Dashboard had ONE checkbox covering all four cards. It now has that
+checkbox plus a per-card list under it.
+
+### THE ONE LINE THAT MATTERS: ABSENT IS THE CARD'S OWN DEFAULT, NOT ON
+
+Every other toggle in `dashboard.html` reads `!== false`, because absent means
+an org that has never opened Edit Dashboard and the answer is yes. **Two of
+these four default OFF**, so the same idiom here would have switched Programs
+Live and Facility Bookings on for every org on the platform the day this
+shipped — the opposite of the ask, and **invisible in review, because the code
+would read exactly like every other gate in the file.**
+
+```js
+function liveCardOn(id, saved) {
+  const def = LIVE_CARDS.find(c => c.id === id);
+  if (!def) return false;
+  if (!saved || typeof saved !== 'object') return def.defaultOn;
+  const v = saved[id];
+  return v === undefined || v === null ? def.defaultOn : v !== false;
+}
+```
+
+`null` is handled beside `undefined` on purpose: a config written by an older
+build can carry it, and it is not a choice.
+
+### ONE REGISTRY, THREE READERS
+
+`LIVE_CARDS` is the single definition — label, icon, `defaultOn`, and the
+PRESENCE test — read by the resolver, the section, and the editor's list. Three
+surfaces answering that question separately is how a card becomes tickable in
+the editor and never renders, or renders and cannot be turned off. Same rule as
+`mbPlanKey` and `vertRowMatch` in the sibling repo.
+
+**Programs Live shares the enrollments presence test rather than carrying one
+of its own**, because it reads the same feed. Giving it its own would let it
+light up for an org whose enrollments card is missing and then draw from a feed
+nobody fetched.
+
+### TWO GATES, NOT FOUR — the section switch stays the master
+
+`config.liveWidgets !== false` is untouched, so an org that turned the whole
+section off stays off and never has to re-tick four boxes. The per-card map only
+decides what renders INSIDE a section that is already on. Collapsing the two
+would have silently re-enabled the section for every org that had switched it
+off.
+
+### A CARD THAT IS OFF STOPS COSTING A QUERY
+
+These poll every sixty seconds **per viewer**, so the switches gate the fetches
+and not merely the render. `useLiveEnrollments` gained an `enabled` argument
+(defaulting to true, so any older caller is unaffected) matching the shape
+`useLiveCheckins` and `useLiveFacility` already had.
+
+**ONE FEED, TWO READERS.** Live Enrollments and Programs Live are the same
+query, so it runs while EITHER is on and stops only when both are off — gating
+it on the enrollments card alone leaves Programs Live drawing from a feed
+nobody fetched.
+
+### THE EMPTINESS TEST HAD TO LEARN ABOUT THE SWITCHES
+
+It read `!alive && !showCi && !showFac` — correct while a card could only
+vanish by its feed dying. With per-card toggles an org that switched all four
+off would have kept a **heading over a blank grid**, which is the exact dead end
+the comment above that line exists to prevent. Each `show*` now folds its
+switch in.
+
+### THE EDITOR SEEDS THROUGH THE RESOLVER
+
+Not from the raw saved map. A first-time org would otherwise open the modal to
+four EMPTY boxes and a Save would switch off the two that are meant to be on —
+the control silently undoing its own default.
+
+### Guards
+
+`live-widgets.spec.js` → **542 assertions**, lifting and RUNNING `liveCardOn`
+and `liveCardsResolved` over the four ids. Mutation-tested seven ways, all
+failing by name: the resolver reverted to `!== false` (the load-bearing bug),
+Programs Live defaulted on, the enrollments feed gated on one of its two cards,
+the emptiness test reverted, Save dropping the card map, the modal seeding from
+the raw map, and the presence gate removed.
+
+**Three PRE-EXISTING assertions pinned the old shapes** and were updated rather
+than deleted — the emptiness test, the per-card render gates, and Save's
+payload. Each keeps what it was written to catch; the Save one now names BOTH
+keys, because asserting only `liveWidgets: live` would pass on a build that
+dropped the card map.
+
+Plus **8 `ci-check-render.js` cases** for the defaults, and they are **LAST in
+the list** — they reload onto a config with no saved `liveCards`, and a reload
+sticks for every case after it (the trap the `lightFeeds` block already
+records). The fixture itself now saves all four ON, so every existing case that
+asserts a Programs Live or Facility Bookings card keeps proving what it was
+written to prove rather than accidentally testing the default.
+
+**THE RENDER CASES EARN THEIR KEEP ON A MUTATION THE SPEC CANNOT SEE.** Calling
+the resolver with its arguments swapped — `liveCardsResolved(availableReports,
+config.liveCards)`, a plain copy-paste error that still MENTIONS the resolver —
+leaves all 542 spec assertions passing and produces **49 render failures**. That
+is the discrimination those cases exist for.
+
 ## THE LIVE CARDS CALLED YESTERDAY "TODAY" (2026-09-05)
 
 Dan, on Clarkstown at 9:18am: *"these enrollments are all from YESTERDAY. I
