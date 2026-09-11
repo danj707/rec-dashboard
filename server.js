@@ -382,7 +382,7 @@ const FACILITY_TODAY_UUID     = '4e9ff19c-233d-46fa-84f4-008cea53cf0b';
    it matters more here because this widget has a cheerful empty state that
    would read as a verdict.
    https://rec.metabaseapp.com/question/21814 */
-const HAPPENING_TODAY_UUID    = '';
+const HAPPENING_TODAY_UUID    = '8e6df830-5cc2-4b22-871c-5b730fcca4a9';
 
 const SHARED_UUIDS = {
   facility: 'f6787f45-3a36-4501-8a5f-b0f647451a85',

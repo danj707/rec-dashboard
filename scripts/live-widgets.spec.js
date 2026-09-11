@@ -2195,6 +2195,21 @@ process.on('exit', () => {
      '...and the column is never wrapped, which is the whole performance story');
   ok(/AS "Org Now"/.test(htCode) && /AS "Org Today"/.test(htCode) && /AS "Org Timezone"/.test(htCode),
      'the card ships the org\'s own clock, so the page never parses an offset');
+  /* THE ORG'S OWN primaryTimezone WINS, NOT THE MAJORITY LOCATION — and this
+     card deliberately differs from its three siblings on that. They ask "what
+     landed today", where the zone only moves a day boundary; this one decides
+     whether a row is GREEN, so a wrong zone is visible on screen all day.
+     MEASURED, AND IT IS LIVE FOR ONE OF THE THREE DASHBOARD ORGS: City of
+     Niagara Falls has 17 Los_Angeles locations, 13 New_York and 4 Chicago, so
+     MODE() picks Pacific by a four-location plurality for a city in New York
+     State and its 7am session reported as 04:00. */
+  ok(/primaryTimezone/.test(htCode),
+     'the org\'s own primaryTimezone is what the day is resolved in');
+  ok(/COALESCE\(\s*\n\s*\(SELECT NULLIF\(o\.config #>> '\{general,primaryTimezone\}'/.test(htCode),
+     '...and it is FIRST, ahead of the location mode — Niagara Falls is three hours out the other way round');
+  ok(/MODE\(\) WITHIN GROUP \(ORDER BY l\.timezone\)/.test(htCode)
+     && /'America\/Chicago'\) AS tz/.test(htCode),
+     '...with the location mode still the fallback, and a literal behind that, so an org with neither still resolves');
   /* AGGREGATED, NEVER JOINED. Joining reservation_court onto the row set
      multiplies a session by the courts it holds — and every figure with it. */
   ok(/STRING_AGG\(DISTINCT c\.court_number/.test(htCode) && /GROUP BY r\.session_id/.test(htCode),

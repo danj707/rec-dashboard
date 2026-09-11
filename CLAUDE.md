@@ -51,6 +51,30 @@ the rest of the day.
 leaves every row `upcoming`, so the list stays whole. The safe direction is a
 stale schedule, never a blank one that reads as a day off.
 
+### THE ORG'S OWN `primaryTimezone` WINS — and it was three hours out live
+
+Found signing the card off through the public link, before the widget was ever
+opened. The four live cards resolve the zone with
+`MODE() WITHIN GROUP (ORDER BY location.timezone)`, and for **City of Niagara
+Falls** that is **America/Los_Angeles** — 17 Pacific locations against 13
+Eastern and 4 Central, so a four-location plurality wins for a city in New York
+State. Its 7am beach volleyball reported as **04:00** and the card returned
+**15 rows on the Pacific day** instead of **16 on the Eastern one**.
+
+`organization.config #>> '{general,primaryTimezone}'` is the org's own stated
+answer — **America/New_York**, and populated on all 168 live orgs — so this
+card prefers it, with the location mode as the fallback and `America/Chicago`
+behind that. **It deliberately differs from its three siblings on this**, and
+the reason is the difference in what the zone decides: they ask *"what landed
+today"*, where it only moves a day boundary; this one decides whether a row is
+**green**, so a wrong zone is visible on screen all day. Watertown and Torrance
+agree either way, so this moves exactly one of the three dashboard orgs.
+
+Worth carrying back: **the same disagreement is on 22 of 168 orgs** (already
+recorded in the sibling repo for card 21649), so the other three live cards are
+sitting on a day boundary that can be three hours out for those orgs. Not
+changed here — that is a separate decision with its own sign-off.
+
 ### TWO EMPTY STATES, because they are two different days
 
 Dan's line is verbatim for a day with **nothing on it**. A day whose programmes

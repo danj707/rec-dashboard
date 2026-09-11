@@ -18,12 +18,24 @@
 -- throws almost all of it away — the measurement already recorded on
 -- checkins-today.sql, and it applies to `session` the same way.
 --
+-- THE ORG'S OWN `primaryTimezone` WINS, NOT THE MAJORITY LOCATION — and this
+-- card deliberately differs from its three siblings on that. They ask "what
+-- landed today", where the zone only moves a day boundary; this one decides
+-- whether a row is GREEN, so a wrong zone is visible on screen all day.
+-- Measured 2026-09-11 on the three dashboard orgs: watertown and torrance
+-- agree either way, and CITY OF NIAGARA FALLS DOES NOT — its locations are 17
+-- America/Los_Angeles, 13 America/New_York, 4 America/Chicago, so MODE() picks
+-- Pacific by a four-location plurality for a city in New York State, and its
+-- 7am session reported as 04:00. `config primaryTimezone` is the org's own
+-- stated answer (America/New_York) and is populated on all 168 live orgs; the
+-- location mode stays as the fallback, then America/Chicago.
+--
 -- `Org Now` IS THE GREEN-STATE ANCHOR. It is the org's wall clock at the
 -- moment the feed answered, so the page decides live / upcoming / finished by
 -- comparing three strings in one zone rather than against the reader's own
--- clock. Between polls the page advances it by elapsed local milliseconds,
--- which is why the next poll re-stamps it rather than the page trusting a
--- sixty-second-old instant.
+-- clock. THERE IS NO SECOND CLOCK IN THE PAGE: the feed re-stamps it every
+-- sixty seconds, which is the cadence the list would move at anyway, and a
+-- page ticking its own would keep promoting rows while Pause was on.
 --
 -- THE SITE IS AGGREGATED, NEVER JOINED. A session's reservation can occupy
 -- more than one court — measured at apex today, MAX 4 — so joining
@@ -53,12 +65,21 @@
 -- (New York) — so Dan's "50 programs" is mid-band and a near-empty day is the
 -- common case outside apex, which is what the empty state is for.
 --
+-- Re-verified the same way after the timezone fix, on the org it moves:
+-- city-of-niagara-falls 16 rows, Org Timezone America/New_York, Org Now
+-- 13:07, 8 with a site, 0 with no capacity, 1 cancelled, 15 on unpublished
+-- sections — against 15 rows on Pacific before it.
+--
 -- Params: org_id (uuid). Mirrored here; THE LIVE CARD IS THE SOURCE OF TRUTH.
 WITH cfg AS (
-  SELECT COALESCE(MODE() WITHIN GROUP (ORDER BY l.timezone), 'America/Chicago') AS tz
-  FROM location l
-  WHERE l.organization_id = {{org_id}}::uuid
-    AND l.deleted_at IS NULL AND l.timezone IS NOT NULL AND l.timezone <> ''
+  SELECT COALESCE(
+    (SELECT NULLIF(o.config #>> '{general,primaryTimezone}', '')
+       FROM organization o WHERE o.id = {{org_id}}::uuid),
+    (SELECT MODE() WITHIN GROUP (ORDER BY l.timezone)
+       FROM location l
+      WHERE l.organization_id = {{org_id}}::uuid AND l.deleted_at IS NULL
+        AND l.timezone IS NOT NULL AND l.timezone <> ''),
+    'America/Chicago') AS tz
 ),
 win AS (
   SELECT tz,
