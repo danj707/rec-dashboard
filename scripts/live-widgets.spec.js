@@ -228,12 +228,15 @@ if (H.liveWindow) {
   ok(/if \(!rows\) \{[\s\S]{0,900}?skeleton skeleton-chart/.test(code),
      '...and a feed that has not answered YET shows a skeleton, the way every other widget here does');
   ok(/data-live-loading="1"/.test(code), 'the loading card is distinguishable from the loaded one');
-  /* THROUGH THE PRESENCE HELPERS, not a spelled-out test. There are two card
-     shapes now (the wide feeds and the single-day ones), so a gate written out
-     by hand is a gate that can miss a pair — and the failure is silent: the
-     widget simply never renders for the orgs that only have the new cards. */
-  ok(/liveHasEnrollments\(availableReports\) \|\| liveHasCheckins\(availableReports\)\s*\n?\s*\|\| liveHasFacility\(availableReports\)\) && \(/.test(code),
-     'and the section renders only where a feed exists at all — all three helpers, so an org with only the facility card still gets it');
+  /* DERIVED FROM THE REGISTRY, not a spelled-out test — and this assertion used
+     to pin the bug. It required the three helpers named by hand, which is
+     exactly what the source warns against, and it therefore FAILED on the fix:
+     the spec had encoded the gap as the desired behaviour. The gate was missing
+     `liveHasHappening` from the day that card shipped. */
+  ok(/\{liveAnyCard\(availableReports\) && \(/.test(code),
+     'the Edit Dashboard gate asks ONE derived question, so a new card cannot be left out of it');
+  ok(!/liveHasEnrollments\(availableReports\) \|\|/.test(code),
+     '...and the hand-spelled three-way test cannot come back');
   /* THE SECTION HIDES WITH ITS WIDGETS. This was an env gate for about an hour
      (Dan: "what is MB_ENROLLMENTS_UUID lol"), which put a deploy step between
      publishing a card and seeing the widget for no benefit — the rule that had
@@ -350,10 +353,12 @@ if (H.liveWindow) {
      '...and Save Layout carries the choice');
   ok(/const cfg = \{ \.\.\.config, sections, \.\.\.\(extra \|\| \{\}\) \}/.test(code),
      '...which is persisted with the layout rather than dropped on the floor');
-  /* EITHER card is enough to render the section: an org with a check-ins link
-     and no enrollments one would otherwise lose a widget it has. */
-  ok(/liveHasEnrollments\(availableReports\) \|\| liveHasCheckins\(availableReports\)/.test(code),
-     '...and either feed being available is enough to render it');
+  /* ANY card is enough to render the section: an org with a check-ins link and
+     no enrollments one would otherwise lose a widget it has — and so would one
+     holding only Happening Today, which is what the hand-spelled version of
+     this test missed. */
+  ok(/liveAnyCard\(availableReports\)/.test(code),
+     '...and any one feed being available is enough to render it');
   const live = code.indexOf('<LiveSection');
   const rest = code.indexOf('displaySections.map');
   ok(live > 0 && rest > live,
@@ -2506,7 +2511,8 @@ process.on('exit', () => {
       'const LIVE_CARDS = ' + arr[1] + '\n' +
       liftFn(src, 'liveCardOn') + '\n' +
       liftFn(src, 'liveCardsResolved') + '\n' +
-      'return { LIVE_CARDS, liveCardOn, liveCardsResolved };')();
+      liftFn(src, 'liveAnyCard') + '\n' +
+      'return { LIVE_CARDS, liveCardOn, liveCardsResolved, liveAnyCard };')();
   } catch (e) {
     ok(false, 'the live-card resolver could not be lifted and run: ' + e.message);
   }
@@ -2518,6 +2524,27 @@ process.on('exit', () => {
                   'facility-today':1, 'happening-today':1 };
 
     eq(LIVE_CARDS.length, 5, 'five live cards are registered');
+
+    /* THE EDITOR'S GATE, LIFTED AND RUN — a regex over it passes on an inverted
+       test, and the case that matters is an org holding ONE card and not the
+       others. That is precisely what the hand-spelled gate got wrong: it named
+       enrollments, check-ins and facility, so an org with only Happening Today
+       would have rendered the card on the page with no way to switch it off. */
+    eq(L.liveAnyCard({ 'happening-today': 1 }), true,
+       'an org holding ONLY Happening Today can still reach the Live section in Edit Dashboard');
+    eq(L.liveAnyCard({ 'facility-today': 1 }), true, '...and so can one holding only Facility Bookings');
+    eq(L.liveAnyCard({ 'checkins-today': 1 }), true, '...and one holding only Check-Ins');
+    eq(L.liveAnyCard(ALL), true, 'an org with every feed obviously can');
+    eq(L.liveAnyCard({}), false,
+       'and an org whose Metabase answers none of them gets no Live section to edit');
+    eq(L.liveAnyCard(null), false, '...nor does a missing map, which is not a present card');
+    /* DERIVED, not a copy: every registered card must be reachable through it,
+       or a sixth card added to the registry is invisible to the editor. */
+    for (const c of LIVE_CARDS) {
+      const only = { 'enrollments-today':1, 'enrollments-rollup':1, 'checkins-today':1,
+                     'facility-today':1, 'happening-today':1 };
+      ok(L.liveAnyCard(only) === true, 'every registered card is reachable through the gate: ' + c.id);
+    }
 
     /* THE DEFAULTS, which are the ask itself. */
     eq(liveCardOn('enrollments', undefined), true,  'nothing saved: Live Enrollments defaults ON');

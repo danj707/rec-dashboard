@@ -3515,6 +3515,23 @@ function liveCardsResolved(saved, available) {
   return out;
 }
 
+/* CAN THIS ORG HAVE A LIVE SECTION AT ALL — derived from LIVE_CARDS, never
+   spelled out. The Edit Dashboard gate used to name three of the helpers by
+   hand and was missing the fourth, so the file's own warning three hundred
+   lines up ("spelling out a four-way test at each gate is how one of them ends
+   up missing a card") had already come true in the one place it was warning
+   about. It was benign only because all five feeds arrive together from
+   SHARED_UUIDS today; the day one card is org-specific, an org holding only
+   that card would have had its whole Live section hidden from the editor —
+   rendering on the page and impossible to switch off.
+
+   Deriving it means a sixth card is covered on the day it is added, with
+   nothing to remember. The RENDER side already did this through
+   `liveCardsResolved(...).some(Boolean)`; this is the editor catching up. */
+function liveAnyCard(available) {
+  return LIVE_CARDS.some(c => !!c.has(available));
+}
+
 function liveFeedChoice(available) {
   const a = available || {};
   return {
@@ -5718,8 +5735,7 @@ function EditModal({ sections, onSave, onClose, availableReports, toggles, focus
               have produced a duplicate section that renders nothing. Same
               shape as the Support row below it, and FIRST, because that is
               where the section itself sits on the page. */}
-          {(liveHasEnrollments(availableReports) || liveHasCheckins(availableReports)
-            || liveHasFacility(availableReports)) && (
+          {liveAnyCard(availableReports) && (
             <div className="edit-section" data-edit-live={live ? 'on' : 'off'}>
               <label style={{display:'flex',alignItems:'center',gap:10,padding:'12px 14px',cursor:'pointer'}}
                 title="Live cards refresh themselves every minute and ignore the date range above.">

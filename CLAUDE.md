@@ -1,5 +1,74 @@
 # Project notes for Claude
 
+## "WHY ONLY THREE ORGS" — it was 22, and my own count was wrong (2026-09-11)
+
+Dan, on the merge note: *"why only three orgs, make the new live widget config
+live for everyone!"*
+
+**IT WAS ALREADY LIVE FOR EVERY ORG THIS DASHBOARD SERVES, AND THAT IS 22, NOT
+THREE.** I read the hardcoded `ORGS` map in `server.js` (watertown, niagarafalls,
+torrance) and reported it as the platform. The other nineteen are **dynamic
+orgs**, loaded from `dashboard-orgs.json` at boot and invisible in the source.
+Measured rather than re-read: `GET /health` on production answers
+`{"status":"ok","orgs":22}`, and `GET /watertown/api/config` returns
+`availableReports` carrying `happening-today: true` — so the card was on for all
+22 the moment the merge deployed.
+
+**Generalise it: the hardcoded map is not the org list.** Every count taken from
+`server.js` alone under-reports this dashboard by a factor of seven, and
+`/health` is the cheap, ungated way to get the real one.
+
+### THE GATE THE FILE WARNED ABOUT, IN THE ONE PLACE IT WAS WARNING ABOUT
+
+Checking "is it really on for everyone" found one that was not derived.
+`liveHasEnrollments`'s own comment says:
+
+> *"spelling out a four-way test at each gate is how one of them ends up missing
+> a card and a widget silently never renders for the orgs that only have the new
+> ones"*
+
+...and the **Edit Dashboard** gate was spelled out by hand as
+
+```js
+liveHasEnrollments(a) || liveHasCheckins(a) || liveHasFacility(a)
+```
+
+— **missing `liveHasHappening`**, from the day that card shipped. The RENDER
+side was always fine (`liveCardsResolved(...).some(Boolean)`, derived from
+`LIVE_CARDS`); only the editor's gate was hand-written.
+
+**It is benign TODAY and the reason is worth stating**, because it is the thing
+that stops being true: all five feeds arrive together out of `SHARED_UUIDS`, so
+no org can hold Happening Today without also holding the other three. The day
+one card is org-specific, an org holding only that card would have had the
+widget **rendering on its dashboard with no way to switch it off** — a control
+that does not exist for a card that does.
+
+`liveAnyCard(available)` is `LIVE_CARDS.some(c => c.has(available))`. A sixth
+card is covered on the day it is added, with nothing to remember.
+
+**AND THE SPEC WAS PINNING THE BUG.** Two assertions required the three helpers
+named by hand, so the fix FAILED the spec until their intent was corrected —
+the same shape as `report-settings.spec.js` requiring `disabled` on the gear.
+
+### What is NOT fixed here: 22 is not 29
+
+The reporting project serves ~29 orgs and this dashboard serves 22, so up to
+seven organisations have no dashboard at all — which is a different problem from
+the widget, and is exactly the item pinned in the sibling repo's notes:
+*"creating an org should create it in BOTH projects."* **The seven cannot be
+enumerated from a sandbox**: `/admin/api/orgs` is admin-gated, and `/:org`
+deliberately 404s for a real org and an unknown one alike (no existence leak), so
+there is no ungated way to diff the two lists. Ask an admin for the list, or add
+the reverse of `reconcileWithReporting` — it already resolves identity by
+`orgId`, which is the stable key; what is missing is the IMPORT.
+
+Guards: `live-widgets.spec.js` 622 → **634 assertions**, lifting and RUNNING
+`liveAnyCard` — a regex over it passes on an inverted test, and the case that
+discriminates is an org holding exactly ONE card. Mutation-tested both ways, each
+failing by name: the hand-spelled three-way gate restored (the bug as it
+shipped), and `liveAnyCard` reading one helper instead of the registry.
+
 ## HAPPENING TODAY — the fifth live card, and the first that is a LIST (2026-09-11)
 
 Dan: *"create a new 'Happening Today' double height live widget on the left
