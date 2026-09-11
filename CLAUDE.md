@@ -1,5 +1,171 @@
 # Project notes for Claude
 
+## HAPPENING TODAY — the fifth live card, and the first that is a LIST (2026-09-11)
+
+Dan: *"create a new 'Happening Today' double height live widget on the left
+side. Scope for this is all programs happening at that org today. Columns are:
+Time frame / Location/site / Section Name / Enrollment (11/20 as an example) /
+Clickable link directly to Rec admin ... As the program becomes 'live' and
+happening in their time zone, it highlights in green, once the time passes, it
+bumps off the top of the list and the list scrolls up ... If there are no
+sections, it should say, "No programs happening today - enjoy the time off!"*
+
+Card **21814**, mirror `sql/happening-today.sql`, page `HappeningToday` in
+`public/dashboard.html`.
+https://rec.metabaseapp.com/question/21814
+
+**IT IS ABSENT UNTIL DAN CREATES THE PUBLIC LINK.** `HAPPENING_TODAY_UUID` ships
+empty, so the `SHARED_UUIDS` key is omitted, the data route 404s and the widget
+hides — the same absence rule as its four siblings, and it matters more here
+than anywhere else in this repo: **this is the only live card with a cheerful
+empty state**, and *"enjoy the time off!"* over a feed that simply cannot answer
+is the most confidently wrong thing this dashboard could print. Filling in that
+one constant is the whole of the wiring.
+
+### THE ORG'S CLOCK IS A COLUMN, and nothing on the page constructs a Date
+
+Every other live card asks *"what landed today"*; this one asks *"is this
+running RIGHT NOW"*, and the answer has to be identical on a wall screen in
+Denver and a laptop in Boston. So the card ships **`Org Now`** — the org's own
+wall clock at the moment the feed answered — beside `Starts At` and `Ends At`,
+all three already converted, and the page compares three integers in one zone.
+
+`new Date("2026-09-11T14:30:00")` is the **READER's** 14:30. It renders a
+perfectly plausible time either way, so only a source assertion can see it:
+`htMinutes` reads the string with a regex, and the spec lifts all six helpers
+and fails if any of them contains `new Date(`.
+
+**NO SECOND CLOCK IN THE PAGE, deliberately.** The feed re-stamps `Org Now`
+every sixty seconds, which is the cadence the list would move at anyway — and a
+page ticking its own clock would keep promoting rows while **Pause** was on,
+which is exactly what Pause is for.
+
+**AN END AT OR BEFORE THE START RAN PAST MIDNIGHT** and is clamped to the end of
+the day. Comparing a `00:30` end against a `21:00` start marks an evening class
+finished the moment it begins — the row greys and then vanishes while the hall
+is full. A session with **no end at all** is treated as an instant, so it is
+green on the poll it starts and gone on the next rather than sitting there for
+the rest of the day.
+
+**WITHOUT A CLOCK NOTHING IS FINISHED.** A feed that could not stamp `Org Now`
+leaves every row `upcoming`, so the list stays whole. The safe direction is a
+stale schedule, never a blank one that reads as a day off.
+
+### TWO EMPTY STATES, because they are two different days
+
+Dan's line is verbatim for a day with **nothing on it**. A day whose programmes
+have all **run** says *"That's a wrap — all N programs today have finished."*
+Printing *"enjoy the time off"* at 9pm to a team that has just run forty
+sessions reads as the card having lost them.
+
+### THE SQL
+
+- **NO DATE PARAMETERS MEANS NO TAG FLIP, EVER** — `org_id` is a text parameter
+  and survives an API push unchanged, so this card can be corrected at any hour
+  without taking the widget down. Same property all four siblings are built on.
+- **The day is an instant range, never a wrapped column.**
+  `starts_at >= t0 AND starts_at < t1` keeps the session index usable; the
+  measurement is already recorded on `checkins-today.sql` and applies to
+  `session` the same way.
+- **THE SITE IS AGGREGATED, NEVER JOINED.** A session's reservation can occupy
+  more than one court — **measured at apex today, MAX 4** — so joining
+  `reservation_court` would multiply the session and every figure with it.
+  `Site Count` ships beside the name and the row renders *"Lane 1, Lane 2 +1"*.
+- **ENROLMENT IS READ AT THE SECTION'S OWN GRAIN.** A `per-session` section's
+  bookings carry a `session_id`; every other mode enrols into the RUN and its
+  bookings carry none. Reading one side only reports 0 for the other — measured
+  at apex today, **25 of 101** sessions are per-session, so either mistake is a
+  quarter of the list or three quarters of it.
+- **Cancelled and unpublished sessions are RETURNED AND MARKED, not dropped.** A
+  cancelled meeting still holds the room and an unpublished section still has
+  staff turning up; excluded is never hidden. apex today: 3 cancelled, 40 on
+  unpublished sections.
+- **`sec.publish_at`, not `published_at`** — the column that does not exist, and
+  the only reason it was caught is that the **whole final SELECT was run with
+  literals inside a counting wrapper** rather than a summary probe around the
+  CTEs. That is the card-21682 lesson applied: *prove the exact text you are
+  saving.* apex: **101 rows in 11.3s**, 65 with a site, 0 with no capacity,
+  `Org Now` `2026-09-11T09:47:45` in America/Denver.
+- **Sessions today elsewhere the same afternoon:** smyrna 18 (New York),
+  el-segundo 15 (Los Angeles), watertown 1 (New York). So Dan's *"50 programs"*
+  is mid-band and **a near-empty day is the common case outside apex**, which is
+  what the empty state is for.
+
+**NULL capacity is unlimited, not zero.** The cell reads `4/—`; `11/0` is a
+number that cannot be true, and `Number(undefined)` is how it gets printed.
+
+### THE LAYOUT IS THE ORDER, and the list must not size its own row
+
+Dan, on his sketch: *"programs live and facility bookings drop to a row
+underneath. Check ins and live enrollment are the same height, half of happening
+today."* On the four-column grid that falls straight out of source order — the
+tall card takes columns 1-2 for two rows, the next two fill 3-4, and the last
+two wrap — so the order of the five cards in `LiveSection` is **not cosmetic**.
+
+- **`.live-grid { grid-auto-rows: 1fr; }`** is what makes the two on the right
+  the same height as each other rather than each sizing to its own content.
+  Scoped to the live grid; `.widget-grid` is every report section on the page
+  and equal rows there would resize widgets nobody touched.
+- **`.ht-list { flex: 1 1 0; min-height: 0; overflow-y: auto; }`** — and
+  `overflow-y: auto` ALONE IS NOT THE FIX. An auto grid row sizes to its
+  content, so a hundred sessions would grow the row and there would be nothing
+  left over to scroll. The zero flex basis is what drops the list out of the
+  card's own intrinsic height.
+- **Below four columns the span means nothing** — there is no column beside it
+  for the two half-height cards to stack in — so the tall card becomes an
+  ordinary one and the rows size to content again.
+- **Finished rows LEAVE.** The list is already ordered by start time, so
+  dropping them off the top IS the "scrolls up"; there is nothing to animate.
+
+### A CARD WITH NOTHING TO ANNOUNCE GETS NO MUTE BOX
+
+`LiveCardHeader`'s `sound` is optional now. Nothing ever *lands* on a schedule,
+so a Mute checkbox and a sound picker there would be two controls that cannot do
+anything — the dead end this repo keeps writing down. Every other card passes a
+sound and is unchanged.
+
+### Guards
+
+`live-widgets.spec.js` 516 → **606 assertions**, which **LIFT AND RUN** all six
+time helpers over the shapes the card actually emits — a regex over a comparison
+passes on an inverted one. Mutation-tested thirteen ways, all failing by name:
+the flex basis dropped (the plausible half-fix), the past-midnight clamp
+dropped, finished rows kept, the clock parsed as a Date, the cheerful empty
+state fired on a day that merely ended, the grid order reverted, the equal-row
+rule dropped, NULL capacity rendered as 0, the uuid spread unconditionally, the
+feed given date parameters, the fetch ungated, the section outliving its last
+widget, and a Mute box on a card with no sound.
+
+**Fourteen `ci-check-render.js` cases**, every one keyed on a computed value —
+"a card rendered" passes on all of the above. **The fixture pins the org at
+10:15 on a date the harness is almost never running on**, which is the only way
+to tell a card reading `Org Now` from one reading the browser: the two would
+otherwise agree. Five rows, five states — one already finished (so the visible
+count is 4 and not 5), one running now, one with no capacity, one cancelled, and
+one evening class whose end is numerically before its start.
+
+**AND THE GEOMETRY IS MEASURED, not asserted in CSS.** One case reads the
+rendered boxes and requires Check-Ins and Live Enrollments to be the same height
+to within 2px and Happening Today to be the two of them plus the grid gap — Dan's
+own spec, and a claim no source assertion can make.
+
+**A CASE THAT DEPENDED ON CARD ORDER BROKE, and that is the reusable part.**
+`live · a new registration lands highlighted` clicked a bare `.live-pause input`
+— whichever card renders FIRST — so the moment Happening Today took that place
+it paused the wrong card, the enrollments feed never refetched, and **three
+cases that had nothing to do with this change failed**. Scoped to
+`[data-live-regs]` now. *A case that depends on there being one of a thing, or
+on which one is first, stops testing what it names the moment that moves.*
+
+**`live · four cards fit on one screen` is gone, replaced rather than deleted.**
+Five cards is three grid rows and genuinely does not fit 900px — that is a
+consequence of the layout Dan asked for, not a regression. The fit assertion
+moved to the **default three-card set**, which is two rows and is what an org
+that has never opened Edit Dashboard actually opens on.
+
+**Happening Today defaults ON.** Two of the five still default off; the absence
+rule is what keeps this one off every org whose Metabase cannot answer it.
+
 ## EACH LIVE CARD HAS ITS OWN SWITCH — AND TWO OF THEM DEFAULT OFF (2026-09-07)
 
 Dan: *"Ability to disable/enable specific widgets from the edit dashboard
