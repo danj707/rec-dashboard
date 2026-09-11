@@ -1,5 +1,85 @@
 # Project notes for Claude
 
+## THE IMAGE UPLOAD ROUTE WAS UNREACHABLE, AND IT READ PERFECTLY (2026-09-11)
+
+Dan, pasting a screenshot into Project Updates:
+
+```
+Image upload failed: Unexpected token '<', "<!DOCTYPE "... is not valid JSON
+```
+
+**THE UPLOAD ROUTE WAS NEVER THE PROBLEM.** `/admin/api/announcements/image`
+declares its own `express.json({ limit: '8mb' })`, validates the data URL,
+guards at 4MB and answers every path in JSON. It never ran.
+
+`server.js:33` carried a **global `app.use(express.json())` on Express's DEFAULT
+100kb limit**, registered ~930 lines ABOVE that route. **Express matches
+middleware in registration order**, so the global parser took every POST first.
+A pasted screenshot as a base64 data URL clears 100kb easily (base64 inflates
+~33%), so it threw `PayloadTooLargeError`, **Express's default error handler
+answered in HTML**, and the client's `r.json()` choked on `<!DOCTYPE` — telling
+the reader their JSON was malformed when the truth was the body was too big.
+
+**The route's own limit, its 4MB guard and its tidy 413 were all DEAD CODE** —
+unreachable, and they read correctly, which is why nothing looked wrong.
+
+**FOURTH INSTANCE OF THIS TRAP ACROSS THE TWO REPOS**: the campmap beacon route
+registered below the generic `/:org/:report/api/log`, the saved-views
+`Cache-Control` middleware registered below its own routes, and the render
+check's `/api/data` stub matching before the specific one. *A route that reads
+correctly can be unreachable because of where it sits.*
+
+### THE FIX IS TWO HALVES AND THEY GUARD DIFFERENT THINGS
+
+**1. The big parser is mounted PATH-SCOPED, BEFORE the global one.** The global
+parser then no-ops because `req.body` is already set. **Raising the global limit
+was the tempting one-liner and is wrong**: it widens the body a stranger can
+post at *every* endpoint in order to fix one, and 100kb is the right default for
+the other routes.
+
+**2. An error handler that answers an `/api` path in JSON**, registered last —
+an Express error handler only catches what is registered above it. Any unhandled
+throw otherwise reaches a `r.json()` client as HTML and it dies inside its own
+error path, one layer from the real problem. Same lesson as `reportFetchError`
+in the sibling repo. Non-API paths keep Express's own handling, because an HTML
+page is the right answer for an HTML surface.
+
+**THE TWO CEILINGS ARE WHY THERE ARE TWO TEST CASES, and the first draft of the
+spec could not tell them apart.** 6MB clears the 8mb parser and is refused by
+the ROUTE's own 4MB guard — that proves the order fix made the guard reachable.
+9MB dies in body-parser *before any route code runs*, which is the only case the
+error handler can answer. My first draft used 6MB for both and the
+handler-removed mutation therefore SURVIVED.
+
+### `SKIP_PREWARM=1` exists so the server can be booted by a test
+
+`app.listen` kicks `warmCache` five seconds in, which fans ~22 orgs at
+**production** Metabase. A spec that spawns this app would do that on every CI
+run — the self-inflicted-load trap the sibling repo records twice, where a sweep
+run alongside other work invented card failures on cards nobody had touched.
+Unset in production, so the default is unchanged.
+
+### Guards
+
+`scripts/announce-image-upload.spec.js` (**21 assertions, in CI**), and the
+live half is the real guard: **no source assertion can see this**, because the
+route reads correctly either way and what was wrong is where a line sits. It
+boots the server and posts real bodies — a 1px PNG (or the whole spec passes on
+a route that refuses everything), 600kb, 6MB and 9MB.
+
+Mutation-tested three ways, each failing by name and each isolating one half:
+
+| mutation | what fails |
+|---|---|
+| parser order reverted | the **600kb** case — the order fix is what makes a real paste work |
+| error handler removed | only the **9MB** case — the handler is what makes a parser-level failure legible |
+| **both** (the original state) | **7 assertions**, including *"a 600kb paste does NOT come back as an HTML error page — this is the bug exactly as Dan hit it"* |
+
+**`node_modules` is empty in this sandbox** (CI installs; nothing here did), so
+the live half died on `MODULE_NOT_FOUND` at `server.js:4` before asserting
+anything — which reads as a broken server rather than a missing install.
+`npm install` first, or the live half of any spec here proves nothing.
+
 ## "WHY ONLY THREE ORGS" — it was 22, and my own count was wrong (2026-09-11)
 
 Dan, on the merge note: *"why only three orgs, make the new live widget config
