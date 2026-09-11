@@ -373,6 +373,17 @@ const CHECKINS_TODAY_UUID     = '6c43be44-5b83-4db3-be86-ebef472f6a56';
    https://rec.metabaseapp.com/question/21583 */
 const FACILITY_TODAY_UUID     = '4e9ff19c-233d-46fa-84f4-008cea53cf0b';
 
+/* 📅 Happening Today (card 21814). The fifth live widget, and the only one
+   that is a LIST rather than a counter — Dan: "all programs happening at that
+   org today", with the running one highlighted and finished ones falling off
+   the top. Empty until somebody creates the public link, which hides the
+   widget rather than rendering "No programs happening today" at an org whose
+   feed simply cannot answer — the same absence rule as its four siblings, and
+   it matters more here because this widget has a cheerful empty state that
+   would read as a verdict.
+   https://rec.metabaseapp.com/question/21814 */
+const HAPPENING_TODAY_UUID    = '8e6df830-5cc2-4b22-871c-5b730fcca4a9';
+
 const SHARED_UUIDS = {
   facility: 'f6787f45-3a36-4501-8a5f-b0f647451a85',
   programs: 'e35f2b47-87c9-40e3-8507-3d9b56f9ce62',
@@ -431,7 +442,8 @@ const SHARED_UUIDS = {
   ...(ENROLLMENTS_TODAY_UUID  ? { 'enrollments-today':  ENROLLMENTS_TODAY_UUID }  : {}),
   ...(ENROLLMENTS_ROLLUP_UUID ? { 'enrollments-rollup': ENROLLMENTS_ROLLUP_UUID } : {}),
   ...(CHECKINS_TODAY_UUID     ? { 'checkins-today':     CHECKINS_TODAY_UUID }     : {}),
-  ...(FACILITY_TODAY_UUID     ? { 'facility-today':     FACILITY_TODAY_UUID }     : {})
+  ...(FACILITY_TODAY_UUID     ? { 'facility-today':     FACILITY_TODAY_UUID }     : {}),
+  ...(HAPPENING_TODAY_UUID    ? { 'happening-today':    HAPPENING_TODAY_UUID }    : {})
 };
 
 /* A LIVE WIDGET NEEDS ITS OWN CLOCK. Everything else here is a dashboard of a
@@ -443,7 +455,7 @@ const SHARED_UUIDS = {
 const LIVE_REPORT_TTL_MS = {
   enrollments: 60 * 1000, 'checkins-live': 60 * 1000,
   'enrollments-today': 60 * 1000, 'checkins-today': 60 * 1000,
-  'facility-today': 60 * 1000,
+  'facility-today': 60 * 1000, 'happening-today': 60 * 1000,
   /* THE ROLLUP IS NOT A LIVE FEED, and that is the point of it. It covers
      COMPLETE days only — never today — so within a day its answer cannot
      change, and asking for it once a minute would be asking sixty times for
@@ -460,7 +472,8 @@ const NO_DATE_REPORTS = new Set([
   /* The single-day live cards resolve the org's own today in SQL, so sending
      them a window would be sending the viewer's opinion about a day the org is
      the authority on. That is the bug they exist to remove. */
-  'enrollments-today', 'checkins-today', 'enrollments-rollup', 'facility-today'
+  'enrollments-today', 'checkins-today', 'enrollments-rollup', 'facility-today',
+  'happening-today'
 ]);
 
 // ═══════════════════════════════════════════

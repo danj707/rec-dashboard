@@ -250,10 +250,11 @@ if (H.liveWindow) {
      with per-card toggles an org that switched all four off would have kept a
      heading over a blank grid, so each `show*` now folds its switch in. Same
      intent, new shape — the section must never outlive its widgets. */
-  ok(/if \(!showEnroll && !showProg && !showCi && !showFac\) return null;/.test(code),
+  ok(/if \(!showEnroll && !showProg && !showCi && !showFac && !showHt\) return null;/.test(code),
      'the Live Widgets section hides itself when its widgets have nothing — a heading over a blank space reads as broken, not as absent');
   ok(/\{showEnroll \? <LiveRegistrations/.test(code) && /\{showCi \? <MembershipCheckins/.test(code)
-     && /\{showProg \? <ProgramsLive/.test(code) && /\{showFac \? <FacilityBookings/.test(code),
+     && /\{showProg \? <ProgramsLive/.test(code) && /\{showFac \? <FacilityBookings/.test(code)
+     && /\{showHt \? <HappeningToday/.test(code),
      '...and each card is gated on ITS OWN feed and switch, so one failing does not blank the other');
   ok(/const \[alive, setAlive\] = useState\(true\);/.test(code),
      '...optimistically, so a slow first fetch does not flash the section out and back in');
@@ -1364,8 +1365,14 @@ if (H.liveBySection) {
 
   /* THE PICKER CANNOT OUTLIVE THE SOUND. A menu of sounds beside a ticked Mute
      box is a control that does nothing. */
-  ok(/\{muted \? null : \(/.test(code),
-     'the sound menu is hidden while muted');
+  /* AND IT CANNOT OUTLIVE THE SOUND ITSELF. Happening Today passes no sound —
+     nothing ever lands on a schedule — so the Mute box and the picker are both
+     gated on there BEING one, or that card renders two controls that cannot do
+     anything. */
+  ok(/\{!sound \|\| muted \? null : \(/.test(code),
+     'the sound menu is hidden while muted, and absent entirely on a card with no sound');
+  ok(/\{sound \? \(\s*<label className="live-pause" data-live-mute-box=\{card\}/.test(code),
+     'and so is the Mute box itself');
 
   /* THEY RING TOGETHER, WHICH IS THE POINT. Dan: "hear them going off like
      it's a las vegas casino during busy times." The ring is an effect on the
@@ -1788,12 +1795,12 @@ process.on('exit', () => {
      feed that keeps serving a stale answer, or one that sleeps through a
      backgrounded tab, is the bug Dan reported — and it would be invisible if
      only one of the two carried the fix. */
-  ok((code.match(/document\.addEventListener\('visibilitychange', onVis\)/g) || []).length === 3,
-     'ALL THREE live feeds refetch when the tab becomes visible');
-  ok((code.match(/const t = setInterval\(load, LIVE_POLL_MS\);/g) || []).length === 3,
-     '...and all three poll on the same clock');
-  ok((code.match(/document\.removeEventListener\('visibilitychange', onVis\)/g) || []).length === 3,
-     '...and all three take the listener off again');
+  ok((code.match(/document\.addEventListener\('visibilitychange', onVis\)/g) || []).length === 4,
+     'ALL FOUR live feeds refetch when the tab becomes visible');
+  ok((code.match(/const t = setInterval\(load, LIVE_POLL_MS\);/g) || []).length === 4,
+     '...and all four poll on the same clock');
+  ok((code.match(/document\.removeEventListener\('visibilitychange', onVis\)/g) || []).length === 4,
+     '...and all four take the listener off again');
 }
 
 
@@ -1989,6 +1996,284 @@ process.on('exit', () => {
          '...checked over a real set of both, so the comparison is not vacuous');
     }
   }
+}
+
+/* ── HAPPENING TODAY ──────────────────────────────────────────────────────
+   Dan: "a new 'Happening Today' double height live widget on the left side ...
+   As the program becomes 'live' and happening in their time zone, it highlights
+   in green, once the time passes, it bumps off the top of the list and the list
+   scrolls up ... If there are no sections, it should say, 'No programs
+   happening today - enjoy the time off!'"
+
+   THE WHOLE RISK IS THE CLOCK. Every other live card asks "what landed today";
+   this one asks "is this running RIGHT NOW", and the answer has to be the same
+   on a wall screen in Denver and a laptop in Boston. So the six time helpers
+   are LIFTED AND RUN over the shapes the card actually emits — a regex over a
+   comparison passes on an inverted one, and a card that lights the wrong row
+   green renders just as plausibly as one that lights the right one. */
+{
+  let H = {};
+  try {
+    H = new Function(
+      liftFn(code, 'htMinutes') + '\n' + liftFn(code, 'htClock') + '\n' +
+      liftFn(code, 'htRange') + '\n' + liftFn(code, 'htNum') + '\n' +
+      liftFn(code, 'htState') + '\n' + liftFn(code, 'htVisible') + '\n' +
+      liftFn(code, 'htZoneLabel') + '\n' +
+      'return { htMinutes, htClock, htRange, htNum, htState, htVisible, htZoneLabel };')();
+  } catch (e) {
+    ok(false, 'the Happening Today time helpers could not be lifted and run: ' + e.message);
+  }
+
+  if (H.htState) {
+    const { htMinutes, htClock, htRange, htState, htVisible, htZoneLabel } = H;
+    const row = (a, b, extra) => Object.assign({ 'Starts At': a, 'Ends At': b }, extra || {});
+    /* start/end as MINUTES FROM NOW, which is how the card now ships the state. */
+    const at = (si, ei, extra) => Object.assign({ 'Starts In': si, 'Ends In': ei }, extra || {});
+
+    eq(htMinutes('2026-09-11T09:47:45'), 587, 'minutes since midnight comes off the string, not off a Date');
+    eq(htMinutes(null), null, 'a missing time is null rather than midnight');
+    eq(htMinutes(''), null, 'so is an empty one');
+    eq(htMinutes('nonsense'), null, '...and so is anything unparseable');
+
+    eq(htClock('2026-09-11T09:05:00'), '9:05a', 'the clock reads the way a person writes it');
+    eq(htClock('2026-09-11T13:30:00'), '1:30p', '...in twelve-hour form');
+    eq(htClock('2026-09-11T00:15:00'), '12:15a', 'midnight is 12, not 0');
+    eq(htClock('2026-09-11T12:00:00'), '12:00p', 'and noon is 12p, not 12a');
+
+    eq(htRange(row('2026-09-11T09:00:00', '2026-09-11T10:30:00')), '9:00a–10:30a',
+       'the time frame is the range Dan asked for');
+    /* A DANGLING SEPARATOR READS AS A MISSING VALUE. A session with no end
+       recorded prints its start alone rather than "9:00a-". */
+    eq(htRange(row('2026-09-11T09:00:00', null)), '9:00a',
+       'a session with no end prints its start alone, never a dangling dash');
+
+    /* THE THREE STATES, AT THE BOUNDARIES, in minutes from now. */
+    eq(htState(at(1, 91)),   'upcoming', 'a minute before it starts, it is upcoming');
+    eq(htState(at(0, 90)),   'live',     'the minute it starts, it is live');
+    eq(htState(at(-89, 1)),  'live',     'a minute before it ends, it is still live');
+    eq(htState(at(-90, 0)),  'finished', 'the minute it ends, it is finished');
+    eq(htState(at(-800, -740)), 'finished', 'and long past, it stays finished');
+
+    /* AN EVENING CLASS RUNNING PAST MIDNIGHT NEEDS NO SPECIAL CASE NOW. Its
+       `ends_at` is genuinely later in absolute terms; only a wall clock ever
+       made 00:30 look earlier than 21:00, and the card does the arithmetic. */
+    eq(htState(at(0, 210)), 'live', 'a class running past midnight is live when it starts');
+    eq(htState(at(-179, 31)), 'live', '...and still live at one minute to midnight');
+
+    /* WITHOUT THE MINUTES NOTHING IS FINISHED — the list stays whole rather
+       than emptying, which is the safe direction for a card whose empty state
+       reads "enjoy the time off". */
+    eq(htState({}), 'upcoming', 'with no minutes, a row is upcoming rather than finished');
+    eq(htState(at(null, null)), 'upcoming', '...and so is one whose minutes are null');
+    eq(htVisible([{}, at(null, null)]).length, 2,
+       '...so a feed that cannot supply them keeps every row on the list');
+    /* A STRING IS A NUMBER HERE. JSON from Metabase can hand these back either
+       way, and `"0" <= 0` is true only because JS coerces — reading them
+       through htNum keeps that an intention rather than an accident. */
+    eq(htState(at('0', '90')), 'live', 'minutes that arrive as strings are still read as numbers');
+
+    /* FINISHED ROWS LEAVE — that is the "list gets shorter and shorter". */
+    const day = [at(-120, -60), at(-30, 60), at(360, 420)];
+    eq(htVisible(day).length, 2, 'mid-morning, the finished one has gone');
+    eq(htVisible([at(-120, -60), at(-300, -240)]).length, 0, 'by the end of the day the list is empty');
+    eq(htVisible([at(10, 70), at(360, 420)]).length, 2, 'first thing, everything is still to come');
+
+    /* WHOSE CLOCK. The IANA name is turned into a word without a Date, since
+       every Intl route to an abbreviation needs one. */
+    eq(htZoneLabel('America/Chicago'), 'Chicago', 'the zone reads as a place');
+    eq(htZoneLabel('America/Los_Angeles'), 'Los Angeles', '...with the underscore taken out');
+    eq(htZoneLabel('UTC'), 'UTC', '...and a zone with no slash is left alone');
+    eq(htZoneLabel(null), '', '...and a missing one is empty rather than "null"');
+  }
+
+  /* NO Date IS CONSTRUCTED ANYWHERE IN THIS PATH. `new Date("2026-09-11T14:30:00")`
+     is the READER's 14:30, which is the whole bug this card is built around —
+     and it renders a perfectly plausible time either way, so only a source
+     assertion can see it. Over the lifted helpers, since the file at large
+     legitimately builds Dates for other things. */
+  {
+    const htSrc = ['htMinutes', 'htClock', 'htRange', 'htNum', 'htState', 'htVisible', 'htZoneLabel']
+      .map(n => { try { return liftFn(code, n); } catch (e) { return ''; } }).join('\n');
+    ok(htSrc.length > 300, 'the time helpers are readable — without this the next assertion is vacuous');
+    ok(!/new Date\(/.test(htSrc),
+       'no Happening Today helper constructs a Date — the org\'s clock is a string, and parsing it would be the reader\'s');
+  }
+
+  /* THE LAYOUT IS THE ASK, and source order is what produces it. Dan, on his
+     own sketch: "programs live and facility bookings drop to a row underneath.
+     Check ins and live enrollment are the same height, half of happening
+     today." On a four-column grid that is a two-row span plus equal rows, and
+     the order of the five cards in the grid is what places them. */
+  ok(/<div className="widget-grid live-grid">[\s\S]{0,200}?HappeningToday[\s\S]{0,200}?MembershipCheckins[\s\S]{0,200}?LiveRegistrations[\s\S]{0,200}?ProgramsLive[\s\S]{0,300}?FacilityBookings/.test(code),
+     'the five live cards render in the order that produces Dan\'s layout: Happening, Check-Ins, Live Enrollments, then Programs and Facility underneath');
+  ok(/widget-card widget-md widget-tall live-card/.test(code),
+     'Happening Today is the tall card');
+  ok((code.match(/widget-tall/g) || []).length >= 2,
+     '...on both its loading and its loaded render, or it changes size when the feed lands');
+  ok(/\.widget-tall \{ grid-row: span 2; \}/.test(src),
+     '...and "tall" means two grid rows');
+  ok(/\.live-grid \{ grid-auto-rows: 1fr; \}/.test(src),
+     'the live grid sizes its rows equally, which is what makes the two on the right the same height');
+  /* AND ONLY THE LIVE GRID. `.widget-grid` is every report section on the
+     page; equal rows there would resize widgets nobody touched. */
+  ok(!/^\.widget-grid \{[^}]*grid-auto-rows/m.test(src),
+     '...and only the live grid — the report sections below keep sizing their rows independently');
+  /* BELOW FOUR COLUMNS THE SPAN MEANS NOTHING, because there is no column
+     beside it for the two half-height cards to stack in. */
+  ok(/@media \(max-width: 1100px\) \{\s*\n\s*\.live-grid \{ grid-auto-rows: auto; \}\s*\n\s*\.widget-tall \{ grid-row: span 1; \}/.test(src),
+     'the tall card becomes an ordinary one once the grid is narrower than four columns');
+
+  /* THE LIST SCROLLS INSIDE THE CARD. `overflow-y: auto` ALONE IS NOT THE FIX
+     — an auto grid row sizes to its content, so a hundred sessions would grow
+     the row and there would be nothing left over to scroll. `flex: 1 1 0` with
+     `min-height: 0` is what drops the list out of the card's own intrinsic
+     height, and all three properties have to be there. */
+  ok(/\.ht-list \{ flex: 1 1 0; min-height: 0; overflow-y: auto;/.test(src),
+     'the list scrolls inside the card, and its flex basis is what keeps the row from growing to fit it');
+
+  /* DAN'S COPY, VERBATIM. Plain hyphen, exclamation mark and all. */
+  ok(/No programs happening today - enjoy the time off!/.test(code),
+     'the empty state is Dan\'s line, word for word');
+  /* TWO EMPTY STATES, because they are two different days. "Enjoy the time
+     off" at 9pm, to a team that has just run forty sessions, reads as the card
+     having lost them. */
+  ok(/data-ht-empty="none"/.test(code) && /data-ht-empty="done"/.test(code),
+     'a day with nothing on it and a day whose programmes have all run are different empty states');
+  ok(/rows\.length === 0 \?/.test(code),
+     '...and the cheerful one is gated on there being NO rows, not on none being left');
+  /* AND NEITHER OF THEM RENDERS ON A FEED THAT COULD NOT ANSWER. This is the
+     most confidently wrong thing this card could print. */
+  ok(/if \(err\) return null;[\s\S]{0,600}?data-live-happening="loading"/.test(code),
+     'a failed schedule feed renders nothing, and a pending one renders a loading card');
+
+  /* NULL CAPACITY IS UNLIMITED, NOT ZERO. `11/0` is a number that cannot be
+     true, and Number(undefined) is how it gets printed. */
+  ok(/cap === null \? '—' : cap/.test(code),
+     'a section with no capacity prints a dash rather than "11/0"');
+  ok(/capRaw === null \|\| capRaw === undefined \|\| capRaw === ''/.test(code),
+     '...and the test is on PRESENCE, so a real capacity of 0 is not mistaken for an absent one');
+
+  /* A SESSION CAN HOLD MORE THAN ONE SITE — four, measured at apex the day
+     this was built — so the card aggregates them and the row says how many
+     rather than printing the first as though it were the whole booking. */
+  ok(/Number\(r\['Site Count'\]\) \|\| 0/.test(code) && /siteCount > 1 \? ' \+' \+ \(siteCount - 1\)/.test(code),
+     'a session spanning more than one site says so instead of naming the first');
+
+  /* THE LINK IS THE ASK — "clickable link directly to Rec admin" — and it goes
+     through the one builder both other cards use rather than composing a URL
+     of its own. Absent, not dead, where there is no org id. */
+  ok(/liveSectionUrl\(recOrgId, r\['Section Id'\]\)/.test(code),
+     'the row links into Rec through the shared section-URL builder');
+  ok(/url\s*\n?\s*\? <a className="live-link"/.test(code),
+     '...and renders as plain text rather than a link to nowhere when there is no org id');
+
+  /* NOTHING EVER LANDS ON A SCHEDULE, so this card passes no sound — see the
+     Mute assertions above for the other half. */
+  ok(!/useLiveSound\('happening'/.test(code),
+     'Happening Today has no arrival sound: nothing lands on a schedule, and a Mute box for it would control nothing');
+
+  /* THE SERVER SIDE. A card wired into the page and not into the server is a
+     widget that 404s its own feed. */
+  ok(/'happening-today':\s+HAPPENING_TODAY_UUID/.test(srv),
+     'the happening card is in SHARED_UUIDS — behind its uuid, so it is absent until there is a public link');
+  ok(/HAPPENING_TODAY_UUID\s+\?/.test(srv),
+     '...spread conditionally, so an empty uuid omits the key rather than registering a card that cannot answer');
+  ok(/'happening-today': 60 \* 1000/.test(srv),
+     '...and it refreshes on the live clock rather than the org\'s configured TTL');
+  ok(/'happening-today'\s*\n\]\)/.test(srv),
+     '...and it is date-less: it resolves the org\'s own today in SQL, so sending it a window would send the viewer\'s opinion');
+
+  /* THE CARD MIRROR. */
+  const htSql = fs.readFileSync(path.join(__dirname, '..', 'sql', 'happening-today.sql'), 'utf8');
+  ok(/\{\{org_id\}\}/.test(htSql), 'the mirror takes org_id');
+  ok(!/\{\{start_date\}\}|\{\{end_date\}\}/.test(htSql),
+     '...and no date tags at all, which is what means an API push never needs a tag flip');
+  const htCode = htSql.replace(/^\s*--.*$/gm, '');
+  ok(/starts_at >= w\.t0 AND s\.starts_at < w\.t1/.test(htCode),
+     'the day is an instant range, so the session index stays usable');
+  ok(!/\(s\.starts_at AT TIME ZONE [a-z_.]+\)::date =/.test(htCode),
+     '...and the column is never wrapped, which is the whole performance story');
+  ok(/AS "Org Now"/.test(htCode) && /AS "Org Today"/.test(htCode) && /AS "Org Timezone"/.test(htCode),
+     'the card ships the org\'s own clock, so the page never parses an offset');
+
+  /* THE ROW'S CLOCK IS ITS LOCATION'S, WHICH IS WHAT REC SHOWS. Dan, with the
+     widget beside the Rec page: "lets fix the time thing". 2026 Beach
+     Volleyball read 7:00a-11:00p on the card and 6:00AM-10:00PM in Rec — its
+     location is America/Chicago, the org is America/New_York. Proven twice:
+     `Tiny Tots 2026/2027 (8:00am-11:00am)` carries its own time in the section
+     NAME and only its location's zone (America/Los_Angeles) renders 08:00. */
+  ok(/TO_CHAR\(s\.starts_at AT TIME ZONE d\.dtz/.test(htCode)
+     && /TO_CHAR\(s\.ends_at\s+AT TIME ZONE d\.dtz/.test(htCode),
+     'the displayed clock is the SESSION\'s location, not the org\'s — which is what Rec\'s own page shows');
+  ok(/COALESCE\(NULLIF\(l\.timezone, ''\), s\.tz\) AS dtz/.test(htCode),
+     '...falling back to the org\'s zone for a session with no location, or it would render nothing');
+  ok(/AS "Display Timezone"/.test(htCode),
+     '...and the zone travels with the row, so it can say whose clock it is when that is not the org\'s');
+  /* THE DAY IS STILL ONE ZONE. Per-location day boundaries would let a row
+     belong to two days at once. */
+  ok(/\(\(NOW\(\) AT TIME ZONE tz\)::date\)::timestamp\s+AT TIME ZONE tz AS t0/.test(htCode),
+     'the WINDOW stays on the org\'s zone, so "today" is one day for the whole card');
+
+  /* THE STATE IS MINUTES FROM ONE ABSOLUTE NOW. Once the clock on the row is
+     the location's and the window is the org's, comparing them would be
+     comparing different zones — and a wrong comparison lights the wrong row
+     green, which renders just as plausibly as the right one. */
+  ok(/CEIL\(EXTRACT\(EPOCH FROM \(s\.starts_at - NOW\(\)\)\) \/ 60\)::int\s+AS "Starts In"/.test(htCode),
+     'the state ships as signed minutes from now rather than as a wall clock');
+  ok(/CEIL\(EXTRACT\(EPOCH FROM \(d\.end_at\s+- NOW\(\)\)\) \/ 60\)::int\s+AS "Ends In"/.test(htCode),
+     '...both ends of it');
+  /* CEIL RATHER THAN FLOOR: a session thirty seconds out must read as one
+     minute away, not as already running. */
+  ok(!/FLOOR\(EXTRACT\(EPOCH FROM/.test(htCode),
+     '...rounded away from now, so a session half a minute out is not reported as live');
+  /* A NULL END IS AN INSTANT, and an end at or before the start is a data
+     fault rather than a midnight crossing — `ends_at` is a timestamptz, so a
+     real 00:30 finish is already later in absolute terms. */
+  ok(/CASE WHEN s\.ends_at IS NULL OR s\.ends_at <= s\.starts_at\s*\n\s*THEN s\.starts_at \+ INTERVAL '1 minute' ELSE s\.ends_at END AS end_at/.test(htCode),
+     'a session with no end is an instant rather than one that never finishes');
+  /* THE ORG'S OWN primaryTimezone WINS, NOT THE MAJORITY LOCATION — and this
+     card deliberately differs from its three siblings on that. They ask "what
+     landed today", where the zone only moves a day boundary; this one decides
+     whether a row is GREEN, so a wrong zone is visible on screen all day.
+     MEASURED, AND IT IS LIVE FOR ONE OF THE THREE DASHBOARD ORGS: City of
+     Niagara Falls has 17 Los_Angeles locations, 13 New_York and 4 Chicago, so
+     MODE() picks Pacific by a four-location plurality for a city in New York
+     State and its 7am session reported as 04:00. */
+  ok(/primaryTimezone/.test(htCode),
+     'the org\'s own primaryTimezone is what the day is resolved in');
+  ok(/COALESCE\(\s*\n\s*\(SELECT NULLIF\(o\.config #>> '\{general,primaryTimezone\}'/.test(htCode),
+     '...and it is FIRST, ahead of the location mode — Niagara Falls is three hours out the other way round');
+  ok(/MODE\(\) WITHIN GROUP \(ORDER BY l\.timezone\)/.test(htCode)
+     && /'America\/Chicago'\) AS tz/.test(htCode),
+     '...with the location mode still the fallback, and a literal behind that, so an org with neither still resolves');
+  /* AGGREGATED, NEVER JOINED. Joining reservation_court onto the row set
+     multiplies a session by the courts it holds — and every figure with it. */
+  ok(/STRING_AGG\(DISTINCT c\.court_number/.test(htCode) && /GROUP BY r\.session_id/.test(htCode),
+     'the site is aggregated per session rather than joined, or a four-court session becomes four rows');
+  /* ENROLMENT AT THE SECTION'S OWN GRAIN. Reading one side only reports 0 for
+     the other — a quarter of apex's day, or three quarters of it. */
+  ok(/registration_mode = 'per-session'\s*\n\s*THEN COALESCE\(bs\.n, 0\) ELSE COALESCE\(bc\.n, 0\) END/.test(htCode),
+     'enrolment is read at the section\'s own grain, per-session against per-run');
+  /* CANCELLED AND UNPUBLISHED ARE RETURNED AND MARKED, not dropped — excluded
+     is never hidden, and both still hold the room. */
+  ok(/AS "Cancelled"/.test(htCode) && /AS "Published"/.test(htCode),
+     'cancelled and unpublished sessions come back marked rather than filtered out');
+  ok(/ORDER BY s\.starts_at, s\.section_name/.test(htCode),
+     'and the trailing ORDER BY is there — the exact thing that silently vanished on card 17300');
+  /* ORDERED BY THE INSTANT, NOT BY THE DISPLAYED CLOCK. On an org whose
+     locations span zones the two disagree, and sorting by what is printed
+     would put a 3:00p Chicago session after a 2:00p Pacific one that starts
+     three hours later. */
+  ok(!/ORDER BY .*AT TIME ZONE/.test(htCode),
+     '...on the raw instant, so a multi-zone org still lists what happens next, next');
+
+  /* THE PAGE SAYS WHOSE CLOCK IT IS when the row's zone is not the org's —
+     without it, a list ordered by the instant looks out of order and there is
+     nothing on screen to explain why. */
+  ok(/dtz && orgTz && dtz !== orgTz \? htZoneLabel\(dtz\)/.test(code),
+     'the row marks its own timezone, but only when it differs from the org\'s');
+  ok(/data-ht-zone=\{dtz\}/.test(code),
+     '...and says which, rather than merely that it differs');
 }
 
 /* ── THE FACE HOLD, AND THE FOUR-ON-A-SCREEN BLOCK ────────────────────────*/
@@ -2217,6 +2502,7 @@ process.on('exit', () => {
       liftFn(src, 'liveHasEnrollments') + '\n' +
       liftFn(src, 'liveHasCheckins') + '\n' +
       liftFn(src, 'liveHasFacility') + '\n' +
+      liftFn(src, 'liveHasHappening') + '\n' +
       'const LIVE_CARDS = ' + arr[1] + '\n' +
       liftFn(src, 'liveCardOn') + '\n' +
       liftFn(src, 'liveCardsResolved') + '\n' +
@@ -2228,15 +2514,20 @@ process.on('exit', () => {
   if (L.liveCardOn) {
     const { LIVE_CARDS, liveCardOn, liveCardsResolved } = L;
     // every feed present, so presence never masks a switch in these cases
-    const ALL = { 'enrollments-today':1, 'enrollments-rollup':1, 'checkins-today':1, 'facility-today':1 };
+    const ALL = { 'enrollments-today':1, 'enrollments-rollup':1, 'checkins-today':1,
+                  'facility-today':1, 'happening-today':1 };
 
-    eq(LIVE_CARDS.length, 4, 'four live cards are registered');
+    eq(LIVE_CARDS.length, 5, 'five live cards are registered');
 
     /* THE DEFAULTS, which are the ask itself. */
     eq(liveCardOn('enrollments', undefined), true,  'nothing saved: Live Enrollments defaults ON');
     eq(liveCardOn('checkins',    undefined), true,  'nothing saved: Membership Check-Ins defaults ON');
     eq(liveCardOn('programs',    undefined), false, 'nothing saved: Programs Live must be enabled by hand');
     eq(liveCardOn('facility',    undefined), false, 'nothing saved: Facility Bookings must be enabled by hand');
+    /* HAPPENING TODAY DEFAULTS ON — Dan asked for it as the anchor of the
+       section, not as an opt-in. It is still absent until the card has a
+       public link, which is what keeps it off every org that cannot answer. */
+    eq(liveCardOn('happening',   undefined), true,  'nothing saved: Happening Today defaults ON');
 
     /* ABSENT IS THE CARD'S OWN DEFAULT, NOT ON. This is the assertion that
        fails on the `!== false` mutation — an empty saved map is exactly what a
@@ -2275,8 +2566,17 @@ process.on('exit', () => {
     eq(progOnly.programs, false, 'Programs Live needs the enrollments card, not a test of its own');
 
     const all = liveCardsResolved(undefined, ALL);
-    eq(Object.values(all).filter(Boolean).length, 2,
-       'a brand-new org with every feed present gets exactly the two default cards');
+    eq(Object.values(all).filter(Boolean).length, 3,
+       'a brand-new org with every feed present gets exactly the three default cards');
+
+    /* PRESENCE STILL GATES THE NEW ONE, and this is the assertion that matters
+       most for it: with no public link the key is absent from SHARED_UUIDS, and
+       a Happening Today that resolved ON anyway would print "enjoy the time
+       off!" at an org whose feed cannot answer at all. */
+    const noHt = liveCardsResolved({ happening: true }, { 'checkins-today':1 });
+    eq(noHt.happening, false, 'Happening Today ticked but the card absent resolves OFF');
+    const htOnly = liveCardsResolved(undefined, { 'happening-today':1 });
+    eq(htOnly.happening, true, 'the happening card alone still resolves on');
   }
 
   /* ── the wiring a lifted resolver cannot see ── */
@@ -2300,11 +2600,13 @@ process.on('exit', () => {
      'the check-ins fetch is gated on its card being on');
   ok(/useLiveFacility\(setFacAlive, !!hasFacility && !!cards\.facility\)/.test(src),
      'the facility fetch is gated on its card being on');
+  ok(/useLiveHappening\(setHtAlive, !!hasHappening && !!cards\.happening\)/.test(src),
+     'the happening fetch is gated on its card being on');
 
   /* THE SECTION HIDES WITH ITS WIDGETS. The old emptiness test asked only
      whether the feeds were ALIVE, so an org that switched all four off would
      have kept a heading over an empty grid. */
-  ok(/if \(!showEnroll && !showProg && !showCi && !showFac\) return null;/.test(src),
+  ok(/if \(!showEnroll && !showProg && !showCi && !showFac && !showHt\) return null;/.test(src),
      'the section hides when every card is switched off, not only when the feeds die');
 
   /* THE EDITOR MUST PERSIST THE MAP, or every tick is forgotten on Save. */

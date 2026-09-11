@@ -414,6 +414,94 @@ const FACILITY = [
     Attendees: 1, Price: 999, Paid: 999 },
 ];
 
+/* ── HAPPENING TODAY ──────────────────────────────────────────────────────
+   THE STATE IS PINNED AS MINUTES, so these cases are deterministic whenever
+   CI happens to run. The card ships `Starts In` / `Ends In` against one
+   absolute NOW; a page that went back to reading `new Date()` would compute
+   from the printed clock instead and land on the wrong rows the moment the
+   harness is not running at 10:15 on this date — which is almost always.
+
+   THE CLOCK ON EACH ROW IS ITS LOCATION'S, NOT THE ORG'S, because that is
+   what Rec's own admin shows. `sess-chi` is the row that proves the page
+   honours it AND the reason the marker exists: it prints 9:30a and sits
+   BELOW the 10:00a row, because the list is ordered by the actual moment and
+   Chicago is an hour behind the org. Without the "Chicago time" note that
+   reads as a sorting bug.
+
+   SIX NAMED ROWS, SIX STATES, because rows of markup look identical under
+   most regressions worth catching: one already finished (so the visible count
+   is one short of the total), one running now, one in another zone, one with
+   NO CAPACITY (which must read "4/—" and never "4/0"), one cancelled, and one
+   evening class whose printed end is numerically before its printed start. */
+const HT_NOW = '2026-09-11T10:15:00';
+const HT_TZ  = 'America/New_York';
+const htRow = (o) => Object.assign({
+  'Org Now': HT_NOW, 'Org Today': '2026-09-11', 'Org Timezone': HT_TZ,
+  'Display Timezone': HT_TZ,
+  'Program': null, 'Location': null, 'Site': null, 'Site Count': 0,
+  'Registration Mode': 'section', 'Cancelled': false, 'Published': true,
+}, o);
+const HAPPENING = [
+  htRow({ 'Session Id': 'sess-yoga', 'Section Id': 'sec-yoga', 'Section': 'Sunrise Yoga',
+          'Program': 'Yoga', 'Starts At': '2026-09-11T08:00:00', 'Ends At': '2026-09-11T09:00:00',
+          'Starts In': -135, 'Ends In': -75,
+          'Location': 'Rec Center', 'Site': 'Studio 1', 'Site Count': 1,
+          'Enrolled': 12, 'Capacity': 12 }),
+  htRow({ 'Session Id': 'sess-swim', 'Section Id': 'sec-swim', 'Section': 'Swim Lessons AM',
+          'Program': 'Swim Lessons', 'Starts At': '2026-09-11T10:00:00', 'Ends At': '2026-09-11T11:00:00',
+          'Starts In': -15, 'Ends In': 45,
+          'Location': 'Aquatic Center', 'Site': 'Lane 1, Lane 2', 'Site Count': 2,
+          'Enrolled': 8, 'Capacity': 20 }),
+  /* ANOTHER ZONE. Printed 9:30a, starts FIFTEEN MINUTES FROM NOW — so it sits
+     below the 10:00a row, and only the marker explains that. */
+  htRow({ 'Session Id': 'sess-chi', 'Section Id': 'sec-chi', 'Section': 'Lakefront Volleyball',
+          'Program': 'Volleyball', 'Starts At': '2026-09-11T09:30:00', 'Ends At': '2026-09-11T11:30:00',
+          'Display Timezone': 'America/Chicago', 'Starts In': 15, 'Ends In': 135,
+          'Location': 'Lake Shore Drive Courts', 'Site': 'Court 2', 'Site Count': 1,
+          'Enrolled': 6, 'Capacity': 12 }),
+  htRow({ 'Session Id': 'sess-open', 'Section Id': 'sec-open', 'Section': 'Open Gym',
+          'Starts At': '2026-09-11T13:00:00', 'Ends At': '2026-09-11T14:00:00',
+          'Starts In': 165, 'Ends In': 225,
+          'Location': 'Field House', 'Enrolled': 4, 'Capacity': null, 'Published': false }),
+  htRow({ 'Session Id': 'sess-pb', 'Section Id': 'sec-pb', 'Section': 'Pickleball Social',
+          'Program': 'Pickleball', 'Starts At': '2026-09-11T15:00:00', 'Ends At': '2026-09-11T16:00:00',
+          'Starts In': 285, 'Ends In': 345,
+          'Location': 'Courts', 'Site': 'Court 3', 'Site Count': 1,
+          'Enrolled': 6, 'Capacity': 16, 'Cancelled': true }),
+  htRow({ 'Session Id': 'sess-vb', 'Section Id': 'sec-vb', 'Section': 'Evening Volleyball',
+          'Program': 'Volleyball', 'Starts At': '2026-09-11T21:00:00', 'Ends At': '2026-09-12T00:30:00',
+          'Starts In': 645, 'Ends In': 855,
+          'Location': 'Gym', 'Site': 'Court A', 'Site Count': 1,
+          'Enrolled': 18, 'Capacity': 24 }),
+];
+/* ENOUGH ROWS THAT THE LIST MUST SCROLL, and this padding is load-bearing.
+   With six rows the list fits inside the card whatever its flex rules say, so
+   a build that dropped `flex: 1 1 0` — the plausible half-fix, keeping only
+   `overflow-y: auto` — renders identically and the scroller case passes on it.
+   Caught by mutation, not by review. Twenty-five more upcoming sessions make
+   an unbounded list obviously taller than the card it sits in. */
+for (let i = 0; i < 25; i++) {
+  const h = 11 + Math.floor(i / 3);
+  const mm = (i % 3) * 20;
+  const t = (n) => String(n).padStart(2, '0');
+  HAPPENING.push(htRow({
+    'Session Id': 'sess-fill-' + i, 'Section Id': 'sec-fill-' + i,
+    'Section': 'Filler Session ' + i, 'Program': 'Filler',
+    'Starts At': '2026-09-11T' + t(h) + ':' + t(mm) + ':00',
+    'Ends At':   '2026-09-11T' + t(h) + ':' + t(mm + 15) + ':00',
+    'Starts In': 45 + i * 20, 'Ends In': 60 + i * 20,
+    'Location': 'Annex', 'Site': 'Room ' + i, 'Site Count': 1,
+    'Enrolled': i % 7, 'Capacity': 10 }));
+}
+
+/* THE WHOLE DAY, ALREADY RUN. Every session ended before now, so the list is
+   empty for a reason that is NOT "nothing was scheduled" — which is the one
+   case where Dan's "enjoy the time off!" would be the wrong thing to print. */
+const HAPPENING_DONE = HAPPENING.map(r => htRow(Object.assign({}, r, {
+  'Starts At': '2026-09-11T06:00:00', 'Ends At': '2026-09-11T07:00:00',
+  'Starts In': -255, 'Ends In': -195 })));
+
+
 /* A DENSE DAY, shaped like Apex's real one: 468 scans between 05:46 and 14:29,
    peaking at 37 in the 8:45 quarter-hour. The lane's whole reason for changing
    form is this shape, and a fixture of seventeen scans cannot express it — so
@@ -640,9 +728,15 @@ const CASES = [
   { name: 'live · a new registration lands highlighted, at the top',
     needs: '[data-live-regs] .live-table tbody tr:first-child[data-live-new="1"] td.lp',
     act: async page => {
-      await page.waitForSelector('.live-pause input', { timeout: 15000 });
-      await page.click('.live-pause input');          // pause
-      await page.click('.live-pause input');          // unpause -> immediate refetch
+      /* SCOPED TO THE ENROLLMENTS CARD. A bare `.live-pause input` is
+         whichever card renders FIRST, and Happening Today took that place when
+         it shipped — so this quietly paused the wrong card and the enrollments
+         feed never refetched, failing three cases that had nothing to do with
+         the change. A case that depends on card order stops testing what it
+         names the moment the order moves. */
+      await page.waitForSelector('[data-live-regs] .live-pause input', { timeout: 15000 });
+      await page.click('[data-live-regs] .live-pause input');          // pause
+      await page.click('[data-live-regs] .live-pause input');          // unpause -> immediate refetch
       await page.waitForSelector('[data-live-new="1"]', { timeout: 15000 });
     } },
   { name: 'live · ...and it is the only one highlighted',
@@ -1421,6 +1515,112 @@ const CASES = [
   { name: 'live · ...including the check-ins card, off its own one-day feed',
     lightFeeds: true, needs: '[data-live-section="1"] [data-live-checkins]',
     act: loadLight },
+
+  /* ── HAPPENING TODAY ──────────────────────────────────────────────────
+     KEYED ON COMPUTED VALUES, never on the card existing. Every regression
+     worth catching here renders a perfectly plausible list: a page that kept
+     finished sessions draws five rows, one that read the browser's clock
+     draws them all grey, and one that printed Number(capacity) draws "4/0".
+     Only the numbers separate them. */
+  { name: 'live · happening today drops what has already finished',
+    lightFeeds: true, needs: '[data-live-happening="31"] [data-ht-rows="30"]',
+    act: loadLight },
+  /* ABSENT FROM THE DOM, not merely greyed. Dan: "it bumps off the top of the
+     list and the list scrolls up." */
+  { name: 'live · ...the finished one is gone from the list entirely',
+    lightFeeds: true, needs: '[data-ht-rows="30"]', absent: '[data-ht-session="sess-yoga"]' },
+  /* THE STATE COMES OFF THE FEED, NOT OFF THE READER'S CLOCK. The fixture
+     pins every row's `Starts In` / `Ends In` in minutes, so these hold whenever
+     CI runs; a page that went back to reading `new Date()` against the printed
+     clock lands on the wrong rows the moment it is not 10:15 on this date. */
+  { name: 'live · ...the session running now is the green one',
+    lightFeeds: true, needs: '[data-ht-session="sess-swim"][data-ht-row="live"]' },
+  { name: 'live · ...and a later one is NOT green just because it is on the list',
+    lightFeeds: true, needs: '[data-ht-session="sess-open"][data-ht-row="upcoming"]',
+    absent: '[data-ht-session="sess-open"][data-ht-row="live"]' },
+  /* THE GREEN IS CSS, so only a browser can say it is actually painted. A
+     class that renders and styles nothing reads identically in source. */
+  { name: 'live · ...and green means a green bar, not just a class name',
+    lightFeeds: true, needs: 'body[data-ht-bar="rgb(22, 163, 74)"]',
+    act: async page => {
+      await page.waitForSelector('[data-ht-session="sess-swim"]', { timeout: 20000 });
+      await page.evaluate(() => {
+        const el = document.querySelector('[data-ht-session="sess-swim"]');
+        document.body.setAttribute('data-ht-bar', getComputedStyle(el).borderLeftColor);
+      });
+    } },
+  /* THE ROW'S CLOCK IS ITS LOCATION'S, which is what Rec's own page shows.
+     Dan: "lets fix the time thing". The fixture's Chicago row PRINTS 9:30a
+     while starting fifteen minutes from now, so a page that re-derived the
+     time from anything else cannot produce it. */
+  { name: 'live · ...a session in another zone keeps its own clock',
+    lightFeeds: true, needs: '[data-ht-session="sess-chi"] [data-ht-when="9:30a–11:30a"]' },
+  /* AND SAYS SO. The list is ordered by the instant, so that 9:30a sits BELOW
+     a 10:00a row — without the marker that reads as a sorting bug. */
+  { name: 'live · ...and says whose clock it is',
+    lightFeeds: true, needs: '[data-ht-session="sess-chi"] [data-ht-zone="America/Chicago"]',
+    text: /Chicago time/ },
+  /* BUT ONLY WHEN IT DIFFERS. A marker on every row is noise, and on a
+     single-zone org — which is every real one — there should be none at all. */
+  { name: 'live · ...and stays quiet on a row in the org\'s own zone',
+    lightFeeds: true, needs: '[data-ht-session="sess-swim"]',
+    absent: '[data-ht-session="sess-swim"] [data-ht-zone]' },
+  /* ORDERED BY THE MOMENT, NOT THE PRINTED CLOCK — 9:30a below 10:00a is the
+     point. Sorting on what is displayed would put them the other way round. */
+  { name: 'live · ...and the list is ordered by the moment, not the clock',
+    lightFeeds: true, needs: 'body[data-ht-order="sess-swim,sess-chi"]',
+    act: async page => {
+      await page.waitForSelector('[data-ht-session="sess-chi"]', { timeout: 20000 });
+      await page.evaluate(() => {
+        const ids = [...document.querySelectorAll('[data-ht-session]')]
+          .map(el => el.getAttribute('data-ht-session'))
+          .filter(id => id === 'sess-swim' || id === 'sess-chi');
+        document.body.setAttribute('data-ht-order', ids.join(','));
+      });
+    } },
+  /* NULL CAPACITY IS UNLIMITED, NOT ZERO. Both halves: the dash present AND
+     "4/0" absent — asserting the dash alone passes on a row that never
+     rendered. */
+  { name: 'live · ...a section with no capacity reads 4/— and never 4/0',
+    lightFeeds: true, needs: '[data-ht-session="sess-open"] [data-ht-enrolled="4/—"]',
+    absent: '[data-ht-enrolled="4/0"]' },
+  { name: 'live · ...and a section with one reads Dan’s 8/20',
+    lightFeeds: true, needs: '[data-ht-session="sess-swim"] [data-ht-enrolled="8/20"]' },
+  /* A SESSION CAN HOLD MORE THAN ONE SITE — four, measured. Printing the first
+     as though it were the whole booking is the confident half-truth. */
+  { name: 'live · ...a session on two sites says +1 rather than naming one',
+    lightFeeds: true, needs: '[data-ht-session="sess-swim"]',
+    text: /Lane 1, Lane 2 \+1/ },
+  /* THE LINK IS THE ASK: "clickable link directly to Rec admin". */
+  { name: 'live · ...and the section name links into Rec',
+    lightFeeds: true, needs: '[data-ht-link="sec-swim"][href*="/programming/sections/sec-swim"]' },
+  { name: 'live · ...a cancelled session stays on the list and says so',
+    lightFeeds: true, needs: '[data-ht-session="sess-pb"] [data-ht-cancelled="1"]' },
+  /* THE LIST SCROLLS INSIDE THE CARD rather than growing it. Only a browser
+     can say whether the box actually clips — `overflow-y: auto` with an
+     unbounded row renders identically in source and scrolls nothing. */
+  { name: 'live · ...and the list is a scroller, not a card that grew to fit',
+    lightFeeds: true, needs: 'body[data-ht-scrolls="1"]',
+    act: async page => {
+      await page.waitForSelector('.ht-list', { timeout: 20000 });
+      await page.evaluate(() => {
+        const l = document.querySelector('.ht-list');
+        const card = l.closest('.live-card');
+        /* The list must be no taller than the card that holds it, and the
+           card no taller than the two beside it stacked. */
+        const others = [...document.querySelectorAll('.live-card')]
+          .filter(c => c !== card).map(c => c.getBoundingClientRect().height);
+        const tallestOther = Math.max.apply(null, others.concat([0]));
+        /* IT REALLY CLIPS. Without this the case passes on a list that
+           simply fits — which is what let the "overflow-y alone" mutation
+           through on a five-row fixture. */
+        const ok = l.scrollHeight > l.clientHeight + 8
+                && l.clientHeight <= card.getBoundingClientRect().height + 1
+                && card.getBoundingClientRect().height > tallestOther
+                && getComputedStyle(l).overflowY === 'auto';
+        document.body.setAttribute('data-ht-scrolls', ok ? '1' : '0');
+      });
+    } },
   /* THE MERGE ITSELF. The rollup gives Swim 7 + 3 signups across two past days
      and the today feed gives it one; a board that dropped the history would
      show 1, and one that double-counted today would show more than 11. Keyed
@@ -1603,7 +1803,20 @@ const CASES = [
                                       + Math.max(...bad) + 'px, onto the hour labels');
     } },
 
-  { name: 'live · four cards fit on one screen',
+  /* DAN'S LAYOUT, MEASURED. His own words on the sketch: "programs live and
+     facility bookings drop to a row underneath. Check ins and live enrollment
+     are the same height, half of happening today." That is a geometric claim
+     and NOTHING IN SOURCE CAN SEE IT — the spans and the `1fr` rows are
+     asserted there, but whether they actually produce a tall card of exactly
+     two short ones is a question about the rendered box. The tall card's
+     content is a scroller, so a build whose row sizing failed would render a
+     perfectly plausible card at whatever height its header needs.
+
+     WITH FIVE CARDS THIS IS THREE ROWS AND NO LONGER FITS ONE SCREEN, which is
+     a consequence of the layout Dan asked for rather than a regression — the
+     fit assertion moved to the DEFAULT three-card set below, which is what an
+     org actually opens on. */
+  { name: 'live · the tall card is exactly the two beside it, stacked',
     lightFeeds: true, needs: '[data-live-fac-today]',
     viewport: { width: 1400, height: 900 },
     act: async page => {
@@ -1611,27 +1824,31 @@ const CASES = [
       await page.waitForSelector('[data-live-fac-today]', { timeout: 20000 });
       const m = await page.evaluate(() => {
         const cards = [...document.querySelectorAll('.widget-card.live-card')];
-        const grid  = cards.length ? cards[0].parentElement.getBoundingClientRect() : null;
-        const sect  = document.querySelector('[data-live-section="1"]');
-        return { n: cards.length, grid: grid ? Math.round(grid.height) : 0,
-                 section: sect ? Math.round(sect.getBoundingClientRect().height) : 0,
-                 viewport: window.innerHeight,
-                 each: cards.map(c => (c.innerText || '').split('\n')[0].slice(0, 22)
-                                      + ' ' + Math.round(c.getBoundingClientRect().height)),
+        const h = (frag) => {
+          const c = cards.find(x => (x.innerText || '').indexOf(frag) >= 0);
+          return c ? Math.round(c.getBoundingClientRect().height) : null;
+        };
+        const grid = cards.length ? getComputedStyle(cards[0].parentElement) : null;
+        return { n: cards.length, tall: h('Happening Today'), ci: h('Membership Check-Ins'),
+                 en: h('Live Enrollments'), prog: h('Programs Live'), fac: h('Facility Bookings'),
+                 gap: grid ? Math.round(parseFloat(grid.rowGap) || 0) : 0,
                  titles: cards.map(c => (c.innerText || '').split('\n')[0].slice(0, 30)) };
       });
-      if (m.n !== 4) throw new Error('want four live cards, got ' + m.n + ': ' + JSON.stringify(m.titles));
-      /* THE ASSERTION IS THE ACTUAL PROPERTY: the whole live section — its
-         heading included — inside the viewport, with headroom. Before the
-         compact block the four cards were ~500 each and the grid alone was
-         ~1020px, so this fails by a wide margin on the version Dan reported.
-
-         THE HEADROOM IS THE POINT OF THE 40px. Asserting "fits exactly" would
-         pass at 899 of 900 and flip on any future row, which is a guard that
-         reports luck rather than fit. */
-      if (m.section > m.viewport - 40)
-        throw new Error('the live section is ' + m.section + 'px inside a ' + m.viewport + 'px viewport'
-                        + ' \u2014 four cards do not fit \u2014 ' + JSON.stringify(m.each));
+      if (m.n !== 5) throw new Error('want five live cards, got ' + m.n + ': ' + JSON.stringify(m.titles));
+      if (m.tall === null || m.ci === null || m.en === null)
+        throw new Error('could not measure all three cards: ' + JSON.stringify(m));
+      /* SAME HEIGHT AS EACH OTHER — the half of it the `1fr` rows buy. */
+      if (Math.abs(m.ci - m.en) > 2)
+        throw new Error('Check-Ins is ' + m.ci + 'px and Live Enrollments ' + m.en
+                        + 'px — Dan asked for the same height');
+      /* AND HALF OF HAPPENING TODAY, which is the two of them plus the gap. */
+      if (Math.abs(m.tall - (m.ci + m.en + m.gap)) > 4)
+        throw new Error('Happening Today is ' + m.tall + 'px against ' + m.ci + '+' + m.en
+                        + '+' + m.gap + ' beside it — it is not two rows tall');
+      /* AND THE OTHER TWO DROPPED TO A ROW UNDERNEATH, which is what makes the
+         section three rows rather than two. */
+      if (m.prog === null || m.fac === null)
+        throw new Error('Programs Live and Facility Bookings are not both rendered: ' + JSON.stringify(m));
     } },
 
   /* ── THE PER-CARD DEFAULTS, IN A BROWSER ─────────────────────────────────
@@ -1646,7 +1863,19 @@ const CASES = [
      LAST IN THE LIST, and that is not tidiness: these reload onto a config with
      no saved liveCards, and a reload sticks for every case after it. The
      lightFeeds block above records the same trap catching someone already. */
-  { name: 'live · by default only the enrollments and check-ins cards render',
+  /* TWO EMPTY STATES. Dan's line verbatim for a day with nothing on it... */
+  { name: 'live · an empty day says enjoy the time off',
+    lightFeeds: true, htEmpty: true, needs: '[data-ht-empty="none"]',
+    text: /No programs happening today - enjoy the time off!/,
+    act: loadLight },
+  /* ...and NOT for a day that simply ran its course. Printing "enjoy the time
+     off" at 9pm to a team that ran five sessions reads as the card having lost
+     them. */
+  { name: 'live · ...but a day that has finished does not',
+    lightFeeds: true, htDone: true, needs: '[data-ht-empty="done"]',
+    absent: '[data-ht-empty="none"]',
+    act: loadLight },
+  { name: 'live · by default only the enrollments, check-ins and happening cards render',
     liveDefaults: true, needs: '[data-live-section="1"] [data-live-regs]',
     act: async page => {
       await page.reload({ waitUntil: 'networkidle2', timeout: 60000 });
@@ -1654,6 +1883,8 @@ const CASES = [
     } },
   { name: 'live · ...check-ins is one of them',
     liveDefaults: true, needs: '[data-live-section="1"] [data-live-checkins]' },
+  { name: 'live · ...and so is Happening Today, which Dan asked to lead the section',
+    liveDefaults: true, needs: '[data-live-section="1"] [data-live-happening]' },
   /* ABSENT FROM THE DOM, not merely empty. "Renders nothing" and "renders a
      card with no rows" are different claims and only one of them is the ask. */
   { name: 'live · ...and Programs Live is ABSENT until it is switched on',
@@ -1662,8 +1893,29 @@ const CASES = [
     liveDefaults: true, needs: '[data-live-section="1"]', absent: '[data-live-fac-today]' },
   /* THE COUNT, so a build that drew three could not pass the two absences by
      luck of a renamed attribute. */
-  { name: 'live · ...exactly two cards, not four',
-    liveDefaults: true, needs: 'body[data-live-default-cards="2"]',
+  /* AND THE DEFAULT LAYOUT STILL FITS ONE SCREEN. Three cards is two grid
+     rows — the tall one beside the two stacked — which is exactly the shape
+     Dan sketched, and it is what an org that has never opened Edit Dashboard
+     actually opens on. The headroom is the point of the 40px: "fits exactly"
+     would pass at 899 of 900 and flip on any future row. */
+  { name: 'live · the default three-card layout fits one screen',
+    liveDefaults: true, needs: '[data-live-section="1"]',
+    viewport: { width: 1400, height: 900 },
+    act: async page => {
+      await page.waitForSelector('.widget-card.live-card', { timeout: 20000 });
+      const m = await page.evaluate(() => {
+        const sect = document.querySelector('[data-live-section="1"]');
+        return { n: document.querySelectorAll('.widget-card.live-card').length,
+                 section: sect ? Math.round(sect.getBoundingClientRect().height) : 0,
+                 viewport: window.innerHeight };
+      });
+      if (m.n !== 3) throw new Error('want three default live cards, got ' + m.n);
+      if (m.section > m.viewport - 40)
+        throw new Error('the live section is ' + m.section + 'px inside a ' + m.viewport
+                        + 'px viewport — the default three do not fit');
+    } },
+  { name: 'live · ...exactly three cards, not five',
+    liveDefaults: true, needs: 'body[data-live-default-cards="3"]',
     act: async page => {
       await page.waitForSelector('.widget-card.live-card', { timeout: 20000 });
       await page.evaluate(() => document.body.setAttribute('data-live-default-cards',
@@ -1671,8 +1923,8 @@ const CASES = [
     } },
   /* THE EDITOR AGREES WITH THE PAGE. A modal that opened with four empty boxes
      would switch the two ON defaults off on the next Save — the seeding bug. */
-  { name: 'live · the editor opens with the two defaults ticked',
-    liveDefaults: true, needs: '[data-edit-live-cards="2"]',
+  { name: 'live · the editor opens with the three defaults ticked',
+    liveDefaults: true, needs: '[data-edit-live-cards="3"]',
     act: async page => {
       await page.evaluate(() => {
         const b = [...document.querySelectorAll('button')].find(x => /Edit Dashboard/.test(x.textContent || ''));
@@ -1727,7 +1979,7 @@ const CASES = [
         if (currentCase.lightFeeds) {
           return json({ ...CONFIG, availableReports: { memberships: true,
             'enrollments-today': true, 'enrollments-rollup': true, 'checkins-today': true,
-            'facility-today': true } });
+            'facility-today': true, 'happening-today': true } });
         }
         /* AN ORG THAT HAS NEVER OPENED EDIT DASHBOARD. Every feed present, so
            presence cannot be what hides a card — the only thing deciding is
@@ -1739,7 +1991,7 @@ const CASES = [
           delete cfg.liveCards;
           return json({ ...CONFIG, config: cfg, availableReports: { memberships: true,
             'enrollments-today': true, 'enrollments-rollup': true, 'checkins-today': true,
-            'facility-today': true } });
+            'facility-today': true, 'happening-today': true } });
         }
         if (currentCase.retiredSupport) {
           /* TWO different guards have to hold, and an earlier version of this
@@ -1775,6 +2027,11 @@ const CASES = [
           .map(r => ({ ...r, 'Org Today': today })) });
       }
       if (rt === 'enrollments-rollup') return json({ rows: ROLLUP });
+      if (rt === 'happening-today') {
+        if (currentCase.htEmpty) return json({ rows: [] });
+        if (currentCase.htDone) return json({ rows: HAPPENING_DONE });
+        return json({ rows: HAPPENING });
+      }
       if (rt === 'facility-today') {
         const today = liveIso(0, '00:00:00').slice(0, 10);
         return json({ rows: FACILITY.map(r => ({ ...r, 'Org Today': today })) });
