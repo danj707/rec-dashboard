@@ -68,6 +68,16 @@ jobs:
       - name: Live Widgets — the Coffee Counter
         run: node scripts/live-widgets.spec.js
 
+      # THE UPLOAD ROUTE READ CORRECTLY AND WAS UNREACHABLE. A global
+      # express.json() on the default 100kb limit sat ~930 lines above a route
+      # declaring its own 8mb one, so a pasted screenshot died in the wrong
+      # parser and came back as an HTML error page the client could not parse.
+      # No source assertion can see that — what was wrong is WHERE a line sits
+      # relative to another — so this one BOOTS THE SERVER and posts a real
+      # oversized body.
+      - name: Project Updates image upload — parser order and JSON errors
+        run: node scripts/announce-image-upload.spec.js
+
       # THE PAGE MUST ACTUALLY RENDER. This repo had no render check at all, for
       # a 3,500-line React page compiled by in-browser Babel — and its sibling
       # shipped two blank pages to production before adding one. Every other

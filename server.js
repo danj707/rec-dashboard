@@ -30,6 +30,31 @@ const path = require('path');
 const fs = require('fs');
 
 const app = express();
+
+/* THE BIG PARSER GOES FIRST, PATH-SCOPED — and the order is the whole fix.
+   Dan pasted a screenshot into Project Updates and got
+   "Image upload failed: Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON".
+
+   The upload route at /admin/api/announcements/image carries its own
+   `express.json({ limit: '8mb' })`, and it never ran. Express matches
+   middleware in REGISTRATION ORDER, and the global parser below used to sit
+   ~930 lines above that route on Express's DEFAULT 100kb limit — so it parsed
+   first, a base64 screenshot (base64 inflates ~33%) blew 100kb, it threw
+   PayloadTooLargeError, and Express's DEFAULT error handler answered with an
+   HTML page. The client's r.json() then choked on `<!DOCTYPE`, which is the
+   alert Dan saw. The route's own limit, its 4MB guard and its tidy 413 were
+   all unreachable — dead code that read perfectly.
+
+   Mounting it here, scoped to that one path, keeps 100kb as the sane default
+   for every other route: raising the global limit would widen the body a
+   stranger can post at every endpoint to fix one. The global parser below then
+   no-ops on this path, because `req.body` is already set.
+
+   Fourth instance of this trap across the two repos — the campmap beacon route
+   registered below the generic one, the saved-views Cache-Control middleware
+   registered below its routes, and the render check's /api/data stub. A route
+   that looks correct can be unreachable because of where it sits. */
+app.use('/admin/api/announcements/image', express.json({ limit: '8mb' }));
 app.use(express.json());
 
 const PORT = process.env.PORT || 3200;
@@ -1844,14 +1869,52 @@ async function warmCache() {
   }
 }
 
+/* AN API PATH ANSWERS IN JSON EVEN WHEN IT FAILS — registered LAST, because an
+   Express error handler only catches what is registered above it.
+
+   Every fetch in this dashboard reads its response with r.json(). Express's
+   default error handler emits an HTML page, so ANY unhandled throw reaches the
+   browser as `<!DOCTYPE` and the client dies inside its own error path, one
+   layer away from the real problem: the reader is told their JSON is malformed
+   when the truth is the body was too big, or the route threw. That is the
+   confusing-message-inside-the-error-handler trap already recorded in
+   rental-report for `reportFetchError`.
+
+   So an /api path gets a JSON body with a readable sentence and, for the one
+   case anybody hits, the remedy. Non-API paths keep Express's own handling —
+   an HTML page is the right answer for an HTML surface. */
+app.use((err, req, res, next) => {
+  const isApi = req.path.startsWith('/api/') || req.path.startsWith('/admin/api/');
+  if (!isApi || res.headersSent) return next(err);
+  /* The body parser's own error, which is the one that brought this handler
+     into existence. `type` is body-parser's, not a guess at the message. */
+  const tooBig = err && (err.type === 'entity.too.large' || err.status === 413);
+  const status = tooBig ? 413 : (err && err.status) || 500;
+  console.warn(`[api-error] ${req.method} ${req.path} -> ${status}: ${err && err.message}`);
+  res.status(status).json({
+    error: tooBig
+      ? 'That payload is too large for this endpoint — crop or downscale the image and try again.'
+      : ((err && err.message) || 'Request failed'),
+  });
+});
+
 // ═══════════════════════════════════════════
 //  START
 // ═══════════════════════════════════════════
 app.listen(PORT, () => {
   console.log(`rec.us Dashboard running on port ${PORT}`);
   console.log(`Orgs: ${Object.keys(ORGS).join(', ')}`);
-  // Pre-warm cache 5s after startup
-  setTimeout(warmCache, 5000);
+  /* SKIP_PREWARM exists so this server can be BOOTED BY A TEST. Without it a
+     spec that spawns the app fans ~22 orgs out against PRODUCTION Metabase
+     five seconds in — the self-inflicted-load trap recorded in the sibling
+     repo, where a sweep run alongside other work invented card failures on
+     cards nobody had touched. Unset in production, so the default is
+     unchanged. */
+  if (process.env.SKIP_PREWARM === '1') {
+    console.log('[warm] SKIP_PREWARM=1 — startup pre-warm skipped');
+  } else {
+    setTimeout(warmCache, 5000);   // pre-warm cache 5s after startup
+  }
 });
 
 // ═══════════════════════════════════════════
