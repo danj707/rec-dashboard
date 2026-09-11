@@ -3717,37 +3717,51 @@ function htRange(r) {
   if (!a) return '';
   return b ? a + '\u2013' + b : a;
 }
-/* live | upcoming | finished.
+/* live | upcoming | finished, FROM MINUTES RATHER THAN FROM A CLOCK.
 
-   AN END AT OR BEFORE THE START RAN PAST MIDNIGHT, and clamping it to the end
-   of the day is the honest reading: the alternative — comparing 00:30 against
-   a 21:00 start — marks an evening class as finished the moment it begins.
-   A session with no end at all is treated as an instant, so it goes green on
-   the poll it starts and grey on the next one rather than never leaving. */
-function htState(r, nowMin) {
-  r = r || {};
-  const st = htMinutes(r['Starts At']);
-  if (st === null || nowMin === null || nowMin === undefined) return 'upcoming';
-  let en = htMinutes(r['Ends At']);
-  if (en === null || en <= st) en = en === null ? st + 1 : 24 * 60;
-  if (nowMin >= en) return 'finished';
-  if (nowMin >= st) return 'live';
-  return 'upcoming';
+   THIS USED TO COMPARE WALL CLOCKS and could not survive the row's time
+   becoming its LOCATION's. The window is the org's day, the displayed clock is
+   the location's, and comparing those two is comparing different zones — so
+   the card ships the answer as signed minutes against one absolute NOW and the
+   page does arithmetic on integers.
+
+   It also deletes the past-midnight clamp this function used to need: a class
+   running to 00:30 has an `ends_at` that is genuinely later in absolute terms,
+   and only a wall clock ever made it look earlier.
+
+   WITHOUT THE MINUTES NOTHING IS FINISHED. A feed that could not supply them
+   leaves every row upcoming, so the list stays whole — the safe direction is a
+   stale schedule, never a blank one that reads as a day off. */
+function htNum(v) {
+  const n = typeof v === 'number' ? v : (v === null || v === undefined || v === '' ? NaN : Number(v));
+  return isFinite(n) ? n : null;
 }
-/* THE ORG'S NOW COMES OFF THE ROWS, not off a second clock in the page. The
-   feed re-stamps it every sixty seconds, which is the same cadence the list
-   would move at anyway — and a page that ticked its own clock would keep
-   promoting rows while Pause was on, which is exactly what Pause is for. */
-function htNowMin(rows) {
-  const r = (rows || []).find(x => x && x['Org Now']);
-  return r ? htMinutes(r['Org Now']) : null;
+function htState(r) {
+  r = r || {};
+  const si = htNum(r['Starts In']);
+  const ei = htNum(r['Ends In']);
+  if (si === null || ei === null) return 'upcoming';
+  if (ei <= 0) return 'finished';
+  if (si <= 0) return 'live';
+  return 'upcoming';
 }
 /* FINISHED ROWS LEAVE. Dan: "once the time passes, it bumps off the top of the
    list and the list scrolls up ... as the day passes the list gets shorter and
    shorter." The list is already ordered by start time, so dropping them off
    the top IS the scroll — there is nothing for the page to animate. */
-function htVisible(rows, nowMin) {
-  return (rows || []).filter(r => htState(r, nowMin) !== 'finished');
+function htVisible(rows) {
+  return (rows || []).filter(r => htState(r) !== 'finished');
+}
+/* THE ROW SAYS WHOSE CLOCK IT IS, but only when that is not the org's. The
+   list is ordered by the INSTANT, so on an org whose locations span zones two
+   rows can legitimately look out of order — "3:00p" above "2:00p" — and
+   without this the reader would have no way to tell that from a bug. Derived
+   from the IANA name rather than formatted, because every Intl path to an
+   abbreviation needs a Date and this file constructs none. */
+function htZoneLabel(tz) {
+  const s = String(tz == null ? '' : tz);
+  const i = s.lastIndexOf('/');
+  return (i < 0 ? s : s.slice(i + 1)).replace(/_/g, ' ');
 }
 
 /* THE CLOCK ALONE HID THE ORDER. Dan, reading the list: "shouldn't this be
@@ -5109,14 +5123,16 @@ function HappeningToday({ feed, recOrgId }) {
     );
   }
 
-  const nowMin = htNowMin(rows);
-  const ahead = htVisible(rows, nowMin);
-  const liveN = ahead.filter(r => htState(r, nowMin) === 'live').length;
+  const ahead = htVisible(rows);
+  const liveN = ahead.filter(r => htState(r) === 'live').length;
   const done  = rows.length - ahead.length;
+  /* THE ORG'S OWN ZONE, read off the rows — the row-level marker below is
+     only drawn when a session's location disagrees with it. */
+  const orgTz = (rows.find(r => r && r['Org Timezone']) || {})['Org Timezone'] || '';
 
   return (
     <div className="widget-card widget-md widget-tall live-card"
-         data-live-happening={String(rows.length)} data-ht-now={String(nowMin === null ? '' : nowMin)}>
+         data-live-happening={String(rows.length)} data-ht-orgtz={orgTz}>
       <LiveCardHeader icon={'\u{1F4C5}'} title="Happening Today" feed={feed} card="happening"
                       sub={'Every program running today'} />
 
@@ -5149,7 +5165,7 @@ function HappeningToday({ feed, recOrgId }) {
       ) : (
         <div className="ht-list" data-ht-rows={String(ahead.length)}>
           {ahead.map(r => {
-            const st  = htState(r, nowMin);
+            const st  = htState(r);
             const url = liveSectionUrl(recOrgId, r['Section Id']);
             const enr = Number(r['Enrolled']) || 0;
             /* NULL CAPACITY IS UNLIMITED, NOT ZERO. "11/0" is a number that
@@ -5162,6 +5178,9 @@ function HappeningToday({ feed, recOrgId }) {
                than printing the first as though it were the whole booking. */
             const siteCount = Number(r['Site Count']) || 0;
             const site = r['Site'] ? (r['Site'] + (siteCount > 1 ? ' +' + (siteCount - 1) : '')) : '';
+            /* WHOSE CLOCK, when it is not the org's. */
+            const dtz = r['Display Timezone'] || '';
+            const offZone = dtz && orgTz && dtz !== orgTz ? htZoneLabel(dtz) : '';
             const where = [site, r['Location']].filter(Boolean).join(' · ');
             const cancelled = r['Cancelled'] === true || r['Cancelled'] === 'true';
             const unpub = r['Published'] === false || r['Published'] === 'false';
@@ -5189,6 +5208,11 @@ function HappeningToday({ feed, recOrgId }) {
                   </span>
                   <span className="ht-where">
                     {where || '—'}
+                    {offZone
+                      ? <span data-ht-zone={dtz} title={'This session is at a location in ' + dtz + ', so its time is that clock rather than the org\'s. The list is ordered by the actual moment, which is why it can look out of order.'}>
+                          {' · ' + offZone + ' time'}
+                        </span>
+                      : null}
                     {unpub ? <span className="ht-note" data-ht-unpublished="1">{' · unpublished'}</span> : null}
                   </span>
                 </span>

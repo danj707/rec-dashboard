@@ -415,50 +415,67 @@ const FACILITY = [
 ];
 
 /* ── HAPPENING TODAY ──────────────────────────────────────────────────────
-   EVERY TIME IN THIS FIXTURE IS FIXED, and that is the point of it. The card
-   ships `Org Now` — the org's own wall clock — and the page is supposed to
-   decide live / upcoming / finished from THAT and nothing else. A fixture
-   built off the machine's clock could not tell a card reading the feed from
-   one reading the browser, because the two would agree; this one pins the org
-   at 10:15 on a date the harness is almost never actually running on, so a
-   page that reached for `new Date()` lights the wrong rows or none.
+   THE STATE IS PINNED AS MINUTES, so these cases are deterministic whenever
+   CI happens to run. The card ships `Starts In` / `Ends In` against one
+   absolute NOW; a page that went back to reading `new Date()` would compute
+   from the printed clock instead and land on the wrong rows the moment the
+   harness is not running at 10:15 on this date — which is almost always.
 
-   FIVE ROWS, FIVE DIFFERENT STATES, because six rows of markup look identical
-   under most regressions worth catching: one already finished (so the visible
-   count is 4 and not 5 — the "list gets shorter" behaviour), one running now,
-   one with NO CAPACITY (which must read "4/—" and never "4/0"), one cancelled,
-   and one evening class that runs PAST MIDNIGHT, whose end is numerically
-   before its start. */
+   THE CLOCK ON EACH ROW IS ITS LOCATION'S, NOT THE ORG'S, because that is
+   what Rec's own admin shows. `sess-chi` is the row that proves the page
+   honours it AND the reason the marker exists: it prints 9:30a and sits
+   BELOW the 10:00a row, because the list is ordered by the actual moment and
+   Chicago is an hour behind the org. Without the "Chicago time" note that
+   reads as a sorting bug.
+
+   SIX NAMED ROWS, SIX STATES, because rows of markup look identical under
+   most regressions worth catching: one already finished (so the visible count
+   is one short of the total), one running now, one in another zone, one with
+   NO CAPACITY (which must read "4/—" and never "4/0"), one cancelled, and one
+   evening class whose printed end is numerically before its printed start. */
 const HT_NOW = '2026-09-11T10:15:00';
-const HT_TZ  = 'America/Denver';
+const HT_TZ  = 'America/New_York';
 const htRow = (o) => Object.assign({
   'Org Now': HT_NOW, 'Org Today': '2026-09-11', 'Org Timezone': HT_TZ,
+  'Display Timezone': HT_TZ,
   'Program': null, 'Location': null, 'Site': null, 'Site Count': 0,
   'Registration Mode': 'section', 'Cancelled': false, 'Published': true,
 }, o);
 const HAPPENING = [
   htRow({ 'Session Id': 'sess-yoga', 'Section Id': 'sec-yoga', 'Section': 'Sunrise Yoga',
           'Program': 'Yoga', 'Starts At': '2026-09-11T08:00:00', 'Ends At': '2026-09-11T09:00:00',
+          'Starts In': -135, 'Ends In': -75,
           'Location': 'Rec Center', 'Site': 'Studio 1', 'Site Count': 1,
           'Enrolled': 12, 'Capacity': 12 }),
   htRow({ 'Session Id': 'sess-swim', 'Section Id': 'sec-swim', 'Section': 'Swim Lessons AM',
           'Program': 'Swim Lessons', 'Starts At': '2026-09-11T10:00:00', 'Ends At': '2026-09-11T11:00:00',
+          'Starts In': -15, 'Ends In': 45,
           'Location': 'Aquatic Center', 'Site': 'Lane 1, Lane 2', 'Site Count': 2,
           'Enrolled': 8, 'Capacity': 20 }),
+  /* ANOTHER ZONE. Printed 9:30a, starts FIFTEEN MINUTES FROM NOW — so it sits
+     below the 10:00a row, and only the marker explains that. */
+  htRow({ 'Session Id': 'sess-chi', 'Section Id': 'sec-chi', 'Section': 'Lakefront Volleyball',
+          'Program': 'Volleyball', 'Starts At': '2026-09-11T09:30:00', 'Ends At': '2026-09-11T11:30:00',
+          'Display Timezone': 'America/Chicago', 'Starts In': 15, 'Ends In': 135,
+          'Location': 'Lake Shore Drive Courts', 'Site': 'Court 2', 'Site Count': 1,
+          'Enrolled': 6, 'Capacity': 12 }),
   htRow({ 'Session Id': 'sess-open', 'Section Id': 'sec-open', 'Section': 'Open Gym',
           'Starts At': '2026-09-11T13:00:00', 'Ends At': '2026-09-11T14:00:00',
+          'Starts In': 165, 'Ends In': 225,
           'Location': 'Field House', 'Enrolled': 4, 'Capacity': null, 'Published': false }),
   htRow({ 'Session Id': 'sess-pb', 'Section Id': 'sec-pb', 'Section': 'Pickleball Social',
           'Program': 'Pickleball', 'Starts At': '2026-09-11T15:00:00', 'Ends At': '2026-09-11T16:00:00',
+          'Starts In': 285, 'Ends In': 345,
           'Location': 'Courts', 'Site': 'Court 3', 'Site Count': 1,
           'Enrolled': 6, 'Capacity': 16, 'Cancelled': true }),
   htRow({ 'Session Id': 'sess-vb', 'Section Id': 'sec-vb', 'Section': 'Evening Volleyball',
           'Program': 'Volleyball', 'Starts At': '2026-09-11T21:00:00', 'Ends At': '2026-09-12T00:30:00',
+          'Starts In': 645, 'Ends In': 855,
           'Location': 'Gym', 'Site': 'Court A', 'Site Count': 1,
           'Enrolled': 18, 'Capacity': 24 }),
 ];
 /* ENOUGH ROWS THAT THE LIST MUST SCROLL, and this padding is load-bearing.
-   With five rows the list fits inside the card whatever its flex rules say, so
+   With six rows the list fits inside the card whatever its flex rules say, so
    a build that dropped `flex: 1 1 0` — the plausible half-fix, keeping only
    `overflow-y: auto` — renders identically and the scroller case passes on it.
    Caught by mutation, not by review. Twenty-five more upcoming sessions make
@@ -472,15 +489,17 @@ for (let i = 0; i < 25; i++) {
     'Section': 'Filler Session ' + i, 'Program': 'Filler',
     'Starts At': '2026-09-11T' + t(h) + ':' + t(mm) + ':00',
     'Ends At':   '2026-09-11T' + t(h) + ':' + t(mm + 15) + ':00',
+    'Starts In': 45 + i * 20, 'Ends In': 60 + i * 20,
     'Location': 'Annex', 'Site': 'Room ' + i, 'Site Count': 1,
     'Enrolled': i % 7, 'Capacity': 10 }));
 }
 
-/* THE WHOLE DAY, ALREADY RUN. Every session ends before Org Now, so the list
-   is empty for a reason that is NOT "nothing was scheduled" — which is the one
+/* THE WHOLE DAY, ALREADY RUN. Every session ended before now, so the list is
+   empty for a reason that is NOT "nothing was scheduled" — which is the one
    case where Dan's "enjoy the time off!" would be the wrong thing to print. */
-const HAPPENING_DONE = HAPPENING.map(r => htRow({ ...r,
-  'Starts At': '2026-09-11T06:00:00', 'Ends At': '2026-09-11T07:00:00' }));
+const HAPPENING_DONE = HAPPENING.map(r => htRow(Object.assign({}, r, {
+  'Starts At': '2026-09-11T06:00:00', 'Ends At': '2026-09-11T07:00:00',
+  'Starts In': -255, 'Ends In': -195 })));
 
 
 /* A DENSE DAY, shaped like Apex's real one: 468 scans between 05:46 and 14:29,
@@ -1504,16 +1523,16 @@ const CASES = [
      draws them all grey, and one that printed Number(capacity) draws "4/0".
      Only the numbers separate them. */
   { name: 'live · happening today drops what has already finished',
-    lightFeeds: true, needs: '[data-live-happening="30"] [data-ht-rows="29"]',
+    lightFeeds: true, needs: '[data-live-happening="31"] [data-ht-rows="30"]',
     act: loadLight },
   /* ABSENT FROM THE DOM, not merely greyed. Dan: "it bumps off the top of the
      list and the list scrolls up." */
   { name: 'live · ...the finished one is gone from the list entirely',
-    lightFeeds: true, needs: '[data-ht-rows="29"]', absent: '[data-ht-session="sess-yoga"]' },
-  /* THE ORG'S CLOCK, NOT THE READER'S. This is the assertion the whole card is
-     built around: the fixture pins the org at 10:15 on a date the harness is
-     almost never running on, so a page reading `new Date()` cannot light the
-     10:00-11:00 session green. */
+    lightFeeds: true, needs: '[data-ht-rows="30"]', absent: '[data-ht-session="sess-yoga"]' },
+  /* THE STATE COMES OFF THE FEED, NOT OFF THE READER'S CLOCK. The fixture
+     pins every row's `Starts In` / `Ends In` in minutes, so these hold whenever
+     CI runs; a page that went back to reading `new Date()` against the printed
+     clock lands on the wrong rows the moment it is not 10:15 on this date. */
   { name: 'live · ...the session running now is the green one',
     lightFeeds: true, needs: '[data-ht-session="sess-swim"][data-ht-row="live"]' },
   { name: 'live · ...and a later one is NOT green just because it is on the list',
@@ -1528,6 +1547,35 @@ const CASES = [
       await page.evaluate(() => {
         const el = document.querySelector('[data-ht-session="sess-swim"]');
         document.body.setAttribute('data-ht-bar', getComputedStyle(el).borderLeftColor);
+      });
+    } },
+  /* THE ROW'S CLOCK IS ITS LOCATION'S, which is what Rec's own page shows.
+     Dan: "lets fix the time thing". The fixture's Chicago row PRINTS 9:30a
+     while starting fifteen minutes from now, so a page that re-derived the
+     time from anything else cannot produce it. */
+  { name: 'live · ...a session in another zone keeps its own clock',
+    lightFeeds: true, needs: '[data-ht-session="sess-chi"] [data-ht-when="9:30a–11:30a"]' },
+  /* AND SAYS SO. The list is ordered by the instant, so that 9:30a sits BELOW
+     a 10:00a row — without the marker that reads as a sorting bug. */
+  { name: 'live · ...and says whose clock it is',
+    lightFeeds: true, needs: '[data-ht-session="sess-chi"] [data-ht-zone="America/Chicago"]',
+    text: /Chicago time/ },
+  /* BUT ONLY WHEN IT DIFFERS. A marker on every row is noise, and on a
+     single-zone org — which is every real one — there should be none at all. */
+  { name: 'live · ...and stays quiet on a row in the org\'s own zone',
+    lightFeeds: true, needs: '[data-ht-session="sess-swim"]',
+    absent: '[data-ht-session="sess-swim"] [data-ht-zone]' },
+  /* ORDERED BY THE MOMENT, NOT THE PRINTED CLOCK — 9:30a below 10:00a is the
+     point. Sorting on what is displayed would put them the other way round. */
+  { name: 'live · ...and the list is ordered by the moment, not the clock',
+    lightFeeds: true, needs: 'body[data-ht-order="sess-swim,sess-chi"]',
+    act: async page => {
+      await page.waitForSelector('[data-ht-session="sess-chi"]', { timeout: 20000 });
+      await page.evaluate(() => {
+        const ids = [...document.querySelectorAll('[data-ht-session]')]
+          .map(el => el.getAttribute('data-ht-session'))
+          .filter(id => id === 'sess-swim' || id === 'sess-chi');
+        document.body.setAttribute('data-ht-order', ids.join(','));
       });
     } },
   /* NULL CAPACITY IS UNLIMITED, NOT ZERO. Both halves: the dash present AND

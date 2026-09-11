@@ -30,12 +30,38 @@
 -- stated answer (America/New_York) and is populated on all 168 live orgs; the
 -- location mode stays as the fallback, then America/Chicago.
 --
--- `Org Now` IS THE GREEN-STATE ANCHOR. It is the org's wall clock at the
--- moment the feed answered, so the page decides live / upcoming / finished by
--- comparing three strings in one zone rather than against the reader's own
--- clock. THERE IS NO SECOND CLOCK IN THE PAGE: the feed re-stamps it every
--- sixty seconds, which is the cadence the list would move at anyway, and a
--- page ticking its own would keep promoting rows while Pause was on.
+-- THE CLOCK ON THE ROW IS THE SESSION'S OWN LOCATION, NOT THE ORG'S — which
+-- is what Rec's admin shows, proven twice on live data rather than reasoned.
+-- Dan, with the widget beside the Rec page: "lets fix the time thing". His
+-- 2026 Beach Volleyball read 7:00a-11:00p on the card and 6:00AM-10:00PM in
+-- Rec; its location, Lake Shore Drive Volleyball Courts, is America/Chicago
+-- while the org is America/New_York. The second proof is better because
+-- nobody planted it: `Tiny Tots 2026/2027 (8:00am-11:00am)` carries its own
+-- time in the section NAME, its location is America/Los_Angeles, and only the
+-- location zone renders 08:00-11:00 — the org zone says 11:00-14:00.
+--
+-- THE DAY IS STILL ONE ZONE, deliberately. `win` stays on the ORG's zone, so
+-- "today" is one window for the whole card; per-location day boundaries would
+-- let a row belong to two days at once. Cost, stated rather than hidden: a
+-- session whose location is an hour behind and starts at 23:30 local falls
+-- into tomorrow's window. Every real single-zone org is unaffected; Niagara
+-- Falls is a sandbox whose 34 locations span three zones.
+--
+-- THE STATE IS MINUTES FROM NOW, NOT A WALL CLOCK. Once the displayed time is
+-- the location's and the window is the org's, comparing the two would be
+-- comparing different zones — so `Starts In` / `Ends In` ship the answer as
+-- signed minutes against a single absolute NOW. live is `Starts In <= 0 <
+-- Ends In`; finished is `Ends In <= 0`. That also deletes the past-midnight
+-- clamp the page used to need: `ends_at` is a timestamptz, so a class running
+-- to 00:30 is already later in absolute terms and only a wall clock made it
+-- look earlier. `CEIL` on both ends, so a session thirty seconds away reads
+-- as one minute out rather than as already running.
+--
+-- THERE IS NO SECOND CLOCK IN THE PAGE: the feed re-stamps these every sixty
+-- seconds, which is the cadence the list would move at anyway, and a page
+-- ticking its own would keep promoting rows while Pause was on. `Org Now` and
+-- `Org Today` stay as the window's provenance, and `Display Timezone` beside
+-- `Org Timezone` is what lets the row say so when the two differ.
 --
 -- THE SITE IS AGGREGATED, NEVER JOINED. A session's reservation can occupy
 -- more than one court — measured at apex today, MAX 4 — so joining
@@ -70,6 +96,14 @@
 -- 13:07, 8 with a site, 0 with no capacity, 1 cancelled, 15 on unpublished
 -- sections — against 15 rows on Pacific before it.
 --
+-- And once more after the per-location clock landed, same 16 rows: 2026 Beach
+-- Volleyball reads 06:00-22:00 (America/Chicago) where it read 07:00-23:00
+-- before, which is Rec's own page to the minute, and Tiny Tots reads
+-- 08:00-11:00 (America/Los_Angeles), which is the time written into its name.
+-- Eight rows live, and the list is now ordered by the INSTANT rather than by
+-- a clock — so on a multi-zone org two rows can look out of order, which is
+-- what `Display Timezone` is on the row for.
+--
 -- Params: org_id (uuid). Mirrored here; THE LIVE CARD IS THE SOURCE OF TRUTH.
 WITH cfg AS (
   SELECT COALESCE(
@@ -102,7 +136,7 @@ sess AS (
   LEFT JOIN program p ON p.id = sec.program_id
 ),
 loc AS (
-  SELECT l.id, l.name FROM location l WHERE l.organization_id = {{org_id}}::uuid
+  SELECT l.id, l.name, l.timezone FROM location l WHERE l.organization_id = {{org_id}}::uuid
 ),
 site AS (
   SELECT r.session_id,
@@ -133,8 +167,11 @@ SELECT
   s.section_id::text                                                    AS "Section Id",
   s.section_name                                                        AS "Section",
   s.program_name                                                        AS "Program",
-  TO_CHAR(s.starts_at AT TIME ZONE s.tz, 'YYYY-MM-DD"T"HH24:MI:SS')     AS "Starts At",
-  TO_CHAR(s.ends_at   AT TIME ZONE s.tz, 'YYYY-MM-DD"T"HH24:MI:SS')     AS "Ends At",
+  TO_CHAR(s.starts_at AT TIME ZONE d.dtz, 'YYYY-MM-DD"T"HH24:MI:SS')    AS "Starts At",
+  TO_CHAR(s.ends_at   AT TIME ZONE d.dtz, 'YYYY-MM-DD"T"HH24:MI:SS')    AS "Ends At",
+  d.dtz                                                                 AS "Display Timezone",
+  CEIL(EXTRACT(EPOCH FROM (s.starts_at - NOW())) / 60)::int             AS "Starts In",
+  CEIL(EXTRACT(EPOCH FROM (d.end_at    - NOW())) / 60)::int             AS "Ends In",
   TO_CHAR((NOW() AT TIME ZONE s.tz), 'YYYY-MM-DD"T"HH24:MI:SS')         AS "Org Now",
   TO_CHAR((NOW() AT TIME ZONE s.tz)::date, 'YYYY-MM-DD')                AS "Org Today",
   s.tz                                                                  AS "Org Timezone",
@@ -149,6 +186,11 @@ SELECT
   (s.publish_at IS NOT NULL)                                            AS "Published"
 FROM sess s
 LEFT JOIN loc l    ON l.id = s.location_id
+CROSS JOIN LATERAL (
+  SELECT COALESCE(NULLIF(l.timezone, ''), s.tz) AS dtz,
+         CASE WHEN s.ends_at IS NULL OR s.ends_at <= s.starts_at
+              THEN s.starts_at + INTERVAL '1 minute' ELSE s.ends_at END AS end_at
+) d
 LEFT JOIN site st  ON st.session_id = s.id
 LEFT JOIN bk_sec bc ON bc.section_id = s.section_id
 LEFT JOIN bk_ses bs ON bs.session_id = s.id

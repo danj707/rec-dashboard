@@ -51,6 +51,54 @@ the rest of the day.
 leaves every row `upcoming`, so the list stays whole. The safe direction is a
 stale schedule, never a blank one that reads as a day off.
 
+### THE CLOCK ON THE ROW IS THE SESSION'S LOCATION — not the org's
+
+Dan, with the widget open beside the Rec page: *"lets fix the time thing,
+should be in the time zone of the org."* The symptom was one hour, not three,
+which is what said it was not the org zone at all.
+
+**REC'S ADMIN RENDERS EACH SESSION IN ITS LOCATION'S TIMEZONE.** Proven twice
+on live data rather than reasoned:
+
+| session | raw | org zone (what shipped) | location zone | |
+|---|---|---|---|---|
+| 2026 Beach Volleyball | 11:00Z | 07:00–23:00 | **06:00–22:00** (Chicago) | Rec's own page, to the minute |
+| Tiny Tots **(8:00am-11:00am)** | 15:00Z | 11:00–14:00 | **08:00–11:00** (LA) | the time is in the section's own NAME |
+
+The second is the better proof because nobody planted it — and it also rules
+out the tempting alternative that Rec renders in the VIEWER's browser zone,
+which fits Beach Volleyball and fails Tiny Tots.
+
+**THE DAY IS STILL ONE ZONE.** `win` stays on the org's, so "today" is one
+window; per-location boundaries would let a row belong to two days at once.
+Stated cost: a session at a location an hour behind, starting 23:30 local,
+lands in tomorrow. Every real single-zone org is unaffected.
+
+### THE STATE IS MINUTES FROM NOW, NOT A WALL CLOCK
+
+Once the displayed clock is the location's and the window is the org's,
+comparing them is comparing different zones. So the card ships `Starts In` /
+`Ends In` as signed minutes against one absolute `NOW()`, and the page does
+integer arithmetic: live is `Starts In <= 0 < Ends In`.
+
+**It deleted a whole class of bug rather than adding one.** The past-midnight
+clamp is gone — `ends_at` is a timestamptz, so a class running to 00:30 is
+already later in absolute terms and only a wall clock ever made it look
+earlier. `CEIL` on both ends, so a session thirty seconds out reads as a
+minute away rather than as already running.
+
+**WITHOUT THE MINUTES NOTHING IS FINISHED**, so a feed that cannot supply them
+keeps every row. The safe direction is a stale schedule, never a blank one
+that reads as a day off.
+
+### THE ROW SAYS WHOSE CLOCK IT IS — but only when it is not the org's
+
+The list is ordered by the INSTANT, so on a multi-zone org a 9:30a Chicago row
+sits below a 10:00a Eastern one and looks out of order. `htZoneLabel` turns
+the IANA name into a place (`America/Chicago` → `Chicago`) without
+constructing a Date, and the row reads *"… · Chicago time"*. A marker on every
+row would be noise, and on a single-zone org — every real one — there is none.
+
 ### THE ORG'S OWN `primaryTimezone` WINS — and it was three hours out live
 
 Found signing the card off through the public link, before the widget was ever

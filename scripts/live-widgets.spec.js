@@ -2016,16 +2016,19 @@ process.on('exit', () => {
   try {
     H = new Function(
       liftFn(code, 'htMinutes') + '\n' + liftFn(code, 'htClock') + '\n' +
-      liftFn(code, 'htRange') + '\n' + liftFn(code, 'htState') + '\n' +
-      liftFn(code, 'htNowMin') + '\n' + liftFn(code, 'htVisible') + '\n' +
-      'return { htMinutes, htClock, htRange, htState, htNowMin, htVisible };')();
+      liftFn(code, 'htRange') + '\n' + liftFn(code, 'htNum') + '\n' +
+      liftFn(code, 'htState') + '\n' + liftFn(code, 'htVisible') + '\n' +
+      liftFn(code, 'htZoneLabel') + '\n' +
+      'return { htMinutes, htClock, htRange, htNum, htState, htVisible, htZoneLabel };')();
   } catch (e) {
     ok(false, 'the Happening Today time helpers could not be lifted and run: ' + e.message);
   }
 
   if (H.htState) {
-    const { htMinutes, htClock, htRange, htState, htNowMin, htVisible } = H;
+    const { htMinutes, htClock, htRange, htState, htVisible, htZoneLabel } = H;
     const row = (a, b, extra) => Object.assign({ 'Starts At': a, 'Ends At': b }, extra || {});
+    /* start/end as MINUTES FROM NOW, which is how the card now ships the state. */
+    const at = (si, ei, extra) => Object.assign({ 'Starts In': si, 'Ends In': ei }, extra || {});
 
     eq(htMinutes('2026-09-11T09:47:45'), 587, 'minutes since midnight comes off the string, not off a Date');
     eq(htMinutes(null), null, 'a missing time is null rather than midnight');
@@ -2044,46 +2047,43 @@ process.on('exit', () => {
     eq(htRange(row('2026-09-11T09:00:00', null)), '9:00a',
        'a session with no end prints its start alone, never a dangling dash');
 
-    /* THE THREE STATES, at the boundaries. */
-    const r1 = row('2026-09-11T09:00:00', '2026-09-11T10:30:00');
-    eq(htState(r1, 8 * 60 + 59), 'upcoming', 'a minute before it starts, it is upcoming');
-    eq(htState(r1, 9 * 60),      'live',     'the minute it starts, it is live');
-    eq(htState(r1, 10 * 60 + 29), 'live',    'a minute before it ends, it is still live');
-    eq(htState(r1, 10 * 60 + 30), 'finished', 'the minute it ends, it is finished');
+    /* THE THREE STATES, AT THE BOUNDARIES, in minutes from now. */
+    eq(htState(at(1, 91)),   'upcoming', 'a minute before it starts, it is upcoming');
+    eq(htState(at(0, 90)),   'live',     'the minute it starts, it is live');
+    eq(htState(at(-89, 1)),  'live',     'a minute before it ends, it is still live');
+    eq(htState(at(-90, 0)),  'finished', 'the minute it ends, it is finished');
+    eq(htState(at(-800, -740)), 'finished', 'and long past, it stays finished');
 
-    /* AN END AT OR BEFORE THE START RAN PAST MIDNIGHT. Comparing a 00:30 end
-       against a 21:00 start marks an evening class finished the moment it
-       begins — the row goes grey and then vanishes while the hall is full. */
-    const late = row('2026-09-11T21:00:00', '2026-09-12T00:30:00');
-    eq(htState(late, 21 * 60), 'live', 'an evening class that runs past midnight is live when it starts');
-    eq(htState(late, 23 * 60 + 59), 'live', '...and still live at one minute to midnight');
+    /* AN EVENING CLASS RUNNING PAST MIDNIGHT NEEDS NO SPECIAL CASE NOW. Its
+       `ends_at` is genuinely later in absolute terms; only a wall clock ever
+       made 00:30 look earlier than 21:00, and the card does the arithmetic. */
+    eq(htState(at(0, 210)), 'live', 'a class running past midnight is live when it starts');
+    eq(htState(at(-179, 31)), 'live', '...and still live at one minute to midnight');
 
-    /* NO END AT ALL is an instant: green on the poll it starts, gone on the
-       next. The alternative — treating it as open-ended — leaves it on the
-       list for the rest of the day. */
-    const noEnd = row('2026-09-11T09:00:00', null);
-    eq(htState(noEnd, 9 * 60), 'live', 'a session with no end is live at its start');
-    eq(htState(noEnd, 9 * 60 + 1), 'finished', '...and finished a minute later rather than sticking');
-
-    /* WITHOUT A CLOCK NOTHING IS FINISHED. A feed that could not stamp Org Now
-       must not empty the list — "upcoming" keeps every row on screen, which is
-       the safe direction: the worst case is a stale schedule, not a blank one
-       that reads as a day off. */
-    eq(htState(r1, null), 'upcoming', 'with no clock, a row is upcoming rather than finished');
-    eq(htVisible([r1, late], null).length, 2, '...so nothing falls off the list');
-
-    eq(htNowMin([{ 'Org Now': '2026-09-11T09:47:45' }]), 587, 'now comes off the feed, in the ORG\'s zone');
-    eq(htNowMin([]), null, 'an empty day has no clock to read, and says so');
-    eq(htNowMin([{}, { 'Org Now': '2026-09-11T14:00:00' }]), 840,
-       '...and a row missing the stamp does not stop the next one answering');
+    /* WITHOUT THE MINUTES NOTHING IS FINISHED — the list stays whole rather
+       than emptying, which is the safe direction for a card whose empty state
+       reads "enjoy the time off". */
+    eq(htState({}), 'upcoming', 'with no minutes, a row is upcoming rather than finished');
+    eq(htState(at(null, null)), 'upcoming', '...and so is one whose minutes are null');
+    eq(htVisible([{}, at(null, null)]).length, 2,
+       '...so a feed that cannot supply them keeps every row on the list');
+    /* A STRING IS A NUMBER HERE. JSON from Metabase can hand these back either
+       way, and `"0" <= 0` is true only because JS coerces — reading them
+       through htNum keeps that an intention rather than an accident. */
+    eq(htState(at('0', '90')), 'live', 'minutes that arrive as strings are still read as numbers');
 
     /* FINISHED ROWS LEAVE — that is the "list gets shorter and shorter". */
-    const day = [row('2026-09-11T08:00:00', '2026-09-11T09:00:00'),
-                 row('2026-09-11T09:00:00', '2026-09-11T10:30:00'),
-                 row('2026-09-11T16:00:00', '2026-09-11T17:00:00')];
-    eq(htVisible(day, 7 * 60).length, 3, 'first thing in the morning, everything is still to come');
-    eq(htVisible(day, 9 * 60 + 30).length, 2, 'mid-morning, the finished one has gone');
-    eq(htVisible(day, 23 * 60).length, 0, 'by the end of the day the list is empty');
+    const day = [at(-120, -60), at(-30, 60), at(360, 420)];
+    eq(htVisible(day).length, 2, 'mid-morning, the finished one has gone');
+    eq(htVisible([at(-120, -60), at(-300, -240)]).length, 0, 'by the end of the day the list is empty');
+    eq(htVisible([at(10, 70), at(360, 420)]).length, 2, 'first thing, everything is still to come');
+
+    /* WHOSE CLOCK. The IANA name is turned into a word without a Date, since
+       every Intl route to an abbreviation needs one. */
+    eq(htZoneLabel('America/Chicago'), 'Chicago', 'the zone reads as a place');
+    eq(htZoneLabel('America/Los_Angeles'), 'Los Angeles', '...with the underscore taken out');
+    eq(htZoneLabel('UTC'), 'UTC', '...and a zone with no slash is left alone');
+    eq(htZoneLabel(null), '', '...and a missing one is empty rather than "null"');
   }
 
   /* NO Date IS CONSTRUCTED ANYWHERE IN THIS PATH. `new Date("2026-09-11T14:30:00")`
@@ -2092,7 +2092,7 @@ process.on('exit', () => {
      assertion can see it. Over the lifted helpers, since the file at large
      legitimately builds Dates for other things. */
   {
-    const htSrc = ['htMinutes', 'htClock', 'htRange', 'htState', 'htNowMin', 'htVisible']
+    const htSrc = ['htMinutes', 'htClock', 'htRange', 'htNum', 'htState', 'htVisible', 'htZoneLabel']
       .map(n => { try { return liftFn(code, n); } catch (e) { return ''; } }).join('\n');
     ok(htSrc.length > 300, 'the time helpers are readable — without this the next assertion is vacuous');
     ok(!/new Date\(/.test(htSrc),
@@ -2195,6 +2195,42 @@ process.on('exit', () => {
      '...and the column is never wrapped, which is the whole performance story');
   ok(/AS "Org Now"/.test(htCode) && /AS "Org Today"/.test(htCode) && /AS "Org Timezone"/.test(htCode),
      'the card ships the org\'s own clock, so the page never parses an offset');
+
+  /* THE ROW'S CLOCK IS ITS LOCATION'S, WHICH IS WHAT REC SHOWS. Dan, with the
+     widget beside the Rec page: "lets fix the time thing". 2026 Beach
+     Volleyball read 7:00a-11:00p on the card and 6:00AM-10:00PM in Rec — its
+     location is America/Chicago, the org is America/New_York. Proven twice:
+     `Tiny Tots 2026/2027 (8:00am-11:00am)` carries its own time in the section
+     NAME and only its location's zone (America/Los_Angeles) renders 08:00. */
+  ok(/TO_CHAR\(s\.starts_at AT TIME ZONE d\.dtz/.test(htCode)
+     && /TO_CHAR\(s\.ends_at\s+AT TIME ZONE d\.dtz/.test(htCode),
+     'the displayed clock is the SESSION\'s location, not the org\'s — which is what Rec\'s own page shows');
+  ok(/COALESCE\(NULLIF\(l\.timezone, ''\), s\.tz\) AS dtz/.test(htCode),
+     '...falling back to the org\'s zone for a session with no location, or it would render nothing');
+  ok(/AS "Display Timezone"/.test(htCode),
+     '...and the zone travels with the row, so it can say whose clock it is when that is not the org\'s');
+  /* THE DAY IS STILL ONE ZONE. Per-location day boundaries would let a row
+     belong to two days at once. */
+  ok(/\(\(NOW\(\) AT TIME ZONE tz\)::date\)::timestamp\s+AT TIME ZONE tz AS t0/.test(htCode),
+     'the WINDOW stays on the org\'s zone, so "today" is one day for the whole card');
+
+  /* THE STATE IS MINUTES FROM ONE ABSOLUTE NOW. Once the clock on the row is
+     the location's and the window is the org's, comparing them would be
+     comparing different zones — and a wrong comparison lights the wrong row
+     green, which renders just as plausibly as the right one. */
+  ok(/CEIL\(EXTRACT\(EPOCH FROM \(s\.starts_at - NOW\(\)\)\) \/ 60\)::int\s+AS "Starts In"/.test(htCode),
+     'the state ships as signed minutes from now rather than as a wall clock');
+  ok(/CEIL\(EXTRACT\(EPOCH FROM \(d\.end_at\s+- NOW\(\)\)\) \/ 60\)::int\s+AS "Ends In"/.test(htCode),
+     '...both ends of it');
+  /* CEIL RATHER THAN FLOOR: a session thirty seconds out must read as one
+     minute away, not as already running. */
+  ok(!/FLOOR\(EXTRACT\(EPOCH FROM/.test(htCode),
+     '...rounded away from now, so a session half a minute out is not reported as live');
+  /* A NULL END IS AN INSTANT, and an end at or before the start is a data
+     fault rather than a midnight crossing — `ends_at` is a timestamptz, so a
+     real 00:30 finish is already later in absolute terms. */
+  ok(/CASE WHEN s\.ends_at IS NULL OR s\.ends_at <= s\.starts_at\s*\n\s*THEN s\.starts_at \+ INTERVAL '1 minute' ELSE s\.ends_at END AS end_at/.test(htCode),
+     'a session with no end is an instant rather than one that never finishes');
   /* THE ORG'S OWN primaryTimezone WINS, NOT THE MAJORITY LOCATION — and this
      card deliberately differs from its three siblings on that. They ask "what
      landed today", where the zone only moves a day boundary; this one decides
@@ -2224,6 +2260,20 @@ process.on('exit', () => {
      'cancelled and unpublished sessions come back marked rather than filtered out');
   ok(/ORDER BY s\.starts_at, s\.section_name/.test(htCode),
      'and the trailing ORDER BY is there — the exact thing that silently vanished on card 17300');
+  /* ORDERED BY THE INSTANT, NOT BY THE DISPLAYED CLOCK. On an org whose
+     locations span zones the two disagree, and sorting by what is printed
+     would put a 3:00p Chicago session after a 2:00p Pacific one that starts
+     three hours later. */
+  ok(!/ORDER BY .*AT TIME ZONE/.test(htCode),
+     '...on the raw instant, so a multi-zone org still lists what happens next, next');
+
+  /* THE PAGE SAYS WHOSE CLOCK IT IS when the row's zone is not the org's —
+     without it, a list ordered by the instant looks out of order and there is
+     nothing on screen to explain why. */
+  ok(/dtz && orgTz && dtz !== orgTz \? htZoneLabel\(dtz\)/.test(code),
+     'the row marks its own timezone, but only when it differs from the org\'s');
+  ok(/data-ht-zone=\{dtz\}/.test(code),
+     '...and says which, rather than merely that it differs');
 }
 
 /* ── THE FACE HOLD, AND THE FOUR-ON-A-SCREEN BLOCK ────────────────────────*/
