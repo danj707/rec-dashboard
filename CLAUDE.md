@@ -1,5 +1,262 @@
 # Project notes for Claude
 
+## CRM & MESSAGING, AND THE DELIVERY RATE THAT WAS RIGHT TO LOOK WRONG (2026-09-16)
+
+Dan, with a Metabase gauge reading 5,304: *"lets add this as a widget on the
+dashboard project"* — a count of SMS deliveries at West Haven. Then the shape:
+*"This might need a whole new 'CRM/Messaging' section on the dashboard. Could
+track total messages sent, SMS's, etc. Clicking into the section would take
+them to their CRM portal in Rec"*, with Watertown's URL. Then, with screenshots
+of the Segments and Messages pages: *"there's a whole bunch of stuff here,
+segments, message counts, etc. email delivery rates (which are a bit sus)."*
+
+Card **21913**, a new `messaging` report type, fourteen widgets, and a section
+whose way out is Rec rather than a report.
+https://rec.metabaseapp.com/question/21913
+
+### THE RATES REALLY ARE SUS, AND IT IS A WEBHOOK RATHER THAN DELIVERABILITY
+
+The most useful thing measured here. Email delivery, platform-wide by month, as
+a share of sent:
+
+| | delivered | bounced | no outcome |
+|---|---|---|---|
+| 2025-03 .. 2025-12 | **0.0%** | 0.0% | **100%** |
+| 2026-01 | 0.2% | 0.0% | 99.8% |
+| 2026-02 | 20.3% | 0.1% | 79.6% |
+| 2026-03 | 91.5% | **13.2%** | 8.1% |
+| 2026-04 onward | 96–98% | 1–2% | 1–3% |
+
+**DELIVERY WEBHOOKS WERE NOT WIRED UNTIL 2026-02.** All 15,158 deliveries
+before then carry `delivered_at` NULL *and* `bounced_at` NULL — not a failure,
+an absence. So a lifetime rate reads **91.6%** and is a statement about our own
+plumbing. West Haven's whole history is 93,906 delivered / 786 bounced /
+**12,300 with no outcome recorded**, of 106,785 sent — 87.9% that nobody should
+read as deliverability.
+
+So the card ships the **three outcomes as separate columns** and the page
+divides them, which is what makes the honest behaviour expressible:
+
+- **`null`, never 0%, when a window records no outcome at all.** A 2025 window
+  otherwise renders a confident deliverability catastrophe that never happened
+  — the `memberships.last_used_at` trap wearing a percentage.
+- **A REAL 0% still shows.** A window where everything bounced is an answer.
+- **`No Outcome Recorded` is a DEFAULT tile, not an opt-in.** The rate is not
+  believable without it, and an org that has to go and add a widget before the
+  number beside it can be trusted has been told the wrong thing by default.
+
+### THE RATE IS REC'S OWN FORMULA, AND THAT WAS MATCHED RATHER THAN CHOSEN
+
+`delivered / sent`. West Haven's *"Last Chance to register for Zumba: Start
+Monday"* reads **"Sent 1,664 · Delivered 98.4%"** on its own Rec message page,
+and 1,637/1,664 = 98.38%.
+
+Dividing by the rows that reached a **terminal** state gives 99.3% instead —
+defensible, arguably better, and **0.9pp adrift of the page this section's own
+header links to**. Two surfaces disagreeing about one send is worse than either
+formula being imperfect, and this section exists partly to send people to that
+page. The fixture separates the two by **27 points** so no mutation passes by
+rounding.
+
+### THERE IS NO OPEN TRACKING, AND THAT IS MEASURED
+
+`first_opened_at` is NULL and `open_count` is 0 on **all 818,239 deliveries**,
+both channels, every org. An open-rate tile would be a confident number over
+nothing, and it is the first tile somebody will ask for — so the spec fails if
+one appears and the card selects neither column. Clicks are real but thin
+(1,280 of 800,412 email rows), so `Clicked` ships as a **count and never a
+rate**.
+
+### MARKETING AND TRANSACTIONAL ARE 2x2 WITH CHANNEL, AND THE SPLIT MATTERS
+
+| | email | sms |
+|---|---|---|
+| marketing | 685,414 (44 orgs) | 1,221 (7 orgs) |
+| transaction | 114,998 (88 orgs) | 16,604 (22 orgs) |
+
+**86% of email volume is marketing; 94% of SMS volume is transactional.** The
+section header opens `/marketing/messages`, so folding receipts and permit mail
+into one "Messages Sent" headline would put a number seven times the CRM's own
+beside a link to the CRM. Both are reported, labelled, and split on their own
+donut. West Haven: 128 marketing sends against 266 transactional.
+
+**SMS IS RARE AND THAT IS WORTH KNOWING BEFORE READING A ZERO**: 22 orgs have
+ever sent one, against 92 for email, and SMS only exists at all from 2026-02.
+A zero on this tile is usually a real zero.
+
+### SMS COSTS MONEY AND EMAIL DOES NOT — correcting a note in the sibling repo
+
+`message_delivery.cost_cents` is populated on **17,823 of 17,825 SMS rows**
+($1,068.29 platform-wide) and on **zero** email rows. rental-report's CLAUDE.md
+records it as *"NULL on all 45,347 SF deliveries"*, which is true of SF and
+true of email everywhere, and reads as a statement about the column. It is a
+statement about the channel.
+
+### GRAIN IS THE MESSAGE, WHICH IS REC'S OWN GRAIN
+
+One row per SEND — Subject, Type, Recipient Count, Sender, Send Time, exactly
+the columns Rec's Messages list shows. So "Messages Sent" and "Recipients
+Reached" are two tiles rather than one ambiguous number: West Haven's 394 sends
+reached 106,785 people, and a campaign to 1,664 is one message.
+
+- **`LEFT JOIN`, not inner.** Three messages platform-wide have no delivery row
+  at all (an audience that resolved to nobody). Dropping them makes the send
+  count disagree with Rec's own list.
+- **Driven FROM the windowed message set INTO
+  `message_delivery_message_id_index`**, so the 818k-row delivery table is
+  never scanned for one org. apex over three months: **524 sends, 159,009
+  recipients, 534ms**.
+- **Dated in the ORG's own timezone.** `config.general.primaryTimezone` is
+  populated on all 93 orgs that have ever sent a message; Metabase renders
+  Pacific, so without the conversion an Eastern org's 1am send lands on the
+  previous DAY and the daily line is wrong at every midnight. The window bounds
+  are converted to instants rather than the column being wrapped.
+
+### SEGMENT NAMES TRAVEL AS A JSON ARRAY, BECAUSE HUMANS NAME THEM
+
+`message.to -> segmentIds` is on 481 messages, and it is the only record of
+which segment a send used — the audience is resolved to user ids at send time.
+Names come back as `JSONB_AGG`, never `STRING_AGG`: Watertown has a segment
+called *"Spring Pickleball Intermediate League Captains"*, and the first one
+somebody names *"Adults, Seniors"* would be split into two segments that do not
+exist, both of which look entirely real.
+
+`msgSegmentNames` reads **both shapes** — Metabase hands a jsonb column back
+already parsed or as text depending on what it infers — and anything else
+yields nothing rather than a guess.
+
+**SEGMENTS ARE RANKED BY SENDS, NOT RECIPIENTS**, which is deliberately the
+same thing Rec's own Segments page counts under *Usage*. It also sidesteps a
+real ambiguity: a send targeting two segments reaches ONE audience, and adding
+its recipients to both totals more people than the org has.
+
+**SEGMENT SIZE IS NOT REPRODUCIBLE AND IS NOT FAKED.** `segment` stores
+criteria (`filters` / `globalOperator` / `notificationPreferences`) and no
+size; Rec computes the Size column by evaluating them. So the tile is named
+**Segments Used** — a fact this feed can establish — rather than *Segments*,
+which would be a claim about the org's library.
+
+### THE WAY OUT IS REC, AND THE PATH IS WHITELISTED
+
+`SECTION_REPORT_MAP` is deliberately **not** given a `messaging` entry: that
+map means *"this section has a report on the reporting project"*, and it drives
+both the View Report link and the per-org visibility filter. There is no
+messaging report over there, so an entry would render a dead link and hang the
+section's visibility off a report nobody serves.
+
+`recPageUrl(orgId, pageName)` is **whitelisted by name** (`REC_PAGES`), not a
+free path — the org uuid is ours and the path is ours, and handing an arbitrary
+string to a URL builder is how a typo becomes a confident 404 on somebody
+else's admin. The lesson is `recPage()`'s, from the sibling repo. No uuid, no
+link.
+
+### ABSENT UNTIL THE CARD HAS A PUBLIC LINK — and NOT FETCHED either
+
+`MESSAGING_UUID` is empty, so `SHARED_UUIDS` omits the key, so
+`availableReports` has no entry — the same absence rule as the five live cards.
+
+**THE NEW HALF IS THAT IT GATES THE FETCH, NOT ONLY THE RENDER.** A section
+config is read by the data effect, the comparison effect and the render; hiding
+it in the third still fires a request from the first, which 404s and raises the
+dashboard's own failure banner **naming a report the org never asked for** — a
+louder version of the confident zero the absence rule exists to prevent. So the
+gate is folded into **`dataKey`**, which all three already funnel through.
+
+**One half of that gate is DEFENSIVE and is recorded as such**, because the
+mutation testing said so: `availableReports` and `config` are set from one
+response in one handler, so there is no observable state where config exists
+and the map has not answered. The browser mutation that reads an empty map as
+"present" **SURVIVED**. It stays — "they arrive together" is a property of one
+fetch handler rather than a rule — but claiming the render check catches it
+would be claiming a guard that is not doing the work.
+
+### THE ORG'S DEFAULT EMAIL
+
+Dan, in the same pass: *"add another field to the 'Add Org' section — the
+'default' org email. We'll use this to send email notifications, summary emails,
+etc to. And surface that email in the dashboard settings... prefill that email
+box with the email entered at the time the org is created."*
+
+- **ONE validator.** `normalizeOrgEmail` is read by the add route and the edit
+  route; two copies is how a value is accepted by one and refused by the other,
+  on a field whose whole job is to be already correct in a box somebody is
+  about to press Send on.
+- **EMPTY IS ALLOWED AND MEANS ABSENT.** Every org onboarded before the field
+  existed has none, and the boxes it seeds fall back to their placeholder. A
+  made-up default is an address somebody has to notice is wrong.
+- **SEEDED, NEVER DRIVEN.** `useState(defaultEmail || '')` — a value somebody
+  types straight over. An effect writing it back is the "my settings keep
+  resetting" complaint the report-settings panel already earned once.
+- **EDITABLE AFTER CREATION**, via `POST /admin/api/orgs/:slug/default-email`
+  and an inline editor on each admin org card. A field only a brand-new org can
+  carry does nothing for the twenty-nine already here.
+- **Stored on the ORG, not in `dashboardConfigs`** — Reset Dashboard must not
+  wipe the address the platform mails. Only `_dynamic` orgs persist, and the
+  route says so in its response rather than letting a Save quietly not survive
+  a deploy.
+
+### Guards
+
+`scripts/messaging-widgets.spec.js` (**122 assertions, in CI**), which LIFTS
+AND RUNS every helper and every widget transform — a regex over a rate passes
+on an inverted comparison, and every defect this section can have is arithmetic
+about counts. **Mutation-tested 21 ways, all 21 failing by an assertion that
+names the defect**: the rate divided by terminal outcomes, the no-outcome gate
+removed, segment names split on commas, the string shape of `Segments` dropped,
+the availability gate inverted, `dataKey` back on `config.sections`, a fetch
+effect back on `config.sections`, `recPageUrl` accepting a free path,
+`messaging` added to `SECTION_REPORT_MAP`, a tile reducing the rows itself,
+`No Outcome Recorded` dropped from the defaults, the digest box driven instead
+of seeded, `SHARED_UUIDS` carrying an empty key, `normalizeOrgEmail` accepting
+anything, the edit route growing its own copy of the email rule, the default
+email stored in `dashboardConfigs`, the card losing its trailing `ORDER BY`,
+the card joining segment names with a comma, the card selecting an
+open-tracking column, the card dropping the timezone conversion, and the Add
+Org field removed.
+
+**One of my own assertions was satisfied by different code and mutation is what
+showed it.** `/AT TIME ZONE c\.tz/` file-wide also matches the two `[[ ]]`
+bounds, so stripping the conversion from the emitted date SURVIVED. It is
+scoped to `AS sent_local` now, with a second assertion for the bounds.
+
+**Twenty `ci-check-render.js` cases**, every one keyed on a computed figure or
+an absence — "a messaging tile rendered" passes on a tile reading the wrong
+field, on a rate over the wrong denominator, and on a segment list that split a
+name in half. Browser mutations verified to fail exactly what they name: the
+Rec link dropped (three cases), `data-widget-id` dropped (which is also how the
+absence cases stop being vacuous), and the rate on the terminal denominator
+(`reads "97.9%", wanted "70.4%"`).
+
+**`data-widget-id` IS NEW ON THE WIDGET CARD, and adding it fixed a live
+vacuity.** Every `absent:` case naming one — including the pre-existing
+retired-support case — was matching a selector that could never match, which
+passes on any page including one still rendering the thing it claims is gone.
+
+**THE FIRST RUN FAILED ALL SIXTEEN VALUE CASES ON A PERFECTLY GOOD SECTION.**
+The page is loaded ONCE and the live cases above end with the Edit modal open
+over a lighter availability map, so every case below ran against somebody
+else's page state and reported *"no widget labelled …"*. The first messaging
+case reloads onto the base config. *A render case inherits whatever the case
+before it left on screen.*
+
+**AND ONE CASE COULD NEVER HAVE PASSED.** *"a segment name with a comma
+survives whole"* asserted on `document.body.innerText` — the bar chart is a
+Chart.js **CANVAS**, so its labels are pixels. It is keyed on `Segments Used`
+reading **2** instead of 3 now, which discriminates just as well, and the name
+itself is pinned in the spec where `msgBySegment` is actually run.
+
+### NOT BUILT
+
+- **No segment SIZE or a segment library view.** Rec computes Size by
+  evaluating criteria; reproducing it means reimplementing the criteria engine.
+- **No open rate, ever, on this data.** See above.
+- **No click rate.** 1,280 of 800,412 email rows have a click, concentrated in
+  whichever orgs have link tracking on — a rate would read 0.2% for everybody
+  and mean nothing.
+- **No per-message drill-through to Rec.** The section header opens the
+  Messages list; a row-level link wants `/marketing/messages/<id>`, which is
+  not verified from here and this repo does not print unconfirmed links.
+
 ## THE IMAGE UPLOAD ROUTE WAS UNREACHABLE, AND IT READ PERFECTLY (2026-09-11)
 
 Dan, pasting a screenshot into Project Updates:

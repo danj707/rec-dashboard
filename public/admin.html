@@ -178,6 +178,8 @@ code { font-family: 'JetBrains Mono', monospace; font-size: 0.85em; background: 
           <div><label>City</label><input id="ao-city" placeholder="Pflugerville"></div>
           <div><label>State</label><input id="ao-state" placeholder="TX" maxlength="2" style="text-transform:uppercase"></div>
         </div>
+        <label>Default Org Email (notifications, summary emails)</label>
+        <input id="ao-email" type="email" placeholder="parks@pflugerville.gov">
         <label>Logo URL (optional — auto-generated from UUID)</label>
         <input id="ao-logo" placeholder="https://prod-rec-tech-img-bucket-...">
         <div class="modal-actions">
@@ -228,6 +230,23 @@ async function saveNotify(slug) {
     btn.textContent = json.error || 'Error'; btn.style.background = '#ef4444'; btn.style.color = '#fff';
   }
   setTimeout(() => { btn.textContent = 'Save'; btn.style.background = '#14b8a6'; btn.style.color = '#000'; }, 2500);
+}
+
+async function saveDefaultEmail(slug) {
+  const input = document.getElementById('de-' + slug);
+  const btn = document.getElementById('deb-' + slug);
+  const resp = await fetch('/admin/api/orgs/' + slug + '/default-email', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ defaultEmail: input.value })
+  });
+  const json = await resp.json();
+  if (json.ok) {
+    input.value = json.defaultEmail || '';
+    btn.textContent = '\u2713 Saved'; btn.style.background = '#22c55e';
+  } else {
+    btn.textContent = json.error || 'Error'; btn.style.background = '#ef4444';
+  }
+  setTimeout(() => { btn.textContent = 'Save'; btn.style.background = '#0ea5e9'; }, 2500);
 }
 
 (async function() {
@@ -319,6 +338,20 @@ async function saveNotify(slug) {
                 </div>
                 <div style="font-size:10px;color:#666;margin-top:4px">Who gets \u201CNew Customer Support inquiry\u201D emails when Rec tags an escalation. Orgs can also edit this from their dashboard.</div>
                 ` : ''}
+              </div>
+              <!-- Editable after creation on purpose: the field is set at Add
+                   Org, and every org onboarded before it existed has none. A
+                   field only a brand-new org can carry is a field that does
+                   nothing for the twenty-nine already here. -->
+              <div style="margin-top:10px;padding-top:10px;border-top:1px solid #e5e7eb">
+                <div style="display:flex;gap:6px;align-items:center">
+                  <span style="font-size:12px;color:#4b5563;white-space:nowrap">\uD83D\uDCEC Default email</span>
+                  <input id="de-${o.slug}" type="email" placeholder="not set" value="${o.defaultEmail || ''}"
+                    style="flex:1;background:#fff;border:1px solid #d1d5db;border-radius:6px;padding:6px 10px;font-size:11px;color:#111;font-family:inherit">
+                  <button id="deb-${o.slug}" onclick="saveDefaultEmail('${o.slug}')"
+                    style="background:#0ea5e9;color:#fff;border:none;border-radius:6px;padding:6px 12px;font-size:11px;font-weight:600;cursor:pointer">Save</button>
+                </div>
+                <div style="font-size:10px;color:#666;margin-top:4px">Prefills the digest and summary email boxes in this org's Dashboard Settings. Leave blank for none \u2014 the boxes then show their placeholder rather than a wrong address.</div>
               </div>
               ${o.updatedAt ? '<div class="org-updated">Last updated: ' + new Date(o.updatedAt).toLocaleString() + '</div>' : ''}
             </div>
@@ -551,6 +584,7 @@ async function submitAddOrg() {
   const city = document.getElementById('ao-city').value.trim();
   const state = document.getElementById('ao-state').value.trim().toUpperCase();
   const logoUrl = document.getElementById('ao-logo').value.trim();
+  const defaultEmail = document.getElementById('ao-email').value.trim();
 
   if (!slug || !orgId) {
     errEl.textContent = 'Slug and Org UUID are required';
@@ -564,7 +598,7 @@ async function submitAddOrg() {
     const resp = await fetch('/admin/api/orgs', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ slug, name: name || slug, orgId, city, state, logoUrl })
+      body: JSON.stringify({ slug, name: name || slug, orgId, city, state, logoUrl, defaultEmail })
     });
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error || 'Failed');

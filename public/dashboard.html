@@ -1029,6 +1029,115 @@ function mbBook(rows) {
 }
 
 // ═══════════════════════════════════════════════════════
+//  CRM & MESSAGING
+// ═══════════════════════════════════════════════════════
+// Card 21913, one row per MESSAGE (a send) — the grain Rec's own
+// /marketing/messages list uses, which is the page this section links to.
+//
+// Every one of these is at MODULE SCOPE so the spec can LIFT AND RUN it. A
+// regex over a rate passes on an inverted comparison, and every defect this
+// section can have is arithmetic about counts.
+
+function msgN(r, k) { const n = parseInt(r && r[k], 10); return isNaN(n) ? 0 : n; }
+function msgIsSms(r) { return String((r && r['Channel']) || '').toUpperCase() === 'SMS'; }
+function msgIsMarketing(r) { return String((r && r['Type']) || '').toLowerCase() === 'marketing'; }
+
+// A send's segments travel as a JSON ARRAY, never a joined string — segment
+// names are written by humans and Watertown really has one called "Spring
+// Pickleball Intermediate League Captains". Splitting on a comma would turn
+// the first segment somebody names "Adults, Seniors" into two that do not
+// exist. Metabase can hand a jsonb column back either already parsed or as
+// text depending on the column's inferred type, so both are read and anything
+// else yields nothing rather than a guess.
+function msgSegmentNames(r) {
+  const v = r && r['Segments'];
+  const clean = a => a.filter(x => typeof x === 'string' && x.trim()).map(x => x.trim());
+  if (Array.isArray(v)) return clean(v);
+  if (typeof v === 'string' && v.trim()) {
+    try { const parsed = JSON.parse(v); return Array.isArray(parsed) ? clean(parsed) : []; }
+    catch (e) { return []; }
+  }
+  return [];
+}
+
+// ONE reducer, N readers. Nine tiles and three charts read this section's
+// figures; nine inline reduces is how two of them come to disagree about the
+// same window — already recorded here for the Programs revenue row.
+function msgTotals(rows) {
+  const t = { sends: 0, recipients: 0, delivered: 0, bounced: 0, noOutcome: 0,
+              complaints: 0, clicked: 0, costCents: 0, smsSegments: 0,
+              smsSends: 0, smsRecipients: 0, emailSends: 0, emailRecipients: 0,
+              marketingSends: 0, marketingRecipients: 0,
+              transactionalSends: 0, transactionalRecipients: 0,
+              segmentSends: 0 };
+  (rows || []).forEach(r => {
+    const rec = msgN(r, 'Recipients');
+    t.sends++; t.recipients += rec;
+    t.delivered += msgN(r, 'Delivered');
+    t.bounced += msgN(r, 'Bounced');
+    t.noOutcome += msgN(r, 'No Outcome');
+    t.complaints += msgN(r, 'Complaints');
+    t.clicked += msgN(r, 'Clicked');
+    t.costCents += msgN(r, 'Cost Cents');
+    t.smsSegments += msgN(r, 'SMS Segments');
+    if (msgIsSms(r)) { t.smsSends++; t.smsRecipients += rec; }
+    else { t.emailSends++; t.emailRecipients += rec; }
+    if (msgIsMarketing(r)) { t.marketingSends++; t.marketingRecipients += rec; }
+    else { t.transactionalSends++; t.transactionalRecipients += rec; }
+    if (msgSegmentNames(r).length) t.segmentSends++;
+  });
+  return t;
+}
+
+// REC'S OWN FORMULA, delivered / sent. West Haven's "Last Chance to register
+// for Zumba" message page reads "Sent 1,664 · Delivered 98.4%", and 1,637 of
+// 1,664 is 98.38%. Dividing by the rows that reached a terminal state gives
+// 99.3% instead — defensible, and 0.9pp adrift of the page this section's own
+// header links to. Two surfaces disagreeing about one send is worse.
+//
+// NULL, NEVER 0, WHEN THE WINDOW RECORDS NO OUTCOME AT ALL — and that is the
+// whole reason Dan's "email delivery rates (which are a bit sus)" was a real
+// finding rather than a grumble. Email delivery webhooks were not wired until
+// 2026-02: every one of the 15,158 deliveries before then has delivered_at
+// NULL and bounced_at NULL, so a window inside 2025 divides a real numerator
+// of zero by a real denominator and renders a confident 0% deliverability
+// catastrophe that never happened. A real 0% still shows — a window where
+// everything bounced is an answer.
+function msgDeliveryRate(rows) {
+  const t = msgTotals(rows);
+  if (!t.recipients) return null;
+  if (!t.delivered && !t.bounced) return null;
+  return t.delivered / t.recipients * 100;
+}
+
+// The share of a window the platform cannot speak for. This is what turns the
+// rate above from a number into a number you can argue with, so it is a tile
+// of its own rather than a footnote.
+function msgNoOutcomeShare(rows) {
+  const t = msgTotals(rows);
+  return t.recipients ? t.noOutcome / t.recipients * 100 : null;
+}
+
+// Recipients per day, on the SEND's own date in the ORG's timezone — the card
+// converts before it emits, so nothing here parses an instant.
+function msgDaily(rows) {
+  const g = {};
+  (rows || []).forEach(r => { const d = r && r['Sent Date']; if (d) g[d] = (g[d] || 0) + msgN(r, 'Recipients'); });
+  return Object.entries(g).sort((a, b) => String(a[0]).localeCompare(String(b[0])));
+}
+
+// SENDS per segment, not recipients — which is deliberately the same thing
+// Rec's own Segments page counts in its Usage column, so the two agree. It
+// also sidesteps a real ambiguity: a send targeting two segments reaches one
+// audience, and adding its recipients to both would total more people than
+// the org has.
+function msgBySegment(rows) {
+  const g = {};
+  (rows || []).forEach(r => { msgSegmentNames(r).forEach(n => { g[n] = (g[n] || 0) + 1; }); });
+  return Object.entries(g).sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0])));
+}
+
+// ═══════════════════════════════════════════════════════
 //  SECTION REGISTRY
 // ═══════════════════════════════════════════════════════
 const SECTIONS = {
@@ -1059,6 +1168,20 @@ const SECTIONS = {
   instructors: { id: 'instructors', label: 'Instructor Payout', icon: '\uD83C\uDF93', color: '#22c55e',
     description: 'Instructor revenue splits and performance',
     defaultWidgets: ['instr-net','instr-payout','instr-org-ret','instr-fill','instr-top'] },
+  /* ── CRM & MESSAGING ──────────────────────────────────────────────────────
+     Dan: "This might need a whole new 'CRM/Messaging' section on the
+     dashboard. Could track total messages sent, SMS's, etc. Clicking into the
+     section would take them to their CRM portal in Rec."
+
+     It is NOT in SECTION_REPORT_MAP, and that absence is deliberate. That map
+     means "this section has a report on the reporting project", and it drives
+     both the View Report link and the per-org report-visibility filter. There
+     is no messaging report over there, so an entry would render a dead link
+     and hang this section's visibility off a report type nobody serves. The
+     way OUT of this section is Rec itself — see SECTION_REC_PAGE. */
+  messaging: { id: 'messaging', label: 'CRM & Messaging', icon: '\uD83D\uDCE3', color: '#0ea5e9',
+    description: 'What the org sent, who it reached, and what came back',
+    defaultWidgets: ['msg-sent','msg-recipients','msg-sms','msg-email','msg-delivery-rate','msg-bounced','msg-no-outcome','msg-sms-cost','msg-by-type','msg-daily','tbl-msg-campaigns'] },
   'ai-briefing': { id: 'ai-briefing', label: 'AI Executive Briefing', icon: '\u2728', color: '#a855f7',
     description: 'AI-generated narrative summary from all dashboard data',
     defaultWidgets: [], _special: true },
@@ -1096,6 +1219,56 @@ const SECTION_REPORT_MAP = {
   products: 'products',
   instructors: 'instructor-payout',
 };
+
+/* Sections whose way OUT is Rec itself rather than a report. Dan gave the URL
+   for Watertown — https://www.rec.us/admin/o/<orgId>/marketing/messages — and
+   the org uuid is already on the page as orgMeta.recOrgId, the same value
+   liveUserUrl and liveSectionUrl build from.
+
+   WHITELISTED BY NAME, NOT A FREE PATH. The org uuid is ours and the path is
+   ours; handing an arbitrary string to a URL builder is how a typo becomes a
+   confident 404 on somebody else's admin — the lesson already paid for by
+   recPage() in the sibling repo. A section not in this map gets no link, which
+   is the right failure. */
+const REC_PAGES = { 'marketing-messages': 'marketing/messages' };
+const SECTION_REC_PAGE = { messaging: 'marketing-messages' };
+function recPageUrl(orgId, pageName) {
+  const path = REC_PAGES[pageName];
+  return orgId && path ? 'https://www.rec.us/admin/o/' + orgId + '/' + path : null;
+}
+
+/* Sections that cannot be drawn until the server can serve their feed. Only
+   sections listed here are gated — a blanket rule would hide every section for
+   the beat between mount and the org-meta fetch resolving.
+
+   GATING THE FETCH AND NOT ONLY THE RENDER IS THE LOAD-BEARING HALF. The gate
+   is folded into `dataKey`, so a hidden section is not requested either.
+   Gating only the render still fires the request, gets a 404 and raises the
+   dashboard's own failure banner naming a report the org never asked for — a
+   louder version of exactly the confident zero this is here to prevent. That
+   half IS reachable and the render check catches it.
+
+   UNKNOWN ALSO COUNTS AS MISSING, and that half is DEFENSIVE rather than
+   load-bearing — said plainly because the mutation testing showed it. Today
+   `availableReports` and `config` are set from one response in one handler,
+   so there is no state where config exists and the map has not answered; the
+   mutation that treats an empty map as "present" changes nothing anybody can
+   observe, and claiming the guard catches it would be claiming a guard that
+   is not doing the work. It stays because the two arriving together is a
+   property of one fetch handler rather than a rule, and the day the map is
+   fetched separately the other reading is a doomed request on every load. */
+const SECTION_REQUIRES_FEED = { messaging: 'messaging' };
+function sectionFeedMissing(sectionId, availableReports) {
+  const rt = SECTION_REQUIRES_FEED[sectionId];
+  if (!rt) return false;
+  return !(availableReports && availableReports[rt]);
+}
+// ONE funnel, three readers: the data fetch, the comparison fetch and the
+// render all go through this, so a section can never be drawn from a feed
+// nobody asked for or asked for without being drawn.
+function sectionsWithFeeds(sections, availableReports) {
+  return (sections || []).filter(s => !sectionFeedMissing(s.id, availableReports));
+}
 
 // Reports that show all-time data regardless of date picker
 const ALL_TIME_REPORTS = new Set(['fasttrack', 'memberships', 'users', 'program-demographics', 'retention', 'checkins']);
@@ -1897,6 +2070,87 @@ const W = {
           '$'+Math.round(pf(r['Total Refunds'])).toLocaleString(), '$'+Math.round(pf(r['Net Amount'])).toLocaleString()]) };
     }},
 
+  // ── CRM & Messaging ──
+  // Every transform goes through msgTotals / msgDeliveryRate / msgBySegment
+  // rather than reducing inline, so no two tiles here can disagree about one
+  // window. See the helper block above the section registry for the
+  // delivery-rate argument and the webhook gap behind it.
+  'msg-sent': { label: 'Messages Sent', description: 'Sends — campaigns and automated messages', note: 'One per SEND, the way Rec’s own Messages list counts them — a campaign to 1,600 people is one message', section: 'messaging',
+    reportType: 'messaging', size: 'sm', icon: '📤', component: 'metric', delta: true,
+    transform: rows => ({ value: msgTotals(rows).sends, format: 'number',
+      sub: (() => { const t = msgTotals(rows); return t.sends ? t.marketingSends.toLocaleString() + ' marketing · ' + t.transactionalSends.toLocaleString() + ' transactional' : null; })() }) },
+  'msg-recipients': { label: 'Recipients Reached', description: 'People those sends went to', note: 'Total deliveries — a send to 1,600 people counts 1,600 here and 1 under Messages Sent', section: 'messaging',
+    reportType: 'messaging', size: 'sm', icon: '👥', component: 'metric', delta: true,
+    transform: rows => ({ value: msgTotals(rows).recipients, format: 'number', colorClass: 'metric-green' }) },
+  'msg-sms': { label: 'SMS Sent', description: 'Text messages delivered to recipients', note: 'SMS recipients in range. Only 22 orgs on the platform send any SMS at all, so a zero here is usually a real zero', section: 'messaging',
+    reportType: 'messaging', size: 'sm', icon: '💬', component: 'metric', delta: true,
+    transform: rows => { const t = msgTotals(rows);
+      return { value: t.smsRecipients, format: 'number',
+        sub: t.smsSends ? t.smsSends.toLocaleString() + (t.smsSends === 1 ? ' send' : ' sends') : null }; } },
+  'msg-email': { label: 'Emails Sent', description: 'Email recipients in range', note: 'Email recipients in range, marketing and transactional together', section: 'messaging',
+    reportType: 'messaging', size: 'sm', icon: '✉️', component: 'metric', delta: true,
+    transform: rows => { const t = msgTotals(rows);
+      return { value: t.emailRecipients, format: 'number',
+        sub: t.emailSends ? t.emailSends.toLocaleString() + (t.emailSends === 1 ? ' send' : ' sends') : null }; } },
+  'msg-delivery-rate': { label: 'Delivery Rate', description: 'Share of recipients the provider confirmed delivered', note: 'Delivered ÷ sent — the same arithmetic Rec’s own message page shows, so the two agree. Blank when the window records no outcome at all rather than reporting 0%', section: 'messaging',
+    reportType: 'messaging', size: 'sm', icon: '✅', component: 'metric',
+    transform: rows => { const rate = msgDeliveryRate(rows); const t = msgTotals(rows);
+      return { value: rate, format: 'percent',
+        colorClass: rate != null && rate >= 95 ? 'metric-green' : '',
+        sub: rate == null
+          ? (t.recipients ? 'no delivery outcome recorded for this window' : null)
+          : (t.noOutcome ? Math.round(t.noOutcome / t.recipients * 1000) / 10 + '% with no outcome recorded' : null) }; } },
+  'msg-bounced': { label: 'Bounced', description: 'Recipients the provider could not reach', note: 'Hard and soft bounces plus SMS carrier rejections — a rising line here is a list-hygiene problem', section: 'messaging',
+    reportType: 'messaging', size: 'sm', icon: '↩️', component: 'metric', delta: true, deltaGoodWhenDown: true,
+    transform: rows => { const t = msgTotals(rows);
+      return { value: t.bounced, format: 'number', colorClass: t.bounced ? 'metric-red' : '',
+        sub: t.recipients ? Math.round(t.bounced / t.recipients * 1000) / 10 + '% of sent' : null }; } },
+  'msg-no-outcome': { label: 'No Outcome Recorded', description: 'Recipients with neither a delivery nor a bounce on file', note: 'Neither delivered nor bounced — the provider never reported back. Email delivery webhooks were only wired in 2026-02, so any window reaching into 2025 is mostly this', section: 'messaging',
+    reportType: 'messaging', size: 'sm', icon: '❓', component: 'metric',
+    transform: rows => { const t = msgTotals(rows);
+      return { value: t.noOutcome, format: 'number',
+        sub: t.recipients ? Math.round(t.noOutcome / t.recipients * 1000) / 10 + '% of sent' : null }; } },
+  'msg-sms-cost': { label: 'SMS Cost', description: 'What the texts cost', note: 'Carrier cost of SMS in range. Email carries no cost on this platform, so this is the whole messaging spend', section: 'messaging',
+    reportType: 'messaging', size: 'sm', icon: '💸', component: 'metric', delta: true, deltaGoodWhenDown: true,
+    transform: rows => { const t = msgTotals(rows);
+      return { value: t.costCents / 100, format: 'currency2',
+        sub: t.smsSegments ? t.smsSegments.toLocaleString() + ' carrier segments' : null }; } },
+  'msg-segments-used': { label: 'Segments Used', description: 'Distinct saved segments a send targeted', note: 'Counts segments the org actually SENT to — not its whole segment library, whose size Rec computes by evaluating criteria this report cannot see', section: 'messaging',
+    reportType: 'messaging', size: 'sm', icon: '🎯', component: 'metric',
+    transform: rows => ({ value: msgBySegment(rows).length, format: 'number',
+      sub: (() => { const t = msgTotals(rows); return t.segmentSends ? t.segmentSends.toLocaleString() + ' sends targeted one' : null; })() }) },
+  'msg-by-channel': { label: 'Recipients by Channel', description: 'Email against SMS', note: 'Recipients split by channel', section: 'messaging',
+    reportType: 'messaging', size: 'md', icon: '📱', component: 'donut',
+    transform: rows => { const t = msgTotals(rows);
+      const pairs = [['Email', t.emailRecipients], ['SMS', t.smsRecipients]].filter(e => e[1] > 0);
+      return { labels: pairs.map(e => e[0]), values: pairs.map(e => e[1]) }; } },
+  'msg-by-type': { label: 'Marketing vs Transactional', description: 'Campaigns against receipts and confirmations', note: 'Marketing is what the CRM sends; transactional is receipts, confirmations and permit mail the platform sends on its own', section: 'messaging',
+    reportType: 'messaging', size: 'md', icon: '📊', component: 'donut',
+    transform: rows => { const t = msgTotals(rows);
+      const pairs = [['Marketing', t.marketingRecipients], ['Transactional', t.transactionalRecipients]].filter(e => e[1] > 0);
+      return { labels: pairs.map(e => e[0]), values: pairs.map(e => e[1]) }; } },
+  'msg-daily': { label: 'Recipients by Day', description: 'Sending volume over time', note: 'Recipients per day, dated in the org’s own timezone', section: 'messaging',
+    reportType: 'messaging', size: 'md', icon: '📈', component: 'line',
+    transform: rows => { const s = msgDaily(rows);
+      return { labels: s.map(e => shortDate(e[0])), values: s.map(e => e[1]) }; } },
+  'msg-top-segments': { label: 'Top Segments', description: 'Which saved segments get used', note: 'Segments ranked by how many sends targeted them — the same count Rec’s Segments page shows under Usage', section: 'messaging',
+    reportType: 'messaging', size: 'md', icon: '🎯', component: 'bar',
+    transform: rows => { const s = msgBySegment(rows).slice(0, 10);
+      return { labels: s.map(e => e[0]), values: s.map(e => e[1]) }; } },
+  'tbl-msg-campaigns': { label: 'Biggest Sends', description: 'The sends that reached the most people', note: 'Ranked by recipients. Delivery % is blank where the provider recorded no outcome, which is not the same as 0%', section: 'messaging',
+    reportType: 'messaging', size: 'lg', icon: '📋', component: 'table',
+    transform: rows => {
+      const s = (rows || []).slice().sort((a, b) => msgN(b, 'Recipients') - msgN(a, 'Recipients')).slice(0, 15);
+      return { columns: ['Sent', 'Subject', 'Type', 'Channel', 'Recipients', 'Delivered %', 'Bounced'],
+        data: s.map(r => {
+          const rate = msgDeliveryRate([r]);
+          return [r['Sent Date'] || '-', r['Subject'] || '(no subject)', r['Type'] || '-', r['Channel'] || '-',
+                  msgN(r, 'Recipients').toLocaleString(),
+                  rate == null ? '—' : (Math.round(rate * 10) / 10) + '%',
+                  msgN(r, 'Bounced').toLocaleString()];
+        }) };
+    }},
+
 };
 
 // ═══════════════════════════════════════════════════════
@@ -2452,8 +2706,13 @@ function WidgetCard({ widgetId, reportData, loading, freshRts, target, onTargetC
   }
   function clearTarget() { onTargetChange(widgetId, null); setTargetInput(''); setEditingTarget(false); }
 
+  /* The widget's own id on the card below. Added because every `absent:` case
+     in the render check that named a data-widget-id was VACUOUS without it — a
+     selector that can never match passes on any page, including one still
+     rendering the thing it claims is gone. That is the oldest trap in these
+     two repos and it was already live here, in the retired-support case. */
   return (
-    <div className={`widget-card ${sizeClass}${stale ? ' widget-stale' : ''}`}>
+    <div className={`widget-card ${sizeClass}${stale ? ' widget-stale' : ''}`} data-widget-id={widgetId}>
       <div className="widget-header">
         <div>
           <span className="widget-label">{def.label}</span>
@@ -5455,7 +5714,7 @@ function BriefingSection({ reportData, loading, dateRange, briefingRef }) {
 // ═══════════════════════════════════════════════════════
 //  SECTION BLOCK
 // ═══════════════════════════════════════════════════════
-function SectionBlock({ sectionId, widgetIds, reportData, loading, freshRts, targets, onTargetChange, chartTypes, onChartTypeChange, dateRange, aiEnabled, reportLinksEnabled, reportingBaseUrl, priorReportData, onCustomize }) {
+function SectionBlock({ sectionId, widgetIds, reportData, loading, freshRts, targets, onTargetChange, chartTypes, onChartTypeChange, dateRange, aiEnabled, reportLinksEnabled, reportingBaseUrl, recOrgId, priorReportData, onCustomize }) {
   const sec = SECTIONS[sectionId]; if (!sec) return null;
   const [insight, setInsight] = useState(null);
   const [insightLoading, setInsightLoading] = useState(false);
@@ -5543,6 +5802,24 @@ function SectionBlock({ sectionId, widgetIds, reportData, loading, freshRts, tar
             onMouseOver={e=>{e.currentTarget.style.background=`${sec.color||'var(--amber)'}1a`;e.currentTarget.style.borderColor=`${sec.color||'var(--amber)'}66`;}}
             onMouseOut={e=>{e.currentTarget.style.background=`${sec.color||'var(--amber)'}0d`;e.currentTarget.style.borderColor=`${sec.color||'var(--amber)'}33`;}}>
             View Report {String.fromCharCode(8594)}
+          </a>
+        )}
+        {/* The way OUT of a section whose numbers live in Rec rather than in a
+            report. Dan: "Clicking into the section would take them to their
+            CRM portal in Rec." Built through recPageUrl, which only knows a
+            whitelist of pages — the org uuid is ours and so is the path, and
+            handing a free string to a URL builder is how a typo becomes a
+            confident 404 on somebody's admin. No uuid, no link. */}
+        {recPageUrl(recOrgId, SECTION_REC_PAGE[sectionId]) && (
+          <a href={recPageUrl(recOrgId, SECTION_REC_PAGE[sectionId])} target="_blank" rel="noopener noreferrer"
+            data-rec-link={sectionId}
+            style={{fontSize:11,fontWeight:600,color:sec.color||'var(--amber)',textDecoration:'none',
+              padding:'4px 12px',borderRadius:6,border:`1px solid ${sec.color||'var(--amber)'}33`,
+              background:`${sec.color||'var(--amber)'}0d`,transition:'all 0.2s',display:'flex',alignItems:'center',gap:4,
+              fontFamily:'var(--font-body)',whiteSpace:'nowrap'}}
+            onMouseOver={e=>{e.currentTarget.style.background=`${sec.color||'var(--amber)'}1a`;e.currentTarget.style.borderColor=`${sec.color||'var(--amber)'}66`;}}
+            onMouseOut={e=>{e.currentTarget.style.background=`${sec.color||'var(--amber)'}0d`;e.currentTarget.style.borderColor=`${sec.color||'var(--amber)'}33`;}}>
+            Open in Rec {String.fromCharCode(8594)}
           </a>
         )}
       </div>
@@ -5705,6 +5982,10 @@ function EditModal({ sections, onSave, onClose, availableReports, toggles, focus
       // Always on and rendered outside config.sections — offering to "add" it
       // would create a duplicate that renders nothing.
       if (s.id === 'live') return false;
+      // Nothing may be ADDED that cannot be served. Offering CRM & Messaging
+      // before its card has a public link is offering a section that renders
+      // an error banner the moment it is saved.
+      if (sectionFeedMissing(s.id, availableReports)) return false;
       // Also hide sections whose report is hidden on the reporting side (from window._reportVisibility)
       if (window._reportVisibility) {
         const rt = SECTION_REPORT_MAP[s.id];
@@ -5941,12 +6222,22 @@ function TemplateChooser({ onSelect, orgMeta }) {
 // ═══════════════════════════════════════════════════════
 //  SETTINGS
 // ═══════════════════════════════════════════════════════
-function SettingsPopover({ cacheTTL, onCacheTTLChange, onClearCache, onReset, theme, onThemeChange, emailDigestEnabled, sections, dateRange, onSendDigest }) {
+function SettingsPopover({ cacheTTL, onCacheTTLChange, onClearCache, onReset, theme, onThemeChange, emailDigestEnabled, sections, dateRange, onSendDigest, defaultEmail }) {
   const [confirmReset, setConfirmReset] = useState(false);
-  const [subEmail, setSubEmail] = useState('');
+  /* SEEDED FROM THE ORG'S DEFAULT EMAIL, NEVER OVERRIDDEN BY IT. Dan: "prefill
+     that email box with the email entered at the time the org is created."
+     It is the initial value of a field somebody can type straight over — an
+     effect that kept writing it back would take a colleague's typed address
+     away mid-sentence, which is the "my settings keep resetting" complaint the
+     report-settings panel already earned once.
+
+     An org with no default seeds '' and the box falls back to its placeholder.
+     Absent must stay absent: a made-up default is an address somebody has to
+     notice is wrong before pressing Send. */
+  const [subEmail, setSubEmail] = useState(defaultEmail || '');
   const [subFreq, setSubFreq] = useState('weekly');
   const [subStatus, setSubStatus] = useState(null);
-  const [sendEmail, setSendEmail] = useState('');
+  const [sendEmail, setSendEmail] = useState(defaultEmail || '');
   const [sendStatus, setSendStatus] = useState(null);
 
   async function handleSendNow() {
@@ -6092,7 +6383,7 @@ function SettingsPopover({ cacheTTL, onCacheTTLChange, onClearCache, onReset, th
           ) : (
             <React.Fragment>
               <input type="email" value={sendEmail} onChange={function(e){setSendEmail(e.target.value);}}
-                placeholder="you@example.com"
+                data-digest-email placeholder="you@example.com"
                 onKeyDown={function(e){if(e.key==='Enter')handleSendNow();}}
                 style={{width:'100%',padding:'6px 8px',borderRadius:6,border:'1px solid var(--border)',
                   background:'var(--bg-surface)',color:'var(--text-primary)',fontSize:12,marginBottom:6,
@@ -6436,11 +6727,16 @@ function DashboardApp() {
   }, []);
 
   // Only refetch when sections/widgets change or date range changes, NOT theme/cacheTTL
-  const dataKey = config && config !== 'new' ? JSON.stringify(config.sections.map(s=>s.id+':'+s.widgets.join(','))) : '';
+  // Sections this org can actually be served. Folded into dataKey on purpose:
+  // when availableReports resolves the key moves and both fetch effects re-run
+  // against the corrected set, instead of a hidden section quietly having
+  // fetched a feed that does not exist.
+  const feedSections = config && config !== 'new' ? sectionsWithFeeds(config.sections, availableReports) : [];
+  const dataKey = config && config !== 'new' ? JSON.stringify(feedSections.map(s=>s.id+':'+s.widgets.join(','))) : '';
 
   useEffect(() => {
     if (!config || config === 'new') { setLoading(false); return; }
-    const allWidgetIds = config.sections.flatMap(s => s.widgets);
+    const allWidgetIds = feedSections.flatMap(s => s.widgets);
     const baseRts = allWidgetIds.map(id => W[id]?.reportType).filter(Boolean);
     allWidgetIds.forEach(id => { var def = W[id]; if (def && def._extraReportTypes) def._extraReportTypes.forEach(function(rt){ baseRts.push(rt); }); });
     const rts = [...new Set(baseRts)];
@@ -6475,7 +6771,7 @@ function DashboardApp() {
 
     function onAllSettled() {
       setLoading(false); setLastRefresh(new Date());
-      track('dashboard_view', { sections: config.sections.length, widgets: allWidgetIds.length, reportTypes: rts, dateRange });
+      track('dashboard_view', { sections: feedSections.length, widgets: allWidgetIds.length, reportTypes: rts, dateRange });
     }
   }, [dataKey, dateRange]);
 
@@ -6488,7 +6784,7 @@ function DashboardApp() {
     if (!config || config === 'new') return;
     const pw = comparisonWindow(dateRange, compareMode);
     if (!pw) { setPriorReportData(null); return; }
-    const allWidgetIds = config.sections.flatMap(s => s.widgets);
+    const allWidgetIds = feedSections.flatMap(s => s.widgets);
     const rts = new Set(allWidgetIds.map(id => W[id]?.reportType).filter(Boolean));
     const deltaRts = [...new Set(Object.values(W).filter(d => d.delta && d.component === 'metric').map(d => d.reportType))]
       .filter(rt => rts.has(rt) && !ALL_TIME_REPORTS.has(rt));
@@ -6598,7 +6894,7 @@ function DashboardApp() {
   const isReadOnly = orgMeta.readOnly || IS_SHARE;
   const totalWidgets = config.sections.reduce((s,sec) => s + sec.widgets.length, 0);
   const displaySections = (() => {
-    const filtered = config.sections.filter(sec => {
+    const filtered = feedSections.filter(sec => {
       if (sec.id === 'ai-briefing') return false;
       if (PRINT_SECTIONS && !PRINT_SECTIONS.includes(sec.id)) return false;
       if (!orgMeta.reportVisibility) return true;
@@ -6659,7 +6955,7 @@ function DashboardApp() {
             <button className="btn" onClick={()=>{setEditFocus(null);setEditOpen(true);track('edit_opened',{from:'toolbar'});}}>{'\u270E'} Edit Dashboard</button>
             <div style={{position:'relative'}}>
               <button className="btn" onClick={()=>setSettingsOpen(!settingsOpen)}>{'\u2699'}</button>
-              {settingsOpen && <SettingsPopover cacheTTL={config.cacheTTL||15} onCacheTTLChange={handleCacheTTLChange} onClearCache={handleClearCache} onReset={handleReset} theme={theme} onThemeChange={handleThemeChange} emailDigestEnabled={orgMeta.toggles?.emailDigest === true} sections={config.sections} dateRange={dateRange} onSendDigest={handleSendDigest} />}
+              {settingsOpen && <SettingsPopover defaultEmail={orgMeta.defaultEmail || ''} cacheTTL={config.cacheTTL||15} onCacheTTLChange={handleCacheTTLChange} onClearCache={handleClearCache} onReset={handleReset} theme={theme} onThemeChange={handleThemeChange} emailDigestEnabled={orgMeta.toggles?.emailDigest === true} sections={config.sections} dateRange={dateRange} onSendDigest={handleSendDigest} />}
             </div>
           </div>
         )}
@@ -6718,6 +7014,7 @@ function DashboardApp() {
           <SectionBlock key={sec.id+i+theme} sectionId={sec.id} widgetIds={sec.widgets} reportData={reportData} loading={loading} freshRts={freshRts} priorReportData={priorReportData}
             targets={targets} onTargetChange={handleTargetChange} chartTypes={chartTypes} onChartTypeChange={handleChartTypeChange} dateRange={dateRange} aiEnabled={!isReadOnly && orgMeta.toggles?.ai !== false}
             reportLinksEnabled={!isReadOnly && orgMeta.toggles?.reportLinks === true} reportingBaseUrl={orgMeta.reportingBaseUrl || ''}
+            recOrgId={orgMeta.recOrgId || ''}
             onCustomize={isReadOnly || IS_PRINT ? null : openSectionWidgets} />
         ))}
       </div>

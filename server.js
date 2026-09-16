@@ -409,6 +409,26 @@ const FACILITY_TODAY_UUID     = '4e9ff19c-233d-46fa-84f4-008cea53cf0b';
    https://rec.metabaseapp.com/question/21814 */
 const HAPPENING_TODAY_UUID    = '8e6df830-5cc2-4b22-871c-5b730fcca4a9';
 
+/* 📣 CRM & Messaging (card 21913). The org's own marketing/transactional
+   sending — messages, recipients, SMS, email, the three delivery outcomes and
+   the segments a send targeted. Feeds the CRM & Messaging section, whose
+   header links straight through to the Rec page the numbers come from
+   (/admin/o/<orgId>/marketing/messages).
+
+   EMPTY UNTIL SOMEBODY CREATES THE PUBLIC LINK — and, unlike its siblings,
+   this card ALSO needs both date tags flipped to Date in the same visit. All
+   three tags came back `text` on creation, read off the live card rather than
+   assumed: the sibling repo's note on card 20197 says Metabase auto-types a
+   tag named start_date as Date from its name, and it did not happen here. The
+   dashboard sends date/single for every dated card and Metabase refuses that
+   against a Text tag.
+
+   The flip costs nothing exactly once, which is why it happens now: a card
+   with no public link has no consumers, so there is no outage window to pay
+   for. Leave it and the first person to notice is an org.
+   https://rec.metabaseapp.com/question/21913 */
+const MESSAGING_UUID = '';
+
 const SHARED_UUIDS = {
   facility: 'f6787f45-3a36-4501-8a5f-b0f647451a85',
   programs: 'e35f2b47-87c9-40e3-8507-3d9b56f9ce62',
@@ -468,7 +488,15 @@ const SHARED_UUIDS = {
   ...(ENROLLMENTS_ROLLUP_UUID ? { 'enrollments-rollup': ENROLLMENTS_ROLLUP_UUID } : {}),
   ...(CHECKINS_TODAY_UUID     ? { 'checkins-today':     CHECKINS_TODAY_UUID }     : {}),
   ...(FACILITY_TODAY_UUID     ? { 'facility-today':     FACILITY_TODAY_UUID }     : {}),
-  ...(HAPPENING_TODAY_UUID    ? { 'happening-today':    HAPPENING_TODAY_UUID }    : {})
+  ...(HAPPENING_TODAY_UUID    ? { 'happening-today':    HAPPENING_TODAY_UUID }    : {}),
+  /* Absent until the link exists, and the absence is what keeps the section
+     honest: `availableReports` is built from this map, so with no key the
+     section is not offered, not rendered and never fetched. A "0 messages
+     sent" on an org that mailed its whole list this morning is the reading
+     that had to be impossible — and here the failure would be louder than
+     usual, because a missing feed raises the dashboard's own error banner
+     naming the report. */
+  ...(MESSAGING_UUID          ? { messaging:            MESSAGING_UUID }          : {})
 };
 
 /* A LIVE WIDGET NEEDS ITS OWN CLOCK. Everything else here is a dashboard of a
@@ -891,6 +919,7 @@ app.get('/admin/api/orgs', adminAuth, (req, res) => {
       logoUrl: org.logoUrl,
       token: org.token,
       reportCount: Object.keys(availableReports).length,
+      defaultEmail: org.defaultEmail || '',
       perOrgReports: Object.keys(org.reports || {}),
       configured: !!config,
       template: config?.template || null,
@@ -1157,6 +1186,31 @@ app.post('/admin/api/orgs/:slug/toggles', adminAuth, (req, res) => {
   res.json({ ok: true, toggles: dashboardConfigs[slug].toggles });
 });
 
+/* The org's default email, editable after creation. Add Org sets it; this is
+   how the twenty-nine orgs onboarded before the field existed get one. It
+   lives on the ORG, not in dashboardConfigs, so Reset Dashboard cannot wipe
+   the address the platform mails.
+
+   Validated through the SAME normalizeOrgEmail the add route uses. Two copies
+   of "what counts as an email" is how a value gets accepted here and refused
+   there, on a field whose whole job is to be already correct in a box
+   somebody is about to press Send on. */
+app.post('/admin/api/orgs/:slug/default-email', adminAuth, (req, res) => {
+  const { slug } = req.params;
+  const org = ORGS[slug];
+  if (!org) return res.status(404).json({ error: 'Not found' });
+  const check = normalizeOrgEmail(req.body && req.body.defaultEmail);
+  if (!check.ok) return res.status(400).json({ error: check.error });
+  org.defaultEmail = check.email;
+  // Only dynamic orgs are persisted to the store; one defined in the ORGS
+  // literal keeps the value for this process and needs the code edit. Said
+  // here rather than discovered: a Save that silently does not survive a
+  // deploy is worse than one that refuses.
+  if (org._dynamic) saveDynamicOrgs();
+  console.log(`[orgs] default email for ${slug}: ${check.email || '(cleared)'}${org._dynamic ? '' : ' (static org — not persisted)'}`);
+  res.json({ ok: true, defaultEmail: check.email, persisted: !!org._dynamic });
+});
+
 // ── Escalation recipients — one stored list, editable from both sides ──
 function parseNotifyEmails(body) {
   const raw = Array.isArray(body?.emails) ? body.emails : String(body?.emails || '').split(',');
@@ -1187,8 +1241,30 @@ app.get('/admin/api/reporting-identity', adminAuth, async (req, res) => {
              reconcileEveryMs: REPORTING_RECONCILE_MS, counts, orgs });
 });
 
+/* THE ORG'S DEFAULT EMAIL — Dan: "add another field to the 'Add Org'
+   section — the 'default' org email. We'll use this to send email
+   notifications, summary emails, etc to."
+
+   ONE validator, so the field cannot be accepted by one route and refused by
+   the next. Empty is allowed and means ABSENT, not invalid: every org added
+   before this field existed has none, and the boxes it prefills must fall back
+   to their placeholder rather than to a made-up address. Anything that is not
+   empty has to look like an address — a malformed one stored here is a prefill
+   that silently fails every time somebody presses Send, on a control whose
+   whole job is to already be right. */
+function normalizeOrgEmail(v) {
+  const e = String(v == null ? '' : v).trim();
+  if (!e) return { ok: true, email: '' };
+  if (e.length > 254 || !/^[^\s@]+@[^\s@.]+\.[^\s@]+$/.test(e)) {
+    return { ok: false, error: 'Default email must be a valid email address' };
+  }
+  return { ok: true, email: e };
+}
+
 app.post('/admin/api/orgs', adminAuth, async (req, res) => {
-  const { slug, name, orgId, city, state, logoUrl } = req.body;
+  const { slug, name, orgId, city, state, logoUrl, defaultEmail } = req.body;
+  const emailCheck = normalizeOrgEmail(defaultEmail);
+  if (!emailCheck.ok) return res.status(400).json({ error: emailCheck.error });
   if (!slug || !orgId) return res.status(400).json({ error: 'slug and orgId are required' });
   if (ORGS[slug]) return res.status(409).json({ error: `Org "${slug}" already exists` });
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) return res.status(400).json({ error: 'Slug must be lowercase alphanumeric with hyphens' });
@@ -1241,6 +1317,10 @@ app.post('/admin/api/orgs', adminAuth, async (req, res) => {
     city: city || '',
     state: state || '',
     logoUrl: logoUrl || `https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/organization-${orgId}/fullLogo.png`,
+    // Where this org's notifications and summary emails go by default. Stored
+    // on the org rather than in its dashboard config, because it is a property
+    // of the organisation and has to survive a Reset Dashboard.
+    defaultEmail: emailCheck.email,
     reports: {},
     _dynamic: true,
   };
@@ -1423,6 +1503,12 @@ app.get('/:org/api/config', authMiddleware, async (req, res) => {
     // this page is already token-authenticated for exactly this org, and the
     // same id is in every report URL it renders.
     recOrgId: org.orgId,
+    // The org's default notification address, used to PREFILL the email boxes
+    // in Dashboard Settings. Not a secret — it is the org's own admin address
+    // and this response is already token-authenticated for exactly this org.
+    // Absent stays absent: '' leaves the boxes on their placeholder rather
+    // than seeding a wrong address somebody then has to notice and delete.
+    defaultEmail: org.defaultEmail || '',
     toggles: config?.toggles || { ai: true, reportLinks: false, aiBriefing: false, emailDigest: false },
     reportingBaseUrl: REPORTING_BASE_URL,
     // The slug and token rental-report actually serves this org under. The page
