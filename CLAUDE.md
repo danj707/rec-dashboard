@@ -1,5 +1,177 @@
 # Project notes for Claude
 
+## THE ALLOWANCE IS COUNTED IN SEGMENTS, AND A MESSAGE IS TWO OF THEM (2026-09-17)
+
+Hannah, relaying Irvine: *"Irvine is asking to receive notification before
+exceeding the 10,000-message monthly allowance, and any usage resulting in
+additional charges should require City authorization. Is this currently
+possible to setup in the system?"* Then Dan: *"we want to sent a notification
+option on BOTH the total segments and the cost… we'll need an 'Average segments
+per SMS' somewhere and options to configure both."*
+
+### 1.99 SEGMENTS PER MESSAGE — so "10,000" is about 5,000
+
+Measured over every SMS on the platform: **17,850 messages, 35,604 segments,
+mean 1.9946, and nothing above 3.** The distribution is 20% one-segment, 60%
+two, 20% three.
+
+| | |
+|---|---|
+| 10,000 segments | **≈ 5,013 real messages** |
+| orgs that have ever sent an SMS | 22 |
+| ratio across all 22 | min 1.000 · median 2.000 · max 2.568 |
+| ratio for the orgs sending ≥500 | **min 1.661 · median 2.222 · max 2.568** |
+
+**AND `$300` OF CREDIT IS EXACTLY 10,000 SEGMENTS AT 3¢.** Irvine's sandbox
+carries $300 added and zero usage, which is the arithmetic of somebody reading
+"10,000 included messages" as 10,000 × 3¢. If that is what happened, Irvine's
+allowance is spent at roughly **4,500–5,000 of their own messages** — half what
+the contract reads like. That is an inference from one number and it needs
+confirming with whoever seeded the credits; it is also the whole reason the
+tile prints the conversion rather than leaving it to be worked out.
+
+**THE ADMIN FIELD SAYS "Rate per Message (cents)" AND BILLS PER SEGMENT.**
+`organization_sms_config.rate_cents` is **3 on all 175 orgs**, one config row
+each, charged per segment — verified 3.0000 exactly on all 389 sends across
+Watertown and West Haven, zero exceptions. Platform-wide **33 of 17,850 rows**
+(+188¢ total) have `cost_cents <> 3 × segments`; 0.18% and not chased.
+
+### WHAT REC CANNOT DO TODAY, and which half is ours
+
+Three separate gaps, and only one of them is a dashboard job:
+
+| Irvine's ask | state |
+|---|---|
+| know the allowance | **nothing stores it.** `organization_sms_config` is numbers, service ids, campaign ids and `rate_cents` — no included-messages column anywhere |
+| notify before exceeding | **built here** |
+| require authorization before overage | **product's.** Credits hitting zero does not stop sending, it starts billing — Dan's call, deliberate. A gate is a block in the send path, which a dashboard cannot do |
+
+### A CREDIT IS SPENT BY AN ADMIN, NOT BY THE SYSTEM — and I got this wrong twice
+
+Dan: *"transactional sms messages such as reminders from programs don't use
+credits only. Only intentional SMS sent messages by admins"*, then *"SYSTEM
+sent transaction messages don't cost a credit, but any ADMIN sent ones do."*
+
+I read `message.type` as the discriminator and reported the ledger as a
+possible **billing bug**, because Watertown's ledger charges 265
+`type='transaction'` sends. **It is not a bug.** `type` is the message's
+CATEGORY — transactional vs marketing content, which is a compliance
+distinction — and says nothing about who pressed send. **All 267 of Watertown's
+SMS sends carry a named sender** (8 staff), zero system-sent. On the sender
+test every charged row is correct.
+
+*Generalise it: when a rule names a word that is also a column value, check the
+column actually encodes the rule before calling anything a bug.* The likely
+reason the two sources tie to the cent is that **system reminders never reach
+`message` at all** — that table holds admin-composed sends — which is inference
+from zero system rows in Watertown's whole history, not confirmed.
+
+**THE LEDGER AND THE FEED AGREE EXACTLY**, which is what makes either usable:
+
+| | card 21913 SMS sends | cost | `sms_usage` rows | ledger |
+|---|---|---|---|---|
+| Watertown | 267 | $205.89 | **267** | **−$205.89** |
+| West Haven | 122 | $264.33 | **122** | **−$264.33** |
+
+`organization_credit_transaction` is `addition` (+) and `sms_usage` (−) and has
+**no stored balance** — the balance is their sum, so anything showing one
+computes it. 1,681 rows across 176 orgs since 2026-03-06.
+
+### THE TWO TILES, AND WHY "SEGMENTS" HAD TO BE RENAMED
+
+`Segments Used` already meant **saved audiences** on this card. The allowance is
+counted in **carrier segments**. Two tiles reading "Segments" is a number
+nobody can act on, so the audience tile is **`Audience Segments`** and the new
+one is **`SMS Segments`**.
+
+- **`msgAvgSegments` divides by RECIPIENTS, not sends.** A campaign to 1,600
+  people is 1,600 texts; per-send it would report the whole campaign's segment
+  count as if one person got it. The render fixture makes the two 1.18 against
+  33.50 so they cannot be confused.
+- **NULL when the window holds no SMS — never 1.** "No texts" and "one segment
+  each" are different facts, and the second makes an allowance look twice as
+  roomy as it is.
+- **No allowance configured is `null`, never 0%.** A zero allowance would put
+  every org permanently over on the day this shipped.
+
+### THE ALERT FIRES ON THE CALENDAR MONTH, NOT THE DATE PICKER
+
+The allowance is monthly. A trigger that depended on what somebody last clicked
+in the toolbar is not a trigger. The tiles follow the picker; `runSmsAlertCheck`
+does not, and the email names the month.
+
+- **`>=`, not `>`** — Dan's *"once they reach that limit"*, and the safer
+  direction: an org landing exactly on 10,000 has spent its allowance.
+- **The alert defaults to the allowance** and may be set lower, which is what
+  Hannah's *"before exceeding"* actually needs.
+- **ONLY ORGS WITH A THRESHOLD ARE PROBED.** This reads the messaging card per
+  org, and fanning ~29 of those hourly is the prewarm storm the reporting
+  project already paid for. Today that set is empty, so the job costs nothing
+  until somebody is given an allowance.
+- **The fired marker is ON DISK and written BEFORE the send.** In memory it
+  resets on deploy and this service deploys several times a day — an org over
+  its allowance would get the same email every deploy for a month. A send that
+  throws is one missed email; a mark that never lands is a filtered sender.
+- **An org with no address still raises the crossing to ops.** Silence about a
+  contractual allowance is the one outcome nobody wants.
+- **One `applySmsThresholds` behind both routes** — the admin grid sets it when
+  a contract is signed, the org's own gear because the number is theirs. Stored
+  on the ORG, never in `dashboardConfigs`, so Reset Dashboard cannot wipe a
+  contractual allowance.
+
+### THE PREFILL SHIPPED BROKEN AND NOTHING COULD SEE IT
+
+`defaultEmail` was never added to the page's `orgMeta` **whitelist**, so
+`orgMeta.defaultEmail` was `undefined` and the digest box seeded from `''` —
+byte-identical to an org with no default set. The server sent it, the popover
+accepted the prop, the call site read the wrong object, and the fallback made
+it invisible. **The whitelist's own comment warns about exactly this**
+(*"a key the server sends and this map forgets is simply absent, silently"*),
+which is what makes it worth recording rather than just fixing: the warning was
+there and did not stop it. Now asserted.
+
+### Guards
+
+`scripts/messaging-widgets.spec.js` 124 → **178 assertions**, lifting and
+RUNNING `msgAvgSegments`, `msgSegmentUsage`, `normalizeSmsThresholds`,
+`smsSegmentAlertPoint` and `smsAlertsDue` — every defect here is arithmetic
+about a comparison and a regex passes on an inverted one. **Mutation-tested 12
+ways, all 12 failing by name**: the alert firing only above the limit, the
+default-to-allowance dropped, blank stored as 0, an absent key clearing the
+stored value, the fired marker never written, every org probed, no-SMS reading
+as 1 segment, the ratio computed per send, `over` losing its equality, the
+`defaultEmail` whitelist bug reintroduced, both tiles called Segments, and the
+thresholds published as `{}`.
+
+**A pre-existing assertion pinned `normalizeOrgEmail(` at a literal count of
+3** and broke the moment a fourth caller reused it correctly. Rewritten to the
+claim it was always making — **one definition, several readers** — which is the
+same brittleness as pinning the end of an array.
+
+**And one of my own assertions passed vacuously first.** A rename left the
+declaration as `THR` and the six usages as `T`, which silently resolved to an
+unrelated earlier binding; the `length === 0` case passed against the wrong
+object while the next one failed. *An assertion that reads a different object
+than it names is not testing anything.*
+
+**Five `ci-check-render.js` cases**, keyed on computed figures: 67 segments
+(not 57 messages), `134% of the 50 allowance`, `1.18` (not 33.50), the two
+numbers behind it, and the audience tile under its own name. The fixture's
+allowance is set so the org is already OVER, because over is the state Irvine
+cares about and the only one that exercises the tone.
+
+**Verified on a real boot**, not only in source: store, read back off
+`/api/config`, a partial save leaving the allowance alone, both refusals, 404
+without a token, and the value on disk.
+
+### NOT BUILT
+
+- **The authorization gate.** Product's, in the send path.
+- **No allowance entitlement.** It lives in a contract and now in an org field;
+  nothing in Rec's own product knows about it.
+- **No per-campaign forecast** — "this send will cost you 4,000 segments"
+  before it goes out is the genuinely preventive version and needs the composer.
+
 ## CRM & MESSAGING, AND THE DELIVERY RATE THAT WAS RIGHT TO LOOK WRONG (2026-09-16)
 
 Dan, with a Metabase gauge reading 5,304: *"lets add this as a widget on the
