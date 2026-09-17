@@ -161,10 +161,60 @@ unconditionally now, because it is.
 org → the file on disk → kill → boot → the values come back. The same test
 against the old code is what the `[source]` assertions could never have shown.
 
-**AND THE SAME GAP IS STILL OPEN FOR `defaultEmail`** — that route logs the same
-"(static org — not persisted)" line and has not been moved. It is why the "no
-loss" assertion is scoped to the SMS path: a file-wide test would be refuted by
-code that is honest about a gap it still has. Worth closing the same way.
+### `defaultEmail` HAD THE IDENTICAL GAP — CLOSED (2026-09-17)
+
+Recorded here as still open hours earlier; Dan: *"fix the defaultEmail
+persistence gap too."* Same shape, same fix, and the fields are not
+independent — **`defaultEmail` is the address the SMS alert is sent to** when
+the org has set no alert address of its own, so an allowance that survives a
+deploy pointing at an address that does not is the same outage one field over.
+
+`org-emails.json`, keyed by slug, read back over the org record through ONE
+`orgDefaultEmail(org, slug)` that all three readers go through — the admin
+grid, the org config route, and the alert recipient. `persisted: true`
+unconditionally, and Add Org writes the store too, so a new org is durable by
+the same one path rather than by happening to be dynamic.
+
+**IT IS READ BY PRESENCE, NOT TRUTHINESS, AND THAT IS LOAD-BEARING TODAY.** A
+CLEARED address is stored as `''`, and `store[slug] || org.defaultEmail` would
+resurrect the address somebody just deleted — which is the one outcome a Clear
+must never have. Not hypothetical: the route no longer calls
+`saveDynamicOrgs()`, so for a **dynamic** org the old address stays on
+`dashboard-orgs.json` forever while the store says `''`. Proven live rather
+than argued — created an org with `old@spectown.example`, cleared it,
+restarted, and on the fresh boot the org record on disk still read
+`'old@spectown.example'` while both routes returned `''`.
+
+**AND `smsAlertRecipient` WAS READING BOTH SIDES RAW OFF THE ORG RECORD**, found
+while moving the second store rather than by looking for it. A fresh process has
+nothing on the `ORGS` entry — `applySmsThresholds` only assigns it on a write —
+so after a deploy the alert would have gone to the fallback address, or to
+nobody, while both stores held the right one. It takes the slug and reads
+through both stores now. *The bug only appears after a deploy, which is exactly
+when the alert matters.*
+
+**Two comments of mine tripped the widened guard**, both quoting the old log
+line as the trap it was. Reworded rather than teaching the assertion to ignore
+comments — keeping it dumb and literal is the more robust half. Nth instance
+across these repos.
+
+**And I hit the `pkill` self-match twice in one session**, the second time with
+the needle in a LATER part of the same command line after assembling it at
+runtime in the first. The rule is stronger than "assemble the needle": *neither
+needle may appear anywhere in the command, and the sweep runs in its own call.*
+
+Guards: `messaging-widgets.spec.js` 201 → **210 assertions**. The "no route
+admits a loss" test is **file-wide now** rather than scoped to the SMS path —
+there is no honest gap left for it to be refuted by. Mutation-tested six ways,
+all failing by name: the route reverted to `saveDynamicOrgs()` (the bug as it
+shipped), the store read by truthiness (Clear resurrects), one reader left on
+the org record, `smsAlertRecipient` back to raw, the alert caller dropping the
+slug, and Add Org not writing the store.
+
+**Two files rather than one map of overrides, deliberately:** different routes,
+different validators, and the thresholds file already holds live contract terms
+— refactoring it the hour after it shipped buys tidiness and risks the alert.
+A third per-org override is the point at which they should be generalised.
 
 ### AND THE ABSENCE RULE CAUGHT MY OWN NEW FETCH
 

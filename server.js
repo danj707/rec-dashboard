@@ -925,7 +925,7 @@ app.get('/admin/api/orgs', adminAuth, (req, res) => {
       logoUrl: org.logoUrl,
       token: org.token,
       reportCount: Object.keys(availableReports).length,
-      defaultEmail: org.defaultEmail || '',
+      defaultEmail: orgDefaultEmail(org, slug),
       smsThresholds: orgSmsThresholds(org, slug),
       perOrgReports: Object.keys(org.reports || {}),
       configured: !!config,
@@ -1208,14 +1208,13 @@ app.post('/admin/api/orgs/:slug/default-email', adminAuth, (req, res) => {
   if (!org) return res.status(404).json({ error: 'Not found' });
   const check = normalizeOrgEmail(req.body && req.body.defaultEmail);
   if (!check.ok) return res.status(400).json({ error: check.error });
+  // Both: the org record so this process reads it without a lookup, and the
+  // file so the next process does. Static or dynamic makes no difference.
   org.defaultEmail = check.email;
-  // Only dynamic orgs are persisted to the store; one defined in the ORGS
-  // literal keeps the value for this process and needs the code edit. Said
-  // here rather than discovered: a Save that silently does not survive a
-  // deploy is worse than one that refuses.
-  if (org._dynamic) saveDynamicOrgs();
-  console.log(`[orgs] default email for ${slug}: ${check.email || '(cleared)'}${org._dynamic ? '' : ' (static org — not persisted)'}`);
-  res.json({ ok: true, defaultEmail: check.email, persisted: !!org._dynamic });
+  orgEmailStore[slug] = check.email;
+  saveOrgEmailStore(orgEmailStore);
+  console.log(`[orgs] default email for ${slug}: ${check.email || '(cleared)'}`);
+  res.json({ ok: true, defaultEmail: check.email, persisted: true });
 });
 
 /* SMS allowance + alert thresholds. Settable from BOTH sides on purpose: the
@@ -1366,8 +1365,8 @@ function smsSegmentAlertPoint(t) {
    ORGS literal) kept its allowance in this process's memory alone and lost it
    on the next deploy. Watertown is static, and hit exactly that within minutes
    of the feature shipping: the value saved, the tile showed it, the log said
-   "(static org — not persisted)", and a deploy would have silently switched
-   the alert off with nothing on screen to say so.
+   in as many words that it had not been kept, and a deploy would have silently
+   switched the alert off with nothing on screen to say so.
 
    An allowance is a contract term. Losing it quietly is the worst available
    failure, so it is stored by SLUG in a file of its own and read back over
@@ -1387,6 +1386,37 @@ function orgSmsThresholds(org, slug) {
   const st = (slug && smsThresholdStore[slug]) || null;
   if (st) org = Object.assign({}, org, st);
   return _orgSmsThresholdsFrom(org);
+}
+
+/* THE DEFAULT EMAIL PERSISTS THE SAME WAY, AND FOR THE SAME REASON.
+
+   It had the identical gap: the route wrote it onto the ORGS entry and called
+   saveDynamicOrgs(), which only writes orgs that came from the store — so for
+   a STATIC org the address lived in one process's memory and went away on the
+   next deploy, with a parenthetical on the route's own log line the only
+   thing that said so. It is stored by SLUG in a file of its own now,
+   which takes the static/dynamic split out of the question entirely.
+
+   Two files rather than one map of overrides, deliberately: they are written
+   by different routes with different validators and the thresholds file
+   already holds live contract terms. A third per-org override is the point at
+   which these should be generalised into one store. */
+const ORG_EMAIL_FILE = path.join(DATA_DIR, 'org-emails.json');
+function loadOrgEmailStore() {
+  try { if (fs.existsSync(ORG_EMAIL_FILE)) return JSON.parse(fs.readFileSync(ORG_EMAIL_FILE, 'utf8')); } catch (e) {}
+  return {};
+}
+function saveOrgEmailStore(v) { ensureDataDir(); fs.writeFileSync(ORG_EMAIL_FILE, JSON.stringify(v, null, 2)); }
+let orgEmailStore = loadOrgEmailStore();
+
+function orgDefaultEmail(org, slug) {
+  // PRESENCE, not truthiness. A CLEARED address is stored as '' and has to
+  // win over whatever the org record still carries — `store[slug] || org.x`
+  // would resurrect the address somebody just deleted, which is the one
+  // outcome a Clear must never have.
+  const st = slug ? orgEmailStore[slug] : undefined;
+  if (typeof st === 'string') return st;
+  return (org && org.defaultEmail) || '';
 }
 
 function _orgSmsThresholdsFrom(org) {
@@ -1473,6 +1503,10 @@ app.post('/admin/api/orgs', adminAuth, async (req, res) => {
 
   ORGS[slug] = org;
   saveDynamicOrgs();
+  // Through the same store every other writer uses, so a new org's address is
+  // durable by the same one path rather than by being dynamic.
+  orgEmailStore[slug] = emailCheck.email;
+  saveOrgEmailStore(orgEmailStore);
   // Record what the reporting project actually calls it, so its report links are
   // right from the first page load rather than after the next 6h reconcile.
   REPORTING_IDENTITY[slug] = { slug: reportingSlug, token,
@@ -1654,7 +1688,7 @@ app.get('/:org/api/config', authMiddleware, async (req, res) => {
     // and this response is already token-authenticated for exactly this org.
     // Absent stays absent: '' leaves the boxes on their placeholder rather
     // than seeding a wrong address somebody then has to notice and delete.
-    defaultEmail: org.defaultEmail || '',
+    defaultEmail: orgDefaultEmail(org, req.orgSlug),
     smsThresholds: orgSmsThresholds(org, req.orgSlug),
     toggles: config?.toggles || { ai: true, reportLinks: false, aiBriefing: false, emailDigest: false },
     reportingBaseUrl: REPORTING_BASE_URL,
@@ -2304,8 +2338,13 @@ function smsAlertsDue(usage, thresholds, alreadyFired) {
 
 // The org's own address wins; the platform default is the fallback, which is
 // exactly what the default-email field was added for.
-function smsAlertRecipient(org) {
-  return (org && org.smsNotifyEmail) || (org && org.defaultEmail) || '';
+//
+// BOTH SIDES READ THEIR STORE, and that is what makes this work after a
+// deploy: a fresh process has nothing on the ORGS entry, so reading
+// org.smsNotifyEmail / org.defaultEmail raw would send the alert to the
+// fallback address or to nobody while both stores held the right one.
+function smsAlertRecipient(org, slug) {
+  return orgSmsThresholds(org, slug).smsNotifyEmail || orgDefaultEmail(org, slug);
 }
 
 function sumSmsUsage(rows) {
@@ -2335,7 +2374,7 @@ async function runSmsAlertCheck() {
       const due = smsAlertsDue(usage, t, fired);
       if (!due.length) { await new Promise(r => setTimeout(r, SMS_ALERT_ORG_PACE_MS)); continue; }
 
-      const to = smsAlertRecipient(org);
+      const to = smsAlertRecipient(org, slug);
       for (const d of due) {
         // MARK BEFORE SENDING. A send that throws halfway is one missed email;
         // a mark that never lands is the same email every hour for a month.
