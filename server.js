@@ -2358,6 +2358,73 @@ function sumSmsUsage(rows) {
   return { messages, segments, costCents };
 }
 
+/* ONE EMAIL PER PASS, NOT ONE PER THRESHOLD.
+
+   Crossing both in the same pass sent two messages carrying the identical
+   figures block and the identical two paragraphs of explanation — Dan, on
+   receiving them: *"maybe a bit verbose but all good"*, then *"yes, fold them
+   into one email when both fire"*. The redundancy was the duplication rather
+   than the wording, so nothing is cut: the only part that genuinely differs
+   per threshold is the line saying where it was set, and that becomes one
+   line each.
+
+   PURE, and at module scope, so the spec can RUN it over every combination
+   — a regex over a template literal passes on a subject naming the wrong
+   threshold, which is the whole thing worth getting right here. */
+function smsAlertEmail(due, usage, thresholds, orgName) {
+  const seg   = due.find(d => d.kind === 'segments') || null;
+  const spend = due.find(d => d.kind === 'spend')    || null;
+  const limit = thresholds && thresholds.smsSegmentLimit != null ? thresholds.smsSegmentLimit : null;
+  const left  = limit != null ? limit - usage.segments : null;
+
+  const segPhrase   = `${usage.segments.toLocaleString()} of ${(limit || (seg && seg.at) || 0).toLocaleString()} SMS segments used`;
+  const spendPhrase = `$${(usage.costCents / 100).toFixed(2)} of SMS spend to date`;
+
+  // The number leads, because that is what is readable in an inbox list.
+  const subject = `${orgName}: ` + (
+    seg && spend ? `${segPhrase} · $${(usage.costCents / 100).toFixed(2)} spent`
+    : seg        ? segPhrase
+                 : spendPhrase);
+
+  const opener = seg && spend
+    ? 'The SMS segment and spend alerts have both been reached.'
+    : seg ? 'The SMS segment alert has been reached.'
+          : 'The SMS spend alert has been reached.';
+
+  // One line per threshold actually crossed. Everything above and below it is
+  // the same sentence whichever one fired, which is why it was duplicated.
+  const setAt = [];
+  if (seg)   setAt.push(`Segment alert at  ${seg.at.toLocaleString()} segments`);
+  if (spend) setAt.push(`Spend alert at    $${(spend.at / 100).toFixed(2)}`);
+
+  const body = [
+    opener,
+    '',
+    `Segments used     ${usage.segments.toLocaleString()}` +
+      (limit != null ? ` of the ${limit.toLocaleString()} included` : ''),
+    `Messages sent     ${usage.messages.toLocaleString()}`,
+    `Carrier cost      $${(usage.costCents / 100).toFixed(2)}`,
+    ...setAt,
+    '',
+    // The included segments are a ONE-TIME bucket given at signup. Saying
+    // what happens next is the whole point of warning early.
+    left != null && left > 0
+      ? `${left.toLocaleString()} segments remain of the one-time allowance included at signup. `
+        + 'Sending past it is billed per segment.'
+      : 'The one-time allowance included at signup is used up. Further sending is billed per segment.',
+    '',
+    // Said on every one of these, because it is the thing nobody expects: the
+    // bucket is counted in SEGMENTS and a text is usually two.
+    `A text message is billed in 160-character segments, and across the platform `
+      + `a message averages about two of them — so ${usage.segments.toLocaleString()} segments `
+      + `is roughly ${usage.messages.toLocaleString()} messages, not ${usage.segments.toLocaleString()}.`,
+    '',
+    'Counted across the whole account, not a date range.',
+  ].join('\n');
+
+  return { subject, body };
+}
+
 async function runSmsAlertCheck() {
   const slugs = smsAlertOrgs();
   if (!slugs.length) return;
@@ -2375,53 +2442,25 @@ async function runSmsAlertCheck() {
       if (!due.length) { await new Promise(r => setTimeout(r, SMS_ALERT_ORG_PACE_MS)); continue; }
 
       const to = smsAlertRecipient(org, slug);
-      for (const d of due) {
-        // MARK BEFORE SENDING. A send that throws halfway is one missed email;
-        // a mark that never lands is the same email every hour for a month.
-        if (!smsAlerts[slug]) smsAlerts[slug] = {};
-        smsAlerts[slug][d.kind] = new Date().toISOString();
-        saveSmsAlerts(smsAlerts);
 
-        const isSeg = d.kind === 'segments';
-        const left = t.smsSegmentLimit != null ? t.smsSegmentLimit - usage.segments : null;
-        const subject = isSeg
-          ? `${org.name}: ${usage.segments.toLocaleString()} of ${(t.smsSegmentLimit || d.at).toLocaleString()} SMS segments used`
-          : `${org.name}: $${(usage.costCents / 100).toFixed(2)} of SMS spend to date`;
-        const body = [
-          isSeg ? 'The SMS segment alert has been reached.'
-                : 'The SMS spend alert has been reached.',
-          '',
-          `Segments used     ${usage.segments.toLocaleString()}` +
-            (t.smsSegmentLimit != null ? ` of the ${t.smsSegmentLimit.toLocaleString()} included` : ''),
-          `Messages sent     ${usage.messages.toLocaleString()}`,
-          `Carrier cost      $${(usage.costCents / 100).toFixed(2)}`,
-          `Alert set at      ${isSeg ? d.at.toLocaleString() + ' segments' : '$' + (d.at / 100).toFixed(2)}`,
-          '',
-          // The included segments are a ONE-TIME bucket given at signup. Saying
-          // what happens next is the whole point of warning early.
-          left != null && left > 0
-            ? `${left.toLocaleString()} segments remain of the one-time allowance included at signup. `
-              + 'Sending past it is billed per segment.'
-            : 'The one-time allowance included at signup is used up. Further sending is billed per segment.',
-          '',
-          // Said on every one of these, because it is the thing nobody expects:
-          // the bucket is counted in SEGMENTS and a text is usually two.
-          `A text message is billed in 160-character segments, and across the platform ` +
-          `a message averages about two of them — so ${usage.segments.toLocaleString()} segments ` +
-          `is roughly ${usage.messages.toLocaleString()} messages, not ${usage.segments.toLocaleString()}.`,
-          '',
-          'Counted across the whole account, not a date range.',
-        ].join('\n');
+      // MARK EVERY DUE THRESHOLD BEFORE SENDING, and send once. A send that
+      // throws is one missed email; a mark that never lands is the same email
+      // every hour for a month. Marking them all first is also what stops a
+      // second pass re-announcing the half of a folded email that did land.
+      if (!smsAlerts[slug]) smsAlerts[slug] = {};
+      for (const d of due) smsAlerts[slug][d.kind] = new Date().toISOString();
+      saveSmsAlerts(smsAlerts);
 
-        if (to) {
-          await sendOrgEmail(to, subject, body);
-          console.log(`[sms-alert] ${slug} ${d.kind} -> ${to}`);
-        } else {
-          // No address is not a reason to stay silent about an org crossing a
-          // contractual allowance — it goes to ops instead, naming the gap.
-          await sendOpsAlert(`⚠️ ${subject} (no alert email set for ${slug})`, body);
-          console.log(`[sms-alert] ${slug} ${d.kind} -> ops (no org address)`);
-        }
+      const { subject, body } = smsAlertEmail(due, usage, t, org.name);
+      const kinds = due.map(d => d.kind).join('+');
+      if (to) {
+        await sendOrgEmail(to, subject, body);
+        console.log(`[sms-alert] ${slug} ${kinds} -> ${to}`);
+      } else {
+        // No address is not a reason to stay silent about an org crossing a
+        // contractual allowance — it goes to ops instead, naming the gap.
+        await sendOpsAlert(`⚠️ ${subject} (no alert email set for ${slug})`, body);
+        console.log(`[sms-alert] ${slug} ${kinds} -> ops (no org address)`);
       }
     } catch (e) {
       console.error(`[sms-alert] ${slug} check failed: ${e.message}`);

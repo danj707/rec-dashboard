@@ -216,6 +216,50 @@ different validators, and the thresholds file already holds live contract terms
 — refactoring it the hour after it shipped buys tidiness and risks the alert.
 A third per-org override is the point at which they should be generalised.
 
+### ONE EMAIL PER PASS, NOT ONE PER THRESHOLD (2026-09-17)
+
+Both alerts fired for Watertown within the hour and landed in Dan's inbox —
+which is the feature proven end to end — and he read them back: *"maybe a bit
+verbose but all good"*, then *"yes, fold them into one email when both fire"*.
+
+**THE REDUNDANCY WAS THE DUPLICATION, NOT THE WORDING**, so nothing is cut. The
+two emails carried the identical figures block and the identical two paragraphs
+of explanation; the only part that genuinely differs per threshold is the line
+saying where it was set. One email now, with one `Segment alert at` /
+`Spend alert at` line per threshold **actually crossed** — naming one that has
+not been crossed is a claim about a limit the reader never set.
+
+**The subject leads with the number**, because that is what is readable in an
+inbox list: `Watertown Recreation: 6,863 of 15,000 SMS segments used · $205.89
+spent`. Each single-threshold subject is unchanged.
+
+**`smsAlertEmail` IS PURE AND AT MODULE SCOPE**, so the spec RUNS it over all
+three combinations rather than regexing a template literal — the defect worth
+catching is a subject or a line naming the WRONG threshold, and a regex passes
+on every one of those.
+
+**EVERY DUE KIND IS MARKED BEFORE THE ONE SEND.** Marking them all first is what
+stops the next pass re-announcing the half of a folded email that already
+landed; the asymmetry is unchanged — a send that throws is one missed email, a
+mark that never lands is the same email every hour for a month.
+
+Guards: 210 → **225 assertions**. Mutation-tested six ways, all failing by
+name: back to one email per threshold (the shape as it shipped), the subject
+naming only segments when both fired, both "alert at" lines emitted regardless,
+the mark moved after the send, only the first due kind marked, and the figures
+block repeated per threshold.
+
+**And one of my mutations did not reproduce the bug.** "Move the mark after the
+send" first moved it after the COMPOSER, which leaves it textually before
+`sendOrgEmail` — so it passed, and would have read as a hole. Rewritten to the
+form somebody would actually write (inside the `if (to)` branch, after the
+send), it fails by name. *A mutation that does not reproduce the bug has not
+tested the guard.*
+
+**A pre-existing assertion pinned `const isSeg`**, the line that used to follow
+the mark — legitimately removed by the fold, so it broke with nothing about
+marking having changed. It tests the ORDERING it was always about now.
+
 ### AND THE ABSENCE RULE CAUGHT MY OWN NEW FETCH
 
 The all-time figure needs a second, unwindowed messaging pull. I gated it on a
