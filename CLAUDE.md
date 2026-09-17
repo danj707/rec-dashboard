@@ -135,6 +135,37 @@ second fetch, so there is a real window where the number is unknown — and a 0
 there claims an untouched bucket, which is the confident-zero failure this repo
 keeps recording. The tile says *"checking all-time use…"* instead.
 
+### AN ALLOWANCE THAT DOES NOT SURVIVE A DEPLOY IS WORSE THAN NONE
+
+Caught within minutes of the feature going live, in the production log, on the
+first org anybody configured:
+
+```
+[orgs] sms thresholds for watertown: limit=15000 notifyAt=6000 spend=20000 (static org — not persisted)
+```
+
+The thresholds were written onto the ORGS entry and saved through
+`saveDynamicOrgs()`, **which only writes the orgs that came from the store**.
+Watertown is in the `ORGS` literal, so its allowance lived in one process's
+memory: the save returned ok, the tile showed `6,863 of 15,000 used all time
+(46%)`, and the next deploy would have switched the alert off with **nothing on
+screen to say so**. A contract term that silently unsets itself is worse than a
+field that refuses to save.
+
+They persist in **`sms-thresholds.json`, keyed by slug**, read back OVER the org
+record — which also deletes the static/dynamic distinction from this path
+entirely, rather than making one more thing depend on it. `persisted: true`
+unconditionally now, because it is.
+
+**Proven by restarting the server, not by reading the diff**: save on the static
+org → the file on disk → kill → boot → the values come back. The same test
+against the old code is what the `[source]` assertions could never have shown.
+
+**AND THE SAME GAP IS STILL OPEN FOR `defaultEmail`** — that route logs the same
+"(static org — not persisted)" line and has not been moved. It is why the "no
+loss" assertion is scoped to the SMS path: a file-wide test would be refuted by
+code that is honest about a gap it still has. Worth closing the same way.
+
 ### AND THE ABSENCE RULE CAUGHT MY OWN NEW FETCH
 
 The all-time figure needs a second, unwindowed messaging pull. I gated it on a
@@ -154,7 +185,7 @@ section is hidden" is not the same as "nothing asks for the feed".*
 
 ### Guards
 
-`scripts/messaging-widgets.spec.js` 124 → **193 assertions**, lifting and
+`scripts/messaging-widgets.spec.js` 124 → **201 assertions**, lifting and
 RUNNING `msgAvgSegments`, `msgSegmentUsage`, `normalizeSmsThresholds`,
 `smsSegmentAlertPoint` and `smsAlertsDue` — every defect here is arithmetic
 about a comparison and a regex passes on an inverted one. **Mutation-tested 12
