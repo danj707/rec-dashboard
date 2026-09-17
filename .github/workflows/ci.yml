@@ -78,6 +78,17 @@ jobs:
       - name: Project Updates image upload — parser order and JSON errors
         run: node scripts/announce-image-upload.spec.js
 
+      # The CRM & Messaging section. Pins the two figures that are easy to get
+      # confidently wrong: the delivery rate is Rec's OWN formula (delivered /
+      # sent, matched against the message page this section links to), and it
+      # is WITHHELD rather than reported as 0% for a window the provider never
+      # reported back on — email delivery webhooks were not wired until
+      # 2026-02, so every 2025 send has neither a delivery nor a bounce and a
+      # lifetime rate reads 91.6% about the webhook rather than about
+      # deliverability.
+      - name: CRM & Messaging widgets
+        run: node scripts/messaging-widgets.spec.js
+
       # THE PAGE MUST ACTUALLY RENDER. This repo had no render check at all, for
       # a 3,500-line React page compiled by in-browser Babel — and its sibling
       # shipped two blank pages to production before adding one. Every other

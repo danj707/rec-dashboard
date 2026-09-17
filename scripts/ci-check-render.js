@@ -278,6 +278,7 @@ const ENROLL_ARRIVAL = { 'Signed Up At': liveIso(0, '23:59:01'), 'Customer Name'
    ring for and a passing-looking 0 meant nothing. Accumulating means the case
    order cannot starve the case that matters. */
 let enrollCalls = 0;
+let msgCalls = 0;
 const enrollExtra = [];
 function enrollArrivals() {
   if (enrollCalls <= 1) return [];
@@ -533,7 +534,49 @@ function denseCheckins() {
   return rows;
 }
 
+/* ── CRM & MESSAGING ──────────────────────────────────────────────────────
+   Every row is a case, and no two totals collide: 6 sends, 1,458 recipients,
+   57 SMS, 1,401 email, 1,026 delivered, 22 bounced, 410 with no outcome
+   recorded, $9.05 of SMS cost. A tile reading the wrong field lands on a
+   number that is in this list exactly once, so it fails rather than looking
+   plausible.
+
+   THE 2025 ROW IS THE POINT. Email delivery webhooks were not wired until
+   2026-02, so its 400 recipients carry neither a delivery nor a bounce. It
+   drags the rate from 97.9% (delivered / terminal) to 70.4% (delivered /
+   sent, which is Rec's own formula) — 27 points apart, so the two cannot be
+   confused by rounding. */
+const MESSAGING = [
+  { 'Message ID': 'm1', 'Sent Date': '2025-11-04', Subject: 'Fall newsletter', Type: 'Marketing', Channel: 'EMAIL',
+    Sender: 'Brian Hayden', Recipients: 400, Delivered: 0, Bounced: 0, 'No Outcome': 400,
+    Complaints: 0, Clicked: 0, 'Cost Cents': 0, 'SMS Segments': 0, Segments: [] },
+  // A segment name with a COMMA in it. A comma-split would render two segments
+  // that do not exist, and both halves would look entirely plausible.
+  { 'Message ID': 'm2', 'Sent Date': '2026-09-11', Subject: 'Last Chance for Zumba', Type: 'Marketing', Channel: 'EMAIL',
+    Sender: 'Brian Hayden', Recipients: 1000, Delivered: 970, Bounced: 20, 'No Outcome': 10,
+    Complaints: 1, Clicked: 40, 'Cost Cents': 0, 'SMS Segments': 0,
+    Segments: ['Adults, Seniors', 'Opted Into Marketing'] },
+  // Segments as a STRING — Metabase hands a jsonb column back either already
+  // parsed or as text, and the page has to read both.
+  { 'Message ID': 'm3', 'Sent Date': '2026-09-11', Subject: 'Pickleball tonight', Type: 'Marketing', Channel: 'SMS',
+    Sender: 'Grace Lin', Recipients: 50, Delivered: 48, Bounced: 2, 'No Outcome': 0,
+    Complaints: 0, Clicked: 0, 'Cost Cents': 800, 'SMS Segments': 60,
+    Segments: '["Opted Into Marketing"]' },
+  { 'Message ID': 'm4', 'Sent Date': '2026-09-12', Subject: 'Permit Request', Type: 'Transaction', Channel: 'EMAIL',
+    Sender: 'Carol Ng-Lee', Recipients: 1, Delivered: 1, Bounced: 0, 'No Outcome': 0,
+    Complaints: 0, Clicked: 0, 'Cost Cents': 0, 'SMS Segments': 0, Segments: [] },
+  { 'Message ID': 'm5', 'Sent Date': '2026-09-12', Subject: 'Your booking is confirmed', Type: 'Transaction', Channel: 'SMS',
+    Sender: 'Carol Ng-Lee', Recipients: 7, Delivered: 7, Bounced: 0, 'No Outcome': 0,
+    Complaints: 0, Clicked: 0, 'Cost Cents': 105, 'SMS Segments': 7, Segments: [] },
+  // A send whose audience resolved to nobody. Still a SEND, or the dashboard
+  // disagrees with Rec's own Messages list about how many there were.
+  { 'Message ID': 'm6', 'Sent Date': '2026-09-13', Subject: 'Empty audience', Type: 'Marketing', Channel: 'EMAIL',
+    Sender: 'Grace Lin', Recipients: 0, Delivered: 0, Bounced: 0, 'No Outcome': 0,
+    Complaints: 0, Clicked: 0, 'Cost Cents': 0, 'SMS Segments': 0, Segments: [] },
+];
+
 const FIXTURES = {
+  messaging: MESSAGING,
   memberships: MEMBERSHIPS,
   enrollments: ENROLLMENTS,
   'checkins-live': CHECKINS,
@@ -551,7 +594,15 @@ const CONFIG = {
   config: {
     sections: [{ id: 'memberships', widgets: ['mem-active','mem-passes','mem-autorenew','mem-mrr',
                                               'mem-churn','mem-leaving','mem-revenue','mem-kind-donut',
-                                              'mem-type-donut','tbl-mem-autorenew'] }],
+                                              'mem-type-donut','tbl-mem-autorenew'] },
+                /* ALL FOURTEEN messaging widgets, not the eleven defaults — a
+                   transform that throws takes the whole page down, and the
+                   three non-default ones would otherwise never be rendered by
+                   anything. */
+                { id: 'messaging', widgets: ['msg-sent','msg-recipients','msg-sms','msg-email',
+                                             'msg-delivery-rate','msg-bounced','msg-no-outcome','msg-sms-cost',
+                                             'msg-segments-used','msg-by-channel','msg-by-type','msg-daily',
+                                             'msg-top-segments','tbl-msg-campaigns'] }],
     toggles: { ai: false, reportLinks: true, aiBriefing: false, emailDigest: false },
     /* ALL FOUR LIVE CARDS ON, deliberately. Two of them default OFF now, and
        every case below that asserts a Programs Live or Facility Bookings card
@@ -563,7 +614,7 @@ const CONFIG = {
   },
   // enrollments present = the card has a public link, which is the ONLY
   // thing that puts the Live Widgets section on the page.
-  availableReports: { memberships: true, enrollments: true, 'checkins-live': true },
+  availableReports: { memberships: true, enrollments: true, 'checkins-live': true, messaging: true },
   // The rec.us org uuid the admin links are addressed by. Deliberately NOT the
   // dashboard's own slug or token — a link built from those is the drift that
   // broke every report link for five weeks.
@@ -1937,6 +1988,111 @@ const CASES = [
   { name: 'live · ...and Live Enrollments offered and ticked',
     liveDefaults: true, needs: '[data-edit-live-card="enrollments"][data-edit-live-card-on="1"]' },
 
+  /* ── CRM & MESSAGING ─────────────────────────────────────────────────────
+     Keyed on COMPUTED VALUES. "A messaging tile rendered" passes on a tile
+     reading the wrong field, on a delivery rate taken over the wrong
+     denominator, and on a segment list that split a name in half — all three
+     of which render a perfectly plausible number. Every figure below appears
+     exactly once in the fixture. */
+  /* A RELOAD ONTO THE BASE CONFIG FIRST. The live cases above end with the
+     Edit modal open over a lighter availability map, and the page is loaded
+     once — so without this every case below ran against somebody else's page
+     state and reported "no widget labelled …" on a section that renders
+     perfectly. Found by running it, which is the whole argument for the
+     render check existing. */
+  { name: 'messaging · the section renders',
+    act: async (page) => {
+      await page.reload({ waitUntil: 'networkidle2', timeout: 60000 });
+      await page.waitForSelector('[data-widget-id="msg-sms"]', { timeout: 30000 });
+    },
+    needs: '[data-widget-id="msg-sms"]' },
+  { name: 'messaging · SMS Sent is the SMS recipients, not the send count',
+    metric: 'SMS Sent', value: '57',
+    note: 'two SMS sends reaching 50 and 7 — 2 would be the send count, 1,458 the whole feed' },
+  { name: 'messaging · ...and says how many sends that was',
+    metric: 'SMS Sent', sub: /2 sends/ },
+  { name: 'messaging · Messages Sent counts SENDS',
+    metric: 'Messages Sent', value: '6',
+    note: '1,458 here would be counting recipients' },
+  { name: 'messaging · Recipients Reached counts deliveries',
+    metric: 'Recipients Reached', value: '1,458' },
+  { name: 'messaging · emails are the rest',
+    metric: 'Emails Sent', value: '1,401' },
+  /* THE RATE IS REC'S OWN, delivered / SENT. 97.9% is delivered / terminal —
+     the defensible-looking alternative that disagrees with the message page
+     this section's own header links to. */
+  { name: 'messaging · the delivery rate is Rec’s own formula',
+    metric: 'Delivery Rate', value: '70.4%',
+    note: '1,026 delivered of 1,458 sent; 97.9% would be dividing by terminal outcomes only' },
+  { name: 'messaging · ...and says how much of the window it cannot speak for',
+    metric: 'Delivery Rate', sub: /28\.1% with no outcome recorded/ },
+  /* THE WEBHOOK GAP GETS ITS OWN TILE, because the rate is not believable
+     without it. 410 of 1,458 recipients here have neither a delivery nor a
+     bounce on file — the shape every 2025 email on the platform has. */
+  { name: 'messaging · the unrecorded outcomes are a tile of their own',
+    metric: 'No Outcome Recorded', value: '410' },
+  { name: 'messaging · bounces are counted apart from them',
+    metric: 'Bounced', value: '22' },
+  { name: 'messaging · SMS cost is money, to the cent',
+    metric: 'SMS Cost', value: '$9.05' },
+  /* SEGMENTS. Watertown really has one called "Spring Pickleball Intermediate
+     League Captains"; the fixture's is "Adults, Seniors". A comma split
+     renders two segments that do not exist, and both halves look real. */
+  /* SEGMENT NAMES ARE PROVED BY THE COUNT, NOT BY THE LABEL. The bar chart is
+     a Chart.js CANVAS, so its labels are pixels and no DOM assertion can read
+     them — a `text:` case on "Adults, Seniors" fails on a perfectly good page,
+     which is what it did on the first run.
+
+     The count discriminates anyway, and more cheaply: two segments were used,
+     and a comma split reads THREE (Adults / Seniors / Opted Into Marketing)
+     while still drawing something that looks exactly like a segment list. The
+     name surviving whole is pinned directly in messaging-widgets.spec.js,
+     which runs msgBySegment rather than looking at a canvas. */
+  { name: 'messaging · a segment name with a comma is not split in two',
+    metric: 'Segments Used', value: '2',
+    note: 'a comma split on "Adults, Seniors" reads 3 here' },
+  /* NO OPEN RATE. first_opened_at is NULL and open_count is 0 on all 818,239
+     deliveries platform-wide, so a tile here would be a confident number over
+     nothing — and it is the tile somebody will ask for. */
+  { name: 'messaging · no open-rate tile, because there is no open tracking',
+    needs: '[data-widget-id="msg-delivery-rate"]', absent: '[data-widget-id*="open"]' },
+  /* THE WAY OUT IS REC. Dan gave this URL for Watertown; the harness's org
+     uuid is deliberately not the dashboard's slug or token, so a link built
+     from the wrong identity cannot pass by looking similar. */
+  { name: 'messaging · the header opens the org’s CRM portal in Rec',
+    needs: 'a[data-rec-link="messaging"][href="https://www.rec.us/admin/o/rec-org-uuid/marketing/messages"]' },
+  { name: 'messaging · ...in its own tab',
+    needs: 'a[data-rec-link="messaging"][target="_blank"]' },
+  { name: 'messaging · and no section invents a Rec link it was not given',
+    needs: 'a[data-rec-link="messaging"]', absent: 'a[data-rec-link="memberships"]' },
+  /* ABSENT UNTIL THE CARD HAS A PUBLIC LINK — and NOT FETCHED either. Gating
+     only the render still fires a request that 404s and raises the
+     dashboard's own failure banner naming a report the org never asked for,
+     which is a louder version of the confident zero this exists to prevent.
+     msgCalls is what proves the second half; the reload is what makes the
+     flag mean anything, since the page is loaded once. */
+  { name: 'messaging · absent until the card has a public link',
+    msgHidden: true,
+    act: async (page) => {
+      msgCalls = 0;
+      await page.reload({ waitUntil: 'networkidle2', timeout: 60000 });
+      await page.waitForSelector('.widget-card', { timeout: 30000 });
+      await new Promise(r => setTimeout(r, 800));
+      if (msgCalls > 0) throw new Error('the feed was fetched ' + msgCalls + ' time(s) for a section the server cannot serve');
+    },
+    absent: 'a[data-rec-link="messaging"]' },
+  { name: 'messaging · ...and its tiles go with it',
+    msgHidden: true, absent: '[data-widget-id="msg-sms"]' },
+  // Restores the page for anything after it, and proves the switch works in
+  // the other direction: a case that only ever saw the section hidden would
+  // pass on a section that can never appear.
+  { name: 'messaging · ...and back the moment the link exists',
+    act: async (page) => {
+      await page.reload({ waitUntil: 'networkidle2', timeout: 60000 });
+      await page.waitForSelector('.widget-card', { timeout: 30000 });
+    },
+    needs: 'a[data-rec-link="messaging"]' },
+
 ];
 
 (async () => {
@@ -2004,6 +2160,13 @@ const CASES = [
             sections: [{ id: 'support', widgets: ['sup-hours-saved'] }, ...surviving] },
             availableReports: { ...CONFIG.availableReports, support: true } });
         }
+        /* NO PUBLIC LINK YET. The whole absence rule in one flag: with the
+           key gone from availableReports the section must be neither drawn
+           NOR fetched, and msgCalls is what proves the second half. */
+        if (currentCase.msgHidden) {
+          const { messaging, ...rest } = CONFIG.availableReports;
+          return json({ ...CONFIG, availableReports: rest });
+        }
         return json(CONFIG);
       }
       // fetchReportData reads json.rows off /:org/api/data/:reportType.
@@ -2043,6 +2206,7 @@ const CASES = [
           .filter(r => String(r['Checked In At']).slice(0, 10) === today)
           .map(r => ({ ...r, 'Org Today': today })) });
       }
+      if (rt === 'messaging') msgCalls++;
       return json({ rows: (rt && FIXTURES[rt]) || [] });
     }
     req.continue();
