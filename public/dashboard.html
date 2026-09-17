@@ -840,6 +840,7 @@ function fmt(val, format) {
   if (val == null || isNaN(val)) return '\u2014';
   if (format === 'currency') return '$' + Number(val).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
   if (format === 'currency2') return '$' + Number(val).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  if (format === 'number2') return Number(val).toFixed(2);
   if (format === 'percent') return Number(val).toFixed(1) + '%';
   return Number(val).toLocaleString('en-US');
 }
@@ -1129,6 +1130,40 @@ function msgDaily(rows) {
   return Object.entries(g).sort((a, b) => String(a[0]).localeCompare(String(b[0])));
 }
 
+/* AVERAGE SEGMENTS PER SMS — the number that converts a contract term.
+   A carrier bills per 160-character SEGMENT, and `rate_cents` (3 on all 175
+   orgs) is charged per segment despite the admin field reading "Rate per
+   Message". Measured over every SMS on the platform — 17,850 messages,
+   35,604 segments — the mean is 1.99 and nothing exceeds 3. So an org told it
+   has "10,000 messages" really has about 5,000.
+
+   Per RECIPIENT, not per send: a send to 1,600 people is 1,600 texts and 1,600
+   texts' worth of segments. Dividing by sends would report a campaign's whole
+   segment count as if one person received it.
+
+   NULL when the window holds no SMS — never 0 and never 1. "This org sent no
+   texts" and "this org's texts are one segment each" are different facts, and
+   the second is the one that makes an allowance look twice as roomy as it is. */
+function msgAvgSegments(rows) {
+  const t = msgTotals(rows);
+  if (!t.smsRecipients || !t.smsSegments) return null;
+  return t.smsSegments / t.smsRecipients;
+}
+
+// Usage against a configured allowance. Presence, not value: an org with no
+// allowance set gets null and the tile says so, rather than rendering a
+// confident "0% of 0" that reads as headroom.
+function msgSegmentUsage(rows, thresholds) {
+  const t = msgTotals(rows);
+  const limit = thresholds && thresholds.smsSegmentLimit != null ? thresholds.smsSegmentLimit : null;
+  return {
+    segments: t.smsSegments,
+    limit,
+    pct: limit ? (t.smsSegments / limit) * 100 : null,
+    over: limit ? t.smsSegments >= limit : false,
+  };
+}
+
 // SENDS per segment, not recipients — which is deliberately the same thing
 // Rec's own Segments page counts in its Usage column, so the two agree. It
 // also sidesteps a real ambiguity: a send targeting two segments reaches one
@@ -1184,7 +1219,7 @@ const SECTIONS = {
      way OUT of this section is Rec itself — see SECTION_REC_PAGE. */
   messaging: { id: 'messaging', label: 'CRM & Messaging', icon: '\uD83D\uDCE3', color: '#0ea5e9',
     description: 'What the org sent, who it reached, and what came back',
-    defaultWidgets: ['msg-sent','msg-recipients','msg-sms','msg-email','msg-delivery-rate','msg-bounced','msg-no-outcome','msg-sms-cost','msg-by-type','msg-daily','tbl-msg-campaigns'] },
+    defaultWidgets: ['msg-sent','msg-recipients','msg-sms','msg-email','msg-delivery-rate','msg-bounced','msg-no-outcome','msg-sms-cost','msg-sms-segments','msg-avg-segments','msg-by-type','msg-daily','tbl-msg-campaigns'] },
   'ai-briefing': { id: 'ai-briefing', label: 'AI Executive Briefing', icon: '\u2728', color: '#a855f7',
     description: 'AI-generated narrative summary from all dashboard data',
     defaultWidgets: [], _special: true },
@@ -2118,7 +2153,21 @@ const W = {
     transform: rows => { const t = msgTotals(rows);
       return { value: t.costCents / 100, format: 'currency2',
         sub: t.smsSegments ? t.smsSegments.toLocaleString() + ' carrier segments' : null }; } },
-  'msg-segments-used': { label: 'Segments Used', description: 'Distinct saved segments a send targeted', note: 'Counts segments the org actually SENT to — not its whole segment library, whose size Rec computes by evaluating criteria this report cannot see', section: 'messaging',
+  'msg-sms-segments': { label: 'SMS Segments', description: 'Carrier segments used — what the allowance is counted in', note: 'A text is billed in 160-character segments and most are two, so this runs about double the message count. This is the number an SMS allowance is measured against, not Messages Sent', section: 'messaging',
+    reportType: 'messaging', size: 'sm', icon: '🧾', component: 'metric', delta: true, deltaGoodWhenDown: true,
+    transform: rows => { const u = msgSegmentUsage(rows, typeof window !== 'undefined' ? window._smsThresholds : null);
+      return { value: u.segments, format: 'number',
+        sub: u.limit
+          ? Math.round(u.pct) + '% of the ' + u.limit.toLocaleString() + ' allowance'
+          : 'no allowance set — configure one in settings',
+        tone: u.over ? 'bad' : null }; } },
+  'msg-avg-segments': { label: 'Avg Segments per SMS', description: 'How many billed segments one text costs', note: 'Segments divided by SMS recipients. Platform-wide this averages 1.99, so a 10,000-segment allowance is about 5,000 real messages — the conversion nobody expects', section: 'messaging',
+    reportType: 'messaging', size: 'sm', icon: '📐', component: 'metric',
+    transform: rows => { const a = msgAvgSegments(rows); const t = msgTotals(rows);
+      return { value: a == null ? null : Math.round(a * 100) / 100, format: 'number2',
+        sub: a == null ? 'no SMS in range'
+          : t.smsSegments.toLocaleString() + ' segments over ' + t.smsRecipients.toLocaleString() + ' texts' }; } },
+  'msg-segments-used': { label: 'Audience Segments', description: 'Distinct saved audiences a send targeted', note: 'Counts saved AUDIENCES the org actually sent to — not its whole segment library, whose size Rec computes by evaluating criteria this report cannot see. Deliberately not the same "segment" as the carrier segments SMS is billed in', section: 'messaging',
     reportType: 'messaging', size: 'sm', icon: '🎯', component: 'metric',
     transform: rows => ({ value: msgBySegment(rows).length, format: 'number',
       sub: (() => { const t = msgTotals(rows); return t.segmentSends ? t.segmentSends.toLocaleString() + ' sends targeted one' : null; })() }) },
@@ -6225,7 +6274,7 @@ function TemplateChooser({ onSelect, orgMeta }) {
 // ═══════════════════════════════════════════════════════
 //  SETTINGS
 // ═══════════════════════════════════════════════════════
-function SettingsPopover({ cacheTTL, onCacheTTLChange, onClearCache, onReset, theme, onThemeChange, emailDigestEnabled, sections, dateRange, onSendDigest, defaultEmail }) {
+function SettingsPopover({ cacheTTL, onCacheTTLChange, onClearCache, onReset, theme, onThemeChange, emailDigestEnabled, sections, dateRange, onSendDigest, defaultEmail, smsThresholds }) {
   const [confirmReset, setConfirmReset] = useState(false);
   /* SEEDED FROM THE ORG'S DEFAULT EMAIL, NEVER OVERRIDDEN BY IT. Dan: "prefill
      that email box with the email entered at the time the org is created."
@@ -6242,6 +6291,42 @@ function SettingsPopover({ cacheTTL, onCacheTTLChange, onClearCache, onReset, th
   const [subStatus, setSubStatus] = useState(null);
   const [sendEmail, setSendEmail] = useState(defaultEmail || '');
   const [sendStatus, setSendStatus] = useState(null);
+
+  /* SMS ALLOWANCE ALERTS. Seeded from what the server holds; blank means the
+     alert is OFF, which is why these are strings and not zeros — a 0 in the
+     box would read as "alert me at zero segments", i.e. on the first text.
+     `smsThresholds` is null for an org nobody has configured. */
+  const _smsT = smsThresholds || {};
+  const [smsLimit, setSmsLimit] = useState(_smsT.smsSegmentLimit != null ? String(_smsT.smsSegmentLimit) : '');
+  const [smsNotifyAt, setSmsNotifyAt] = useState(_smsT.smsSegmentNotifyAt != null ? String(_smsT.smsSegmentNotifyAt) : '');
+  const [smsSpend, setSmsSpend] = useState(_smsT.smsSpendNotifyCents != null ? String(_smsT.smsSpendNotifyCents / 100) : '');
+  const [smsEmail, setSmsEmail] = useState(_smsT.smsNotifyEmail || '');
+  const [smsStatus, setSmsStatus] = useState(null);
+
+  async function handleSmsSave() {
+    setSmsStatus('saving');
+    try {
+      const body = {
+        smsSegmentLimit:     smsLimit.trim()     === '' ? null : Number(smsLimit),
+        smsSegmentNotifyAt:  smsNotifyAt.trim()  === '' ? null : Number(smsNotifyAt),
+        // Typed in DOLLARS, stored in CENTS. The conversion happens here, once,
+        // rather than the box pretending cents are a natural thing to type.
+        smsSpendNotifyCents: smsSpend.trim()     === '' ? null : Math.round(Number(smsSpend) * 100),
+        smsNotifyEmail:      smsEmail.trim(),
+      };
+      const resp = await fetch('/' + ORG_SLUG + '/api/sms-thresholds?token=' + TOKEN, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+      });
+      const json = await resp.json();
+      if (json && json.ok) {
+        // The tile reads this global, so a save that did not update it would
+        // leave the allowance on screen disagreeing with the one just stored.
+        window._smsThresholds = json.thresholds;
+        setSmsStatus('saved');
+        setTimeout(function(){ setSmsStatus(null); }, 2500);
+      } else { setSmsStatus('error'); }
+    } catch (e) { setSmsStatus('error'); }
+  }
 
   async function handleSendNow() {
     if (!sendEmail || !sendEmail.includes('@')) { setSendStatus('error'); return; }
@@ -6376,6 +6461,43 @@ function SettingsPopover({ cacheTTL, onCacheTTLChange, onClearCache, onReset, th
           </button>
         )}
       </div>
+
+      <div style={{borderTop:'1px solid var(--border)',paddingTop:12,marginTop:4,marginBottom:10}} data-sms-thresholds>
+          <div style={{fontSize:12,color:'var(--text-secondary)',marginBottom:8,display:'flex',alignItems:'center',gap:5}}>
+            {'\uD83D\uDCF1'} SMS Allowance Alerts
+          </div>
+          <div style={{fontSize:10,color:'var(--text-secondary)',marginBottom:8,lineHeight:1.45}}>
+            Texts are billed in 160-character <strong>segments</strong>, and one message averages
+            about two of them {'\u2014'} so a 10,000 segment allowance is roughly 5,000 messages.
+            Leave a box blank to switch that alert off.
+          </div>
+
+          <label style={{fontSize:10,color:'var(--text-secondary)',display:'block',marginBottom:3}}>Segment allowance (contract)</label>
+          <input type="number" min="1" value={smsLimit} data-sms-limit
+            onChange={function(e){setSmsLimit(e.target.value);}}
+            placeholder="10000" style={{width:'100%',padding:'6px 8px',borderRadius:6,border:'1px solid var(--border)',background:'var(--bg-surface)',color:'var(--text-primary)',fontSize:12,marginBottom:6,fontFamily:'var(--font-body)',outline:'none',boxSizing:'border-box'}} />
+
+          <label style={{fontSize:10,color:'var(--text-secondary)',display:'block',marginBottom:3}}>Alert me at (segments) {'\u2014'} defaults to the allowance</label>
+          <input type="number" min="1" value={smsNotifyAt} data-sms-notify-at
+            onChange={function(e){setSmsNotifyAt(e.target.value);}}
+            placeholder={smsLimit || '10000'} style={{width:'100%',padding:'6px 8px',borderRadius:6,border:'1px solid var(--border)',background:'var(--bg-surface)',color:'var(--text-primary)',fontSize:12,marginBottom:6,fontFamily:'var(--font-body)',outline:'none',boxSizing:'border-box'}} />
+
+          <label style={{fontSize:10,color:'var(--text-secondary)',display:'block',marginBottom:3}}>Alert me at (spend, $)</label>
+          <input type="number" min="0" step="0.01" value={smsSpend} data-sms-spend
+            onChange={function(e){setSmsSpend(e.target.value);}}
+            placeholder="300.00" style={{width:'100%',padding:'6px 8px',borderRadius:6,border:'1px solid var(--border)',background:'var(--bg-surface)',color:'var(--text-primary)',fontSize:12,marginBottom:6,fontFamily:'var(--font-body)',outline:'none',boxSizing:'border-box'}} />
+
+          <label style={{fontSize:10,color:'var(--text-secondary)',display:'block',marginBottom:3}}>Send alerts to {'\u2014'} blank uses the org default</label>
+          <input type="email" value={smsEmail} data-sms-email
+            onChange={function(e){setSmsEmail(e.target.value);}}
+            placeholder={defaultEmail || 'you@example.com'} style={{width:'100%',padding:'6px 8px',borderRadius:6,border:'1px solid var(--border)',background:'var(--bg-surface)',color:'var(--text-primary)',fontSize:12,marginBottom:6,fontFamily:'var(--font-body)',outline:'none',boxSizing:'border-box'}} />
+
+          <button className="btn" style={{width:'100%',fontSize:12,fontWeight:600}}
+            onClick={handleSmsSave} disabled={smsStatus==='saving'} data-sms-save>
+            {smsStatus === 'saving' ? 'Saving...' : smsStatus === 'saved' ? '\u2713 Saved'
+              : smsStatus === 'error' ? 'Failed \u2014 check the numbers' : 'Save SMS Alerts'}
+          </button>
+        </div>
 
       <div style={{borderTop:'1px solid var(--border)',paddingTop:12,marginTop:4,marginBottom:10}}>
           <div style={{fontSize:12,color:'var(--text-secondary)',marginBottom:8,display:'flex',alignItems:'center',gap:5}}>
@@ -6712,11 +6834,20 @@ function DashboardApp() {
           // The rec.us org uuid, for admin deep links. Explicitly copied like every
           // other field here — orgMeta is a whitelist, so a key the server sends
           // and this map forgets is simply absent, silently.
-          recOrgId: json.recOrgId || '' };
+          recOrgId: json.recOrgId || '',
+          // The org's default address, which seeds the digest and SMS-alert
+          // boxes. It was sent by the server and dropped here for a day: the
+          // fallback is '', so a forgotten key renders as "no default set"
+          // rather than as anything broken. That is what the comment above is
+          // warning about, demonstrated.
+          defaultEmail: json.defaultEmail || '' };
         window._orgMeta = _m;
         setOrgMeta(_m);
         window._orgGeo = json.city && json.state ? `${json.city}, ${json.state}` : '';
         window._reportVisibility = json.reportVisibility || null;
+        // The SMS allowance the segment tile reads. Null when unset, never {} —
+        // an empty object would make the tile claim an allowance of zero.
+        window._smsThresholds = json.smsThresholds || null;
         if (json.dateRange) { setDateRange(json.dateRange); setDatePreset(''); }
         if (json.config?.sections?.length > 0) {
           setConfig(json.config);
@@ -6958,7 +7089,7 @@ function DashboardApp() {
             <button className="btn" onClick={()=>{setEditFocus(null);setEditOpen(true);track('edit_opened',{from:'toolbar'});}}>{'\u270E'} Edit Dashboard</button>
             <div style={{position:'relative'}}>
               <button className="btn" onClick={()=>setSettingsOpen(!settingsOpen)}>{'\u2699'}</button>
-              {settingsOpen && <SettingsPopover defaultEmail={orgMeta.defaultEmail || ''} cacheTTL={config.cacheTTL||15} onCacheTTLChange={handleCacheTTLChange} onClearCache={handleClearCache} onReset={handleReset} theme={theme} onThemeChange={handleThemeChange} emailDigestEnabled={orgMeta.toggles?.emailDigest === true} sections={config.sections} dateRange={dateRange} onSendDigest={handleSendDigest} />}
+              {settingsOpen && <SettingsPopover defaultEmail={orgMeta.defaultEmail || ''} smsThresholds={window._smsThresholds || null} cacheTTL={config.cacheTTL||15} onCacheTTLChange={handleCacheTTLChange} onClearCache={handleClearCache} onReset={handleReset} theme={theme} onThemeChange={handleThemeChange} emailDigestEnabled={orgMeta.toggles?.emailDigest === true} sections={config.sections} dateRange={dateRange} onSendDigest={handleSendDigest} />}
             </div>
           </div>
         )}
