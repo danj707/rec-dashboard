@@ -381,7 +381,8 @@ ok((server.match(/normalizeOrgEmail\(/g) || []).length >= 4,
   '...read by the add route, the edit route and the SMS alert address');
 ok(/app\.post\('\/admin\/api\/orgs\/:slug\/default-email'/.test(server),
   'the address is editable after creation, or the field does nothing for the twenty-nine orgs already onboarded');
-ok(/defaultEmail: org\.defaultEmail \|\| ''/.test(server), 'and it reaches the dashboard');
+is((server.match(/defaultEmail: orgDefaultEmail\(org, /g) || []).length, 2,
+  'both readers — the admin grid and the org config route — go through the store, or one of them serves an address the other does not');
 ok(/defaultEmail: emailCheck\.email/.test(server), 'Add Org stores it on the ORG, not in dashboardConfigs — Reset Dashboard must not wipe the address the platform mails');
 ok(/<input id="ao-email"/.test(admin), 'the Add Org modal carries the field');
 ok(/defaultEmail \}\)/.test(admin) || /defaultEmail\s*\}/.test(admin), '...and sends it');
@@ -557,8 +558,16 @@ ok(/smsAlerts\[slug\]\[d\.kind\] = new Date\(\)\.toISOString\(\);\s*\n\s*saveSms
   'the fired marker is written BEFORE the send — a send that throws is one missed email, a mark that never lands is the same email every hour forever');
 ok(/const SMS_ALERT_FILE = path\.join\(DATA_DIR, 'sms-alerts\.json'\)/.test(server),
   '...and it is on disk, or every deploy re-alerts');
-ok(/function smsAlertRecipient\([\s\S]{0,200}org\.smsNotifyEmail\) \|\| \(org && org\.defaultEmail\)/.test(server),
+ok(/function smsAlertRecipient\(org, slug\) \{\s*\n\s*return orgSmsThresholds\(org, slug\)\.smsNotifyEmail \|\| orgDefaultEmail\(org, slug\);/.test(server),
   "the org's own alert address wins, with the platform default as the fallback — which is what that field was added for");
+// BOTH SIDES READ THEIR STORE. A fresh process has nothing on the ORGS entry,
+// so reading org.smsNotifyEmail / org.defaultEmail raw sends the alert to the
+// fallback address — or to nobody — while both stores hold the right one. The
+// bug only appears after a deploy, which is exactly when the alert matters.
+ok(!/function smsAlertRecipient\([\s\S]{0,300}org\.smsNotifyEmail\)/.test(server),
+  '...and neither side is read raw off the org record, which is empty on a fresh boot');
+ok(/const to = smsAlertRecipient\(org, slug\);/.test(server),
+  'the caller passes the slug, or the stores cannot be consulted at all');
 ok(/sendOpsAlert\(`⚠️ \$\{subject\} \(no alert email set/.test(server),
   'an org with no address still raises the crossing to ops — silence about a contractual allowance is the one outcome nobody wants');
 /* PERSISTENCE, AND IT IS NOT saveDynamicOrgs. That writes only the orgs that
@@ -573,13 +582,37 @@ ok(/smsThresholdStore\[slug\] = check\.thresholds;\s*\n\s*saveSmsThresholdStore\
   '...and every save writes it');
 ok(!/if \(org\._dynamic\) saveDynamicOrgs\(\);[\s\S]{0,200}sms thresholds for/.test(server),
   'the static/dynamic split is gone from this path entirely — one storage route for every org');
-// Scoped to the SMS path. The defaultEmail route still logs that line and is
-// still right to — that field has the SAME gap and has not been moved yet, so
-// a file-wide test here would be refuted by unrelated, honest code.
-ok(!/sms thresholds for[\s\S]{0,120}static org — not persisted/.test(server),
-  "the SMS path no longer admits a loss, because there is no longer a loss");
+/* Was scoped to the SMS path while defaultEmail still had the SAME gap and
+   still honestly logged that line. Both are moved now, so the test is
+   file-wide: no route on this server may report a save it did not keep. */
+ok(!/static org — not persisted/.test(server),
+  'no route admits a loss anywhere, because there is no longer a loss anywhere');
+ok(!/if \(org\._dynamic\) saveDynamicOrgs\(\);/.test(server),
+  '...and no write is gated on the org being dynamic');
 ok(/const st = \(slug && smsThresholdStore\[slug\]\) \|\| null;/.test(server),
   'the stored value is read back over the org record — it is the one that survives a deploy');
+
+/* THE DEFAULT EMAIL HAD THE IDENTICAL GAP, and it is closed the same way.
+   Its route wrote onto the ORGS entry and called saveDynamicOrgs(), so for a
+   STATIC org the address lived in one process's memory — the same shape that
+   lost Watertown's allowance, on the field the alert emails are addressed
+   from. */
+ok(/const ORG_EMAIL_FILE = path\.join\(DATA_DIR, 'org-emails\.json'\)/.test(server),
+  'the default email persists in a file of its own, keyed by slug');
+ok(/orgEmailStore\[slug\] = check\.email;\s*\n\s*saveOrgEmailStore\(orgEmailStore\);/.test(server),
+  '...and the edit route writes it');
+ok(/orgEmailStore\[slug\] = emailCheck\.email;\s*\n\s*saveOrgEmailStore\(orgEmailStore\);/.test(server),
+  '...and so does Add Org, so a new org is durable by the same one path rather than by being dynamic');
+ok(/res\.json\(\{ ok: true, defaultEmail: check\.email, persisted: true \}\)/.test(server),
+  'the route answers persisted:true unconditionally now — it no longer reports a save it did not keep');
+/* PRESENCE, not truthiness. A CLEARED address is stored as '' and has to win
+   over whatever the org record still carries; `store[slug] || org.x` would
+   resurrect the address somebody just deleted, which is the one outcome a
+   Clear must never have. */
+ok(/const st = slug \? orgEmailStore\[slug\] : undefined;\s*\n\s*if \(typeof st === 'string'\) return st;/.test(server),
+  'a cleared address wins over the org record — the store is read by PRESENCE, so Clear cannot resurrect what it deleted');
+is((server.match(/function orgDefaultEmail\(/g) || []).length, 1,
+  'ONE reader — a second copy is how one surface shows an address another has already cleared');
 
 is((server.match(/function applySmsThresholds\(/g) || []).length, 1,
   'ONE handler behind both the admin route and the org gear — two would accept different numbers on each side');
