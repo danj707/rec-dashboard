@@ -255,6 +255,20 @@ new Function('exports', uuidBlock.replace(/^\s*const MESSAGING_UUID = .*$/m, "co
   + '\nexports.SET = SHARED_UUIDS;')(sandbox3);
 is(sandbox3.SET.messaging, 'abc-123', '...and filling the uuid in is the whole wiring');
 
+// ...and it IS filled in. The link exists and the tags are flipped, so an
+// empty constant here is no longer a staging state — it is the section
+// vanishing from every dashboard, silently, with the card healthy behind it.
+// The omit-when-unset shape above stays because it is what makes the NEXT
+// card safe to merge before its link exists; this asserts THIS one shipped.
+const sandboxLive = {};
+// eslint-disable-next-line no-new-func
+new Function('exports', uuidBlock + '\nexports.LIVE = SHARED_UUIDS;')(sandboxLive);
+ok(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(String(sandboxLive.LIVE.messaging || '')),
+  'the shipped MESSAGING_UUID is a real public-link uuid, not empty and not a placeholder');
+const liveUuids = Object.entries(sandboxLive.LIVE).filter(([k]) => k !== 'messaging').map(([, v]) => v);
+ok(!liveUuids.includes(sandboxLive.LIVE.messaging),
+  '...and it is not a copy of another card\'s link — a paste-over renders another report\'s numbers under these labels and looks entirely plausible');
+
 // The gate, lifted and RUN. Unknown counts as missing.
 const gateSrc = lift('const SECTION_REQUIRES_FEED', '// Reports that show all-time data');
 const sandbox4 = {};

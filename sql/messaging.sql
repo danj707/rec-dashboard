@@ -11,15 +11,33 @@
 -- figure is aggregated onto that row, so nothing downstream has to fan a
 -- message out and every count on the dashboard stays additive.
 --
--- TAGS: org_id + optional start_date / end_date. ALL THREE COME BACK `text` ON
+-- TAGS: org_id + optional start_date / end_date. ALL THREE CAME BACK `text` ON
 -- CREATION — read back off the live card rather than assumed, because the
 -- sibling repo's note on card 20197 says Metabase auto-types a tag named
 -- start_date as Date from its name, and THAT DID NOT HAPPEN HERE. The
 -- dashboard sends date/single for every dated card and Metabase refuses that
--- against a Text tag, so both dates must be flipped to Date in the UI. The
--- flip is free exactly once: a card with no public link has no consumers, so
--- there is no outage window — which is the argument for doing it now rather
--- than discovering it on the next edit.
+-- against a Text tag, so both dates had to be flipped to Date in the UI.
+--
+-- FLIPPED AND LINKED 2026-09-16, and read back: exactly THREE parameters —
+-- org_id `string/=`, start_date and end_date both `date/single` — with no
+-- `string/=` duplicate set to re-save away, which is what a card that is
+-- CREATED rather than re-saved on top of an earlier push gets. The flip cost
+-- nothing because it happened before the public link existed: a card with no
+-- link has no consumers and therefore no outage window.
+--
+-- SIGNED OFF cache-independently through the public endpoint with the app's
+-- own parameter shape (the registered ids, not just the slugs) — west-haven
+-- unwindowed, 4.8s: 395 sends · 106,786 recipients · 5,304 SMS · 128
+-- marketing · 93,907 delivered · 786 bounced · 12,300 with NO outcome
+-- recorded · $264.33 of SMS cost · 138 rows carrying a segment, spanning
+-- 2025-11-25..2026-09-16. The 5,304 reproduces Dan's own Metabase gauge to
+-- the message. (It reads one send / one recipient above a literal run taken
+-- minutes earlier — that is the OPEN WINDOW, not a discrepancy.)
+--
+-- AND `Segments` COMES BACK AS A JSON STRING, not an array: the sample row
+-- carries "[\"Kids Track & Field\"]". The page's reader handles both, and the
+-- string branch is the one that actually runs — a reader written for the
+-- array alone would report every send as untargeted and look correct doing it.
 --
 -- ── THE DELIVERY RATE IS REC'S OWN FORMULA, delivered / sent ─────────────────
 -- Matched against the Rec admin UI rather than chosen. West Haven's "Last

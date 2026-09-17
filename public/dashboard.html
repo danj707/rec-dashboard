@@ -1048,7 +1048,10 @@ function msgIsMarketing(r) { return String((r && r['Type']) || '').toLowerCase()
 // the first segment somebody names "Adults, Seniors" into two that do not
 // exist. Metabase can hand a jsonb column back either already parsed or as
 // text depending on the column's inferred type, so both are read and anything
-// else yields nothing rather than a guess.
+// else yields nothing rather than a guess — and measured against the live
+// card the STRING branch is the one that runs: card 21913's Segments arrives
+// as "[\"Kids Track & Field\"]", so a reader that only handled an array
+// would report every send as untargeted while looking perfectly correct.
 function msgSegmentNames(r) {
   const v = r && r['Segments'];
   const clean = a => a.filter(x => typeof x === 'string' && x.trim()).map(x => x.trim());

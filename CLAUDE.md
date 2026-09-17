@@ -152,8 +152,41 @@ link.
 
 ### ABSENT UNTIL THE CARD HAS A PUBLIC LINK — and NOT FETCHED either
 
-`MESSAGING_UUID` is empty, so `SHARED_UUIDS` omits the key, so
+`MESSAGING_UUID` empty means `SHARED_UUIDS` omits the key, so
 `availableReports` has no entry — the same absence rule as the five live cards.
+
+**LINKED AND FLIPPED 2026-09-16, so that is the SHAPE and no longer the state.**
+Both halves were read back off the live card rather than assumed: exactly
+**three** parameters — `org_id` `string/=`, both dates `date/single` — with no
+`string/=` duplicate set to re-save away, which is what a card that is CREATED
+rather than re-saved on top of an earlier push gets. The flip cost nothing
+because it happened before the link existed: a card with no public link has no
+consumers and therefore no outage window to pay for.
+
+**Signed off cache-independently through the public endpoint** with the app's
+own parameter shape (the registered parameter **ids**, not just the slugs) —
+west-haven unwindowed, **4.8s**: 395 sends · 106,786 recipients · **5,304
+SMS** · 93,907 delivered · 786 bounced · 12,300 with no outcome recorded ·
+$264.33 of SMS cost · 138 rows carrying a segment, spanning
+2025-11-25..2026-09-16. **The 5,304 reproduces Dan's own Metabase gauge to the
+message**, which is the correctness sign-off. It reads one send and one
+recipient above a literal run taken minutes earlier — that is the OPEN WINDOW,
+not a discrepancy (the Clarksville rule).
+
+**AND `Segments` COMES BACK AS A JSON STRING, not an array.** The live sample
+row carries `"[\"Kids Track & Field\"]"`, so the branch of `msgSegmentNames`
+written to cope with Metabase handing a jsonb column back as text is **the one
+that actually runs**. A reader written for the array alone would report every
+send as untargeted, empty the Top Segments tile and read `Segments Used = 0` —
+all of which look like an org that does not use segments. *A defensive branch
+that turns out to be the live path is worth measuring rather than assuming
+which way round it is.*
+
+**The omit-when-unset shape STAYS** — it is what makes the next card safe to
+merge before its link exists — but the spec now also asserts that THIS uuid
+shipped: a real uuid, and not a copy of another card's, because a paste-over
+draws another report's numbers under these labels and looks entirely plausible.
+Both mutations fail by name.
 
 **THE NEW HALF IS THAT IT GATES THE FETCH, NOT ONLY THE RENDER.** A section
 config is read by the data effect, the comparison effect and the render; hiding
@@ -197,7 +230,7 @@ box with the email entered at the time the org is created."*
 
 ### Guards
 
-`scripts/messaging-widgets.spec.js` (**122 assertions, in CI**), which LIFTS
+`scripts/messaging-widgets.spec.js` (**124 assertions, in CI**), which LIFTS
 AND RUNS every helper and every widget transform — a regex over a rate passes
 on an inverted comparison, and every defect this section can have is arithmetic
 about counts. **Mutation-tested 21 ways, all 21 failing by an assertion that

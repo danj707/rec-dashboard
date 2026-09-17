@@ -415,19 +415,25 @@ const HAPPENING_TODAY_UUID    = '8e6df830-5cc2-4b22-871c-5b730fcca4a9';
    header links straight through to the Rec page the numbers come from
    (/admin/o/<orgId>/marketing/messages).
 
-   EMPTY UNTIL SOMEBODY CREATES THE PUBLIC LINK — and, unlike its siblings,
-   this card ALSO needs both date tags flipped to Date in the same visit. All
-   three tags came back `text` on creation, read off the live card rather than
-   assumed: the sibling repo's note on card 20197 says Metabase auto-types a
-   tag named start_date as Date from its name, and it did not happen here. The
-   dashboard sends date/single for every dated card and Metabase refuses that
-   against a Text tag.
+   LINKED AND FLIPPED, 2026-09-16, and both halves were read back off the live
+   card rather than assumed: exactly THREE parameters — org_id `string/=`, both
+   dates `date/single` — with no `string/=` duplicate set to re-save away. All
+   three came back `text` on creation (the sibling repo's note on card 20197
+   says Metabase auto-types a tag named start_date as Date from its name, and
+   it did not happen here), and the dashboard sends date/single for every dated
+   card, so without that flip Metabase refuses every request.
 
-   The flip costs nothing exactly once, which is why it happens now: a card
-   with no public link has no consumers, so there is no outage window to pay
-   for. Leave it and the first person to notice is an org.
+   The flip cost nothing because it happened before the link existed: a card
+   with no public link has no consumers and therefore no outage window. Leave
+   it and the first person to notice is an org.
+
+   Signed off cache-independently through the public endpoint with the app's
+   own parameter shape — west-haven unwindowed, 4.8s: 395 sends, 106,786
+   recipients, 5,304 SMS (Dan's gauge, to the message), 93,907 delivered, 786
+   bounced, 12,300 with no outcome recorded, $264.33 of SMS cost, 138 rows
+   carrying a segment, spanning 2025-11-25..2026-09-16.
    https://rec.metabaseapp.com/question/21913 */
-const MESSAGING_UUID = '';
+const MESSAGING_UUID = 'bb33115d-fc95-4cd0-b533-8b63c55bc0ee';
 
 const SHARED_UUIDS = {
   facility: 'f6787f45-3a36-4501-8a5f-b0f647451a85',
