@@ -94,45 +94,67 @@ one is **`SMS Segments`**.
 - **No allowance configured is `null`, never 0%.** A zero allowance would put
   every org permanently over on the day this shipped.
 
-### THE ALERT FIRES ON THE CALENDAR MONTH, NOT THE DATE PICKER
+### THE BUCKET IS ONE-TIME AND ALL-TIME — a correction, twice over
 
-The allowance is monthly. A trigger that depended on what somebody last clicked
-in the toolbar is not a trigger. The tiles follow the picker; `runSmsAlertCheck`
-does not, and the email names the month.
+Dan: *"bucket does not refill. an org gets 10,000 or 15,000 when they signup
+with rec. once that's gone, they pay for it… It's the all time we want to alert
+on."*
 
-- **`>=`, not `>`** — Dan's *"once they reach that limit"*, and the safer
-  direction: an org landing exactly on 10,000 has spent its allowance.
-- **The alert defaults to the allowance** and may be set lower, which is what
-  Hannah's *"before exceeding"* actually needs.
-- **ONLY ORGS WITH A THRESHOLD ARE PROBED.** This reads the messaging card per
-  org, and fanning ~29 of those hourly is the prewarm storm the reporting
-  project already paid for. Today that set is empty, so the job costs nothing
-  until somebody is given an allowance.
-- **The fired marker is ON DISK and written BEFORE the send.** In memory it
-  resets on deploy and this service deploys several times a day — an org over
-  its allowance would get the same email every deploy for a month. A send that
-  throws is one missed email; a mark that never lands is a filtered sender.
-- **An org with no address still raises the crossing to ops.** Silence about a
-  contractual allowance is the one outcome nobody wants.
-- **One `applySmsThresholds` behind both routes** — the admin grid sets it when
-  a contract is signed, the org's own gear because the number is theirs. Stored
-  on the ORG, never in `dashboardConfigs`, so Reset Dashboard cannot wipe a
-  contractual allowance.
+**I shipped the monthly model first and it was wrong in both halves.** Hannah's
+relay said *"10,000-message monthly allowance"* and I built a monthly window
+and a monthly alert marker on it. What it actually is: a **one-time bucket
+granted at signup**, consumed cumulatively, never refilled, and billed per
+segment once gone.
 
-### THE PREFILL SHIPPED BROKEN AND NOTHING COULD SEE IT
+**Watertown is the case that shows the cost of getting it wrong.** 6,863
+segments all time against a 15,000 bucket is **46% gone**; the same tile on a
+This-Month view holds **285**, which against 15,000 reads **1.9%** — an org
+that looks untouched and is actually halfway through. So:
 
-`defaultEmail` was never added to the page's `orgMeta` **whitelist**, so
-`orgMeta.defaultEmail` was `undefined` and the digest box seeded from `''` —
-byte-identical to an org with no default set. The server sent it, the popover
-accepted the prop, the call site read the wrong object, and the fallback made
-it invisible. **The whitelist's own comment warns about exactly this**
-(*"a key the server sends and this map forgets is simply absent, silently"*),
-which is what makes it worth recording rather than just fixing: the warning was
-there and did not stop it. Now asserted.
+- **The tile shows BOTH**, which is what Dan asked for: the big number follows
+  the date picker (that is the burn rate, and every other tile on the card
+  follows it), and the line beneath is the **all-time position against the
+  bucket** — `6,863 of 15,000 used all time (46%)`, and past it `— billed from
+  here`.
+- **The percentage is taken from all-time, never the window.** The mutation
+  that reverts it fails by name.
+- **A BUCKET IS A POSITION, NOT A FLOW**, which is the LTV rule from the
+  sibling repo applied one surface over: it does not move when the toolbar
+  does, and the tile says which window each number came from.
+- **The alert evaluates every segment the org has ever sent** — the probe sends
+  **no date bounds at all**, so the card's `[[ ]]` blocks drop out and it
+  reports the whole account. A wide literal start would silently truncate the
+  bucket for an org that predates it.
+- **It fires ONCE, and the marker is no longer keyed by month.** A bucket
+  crossed in September is still crossed in October; re-arming monthly would
+  announce the same exhausted bucket every month until somebody filtered the
+  sender.
+
+**`used` is NULL, never 0, while the all-time feed is in flight.** It is a
+second fetch, so there is a real window where the number is unknown — and a 0
+there claims an untouched bucket, which is the confident-zero failure this repo
+keeps recording. The tile says *"checking all-time use…"* instead.
+
+### AND THE ABSENCE RULE CAUGHT MY OWN NEW FETCH
+
+The all-time figure needs a second, unwindowed messaging pull. I gated it on a
+bucket being configured — and **not** on the feed being servable, so at an org
+whose messaging card has no public link it went and asked anyway: a 404 that
+raises the dashboard's own failure banner **naming a report the org never asked
+for**, which is the exact failure the `dataKey` gate was built for two days
+earlier.
+
+**`messaging · absent until the card has a public link` failed by counting the
+fetches** — *"the feed was fetched 1 time(s) for a section the server cannot
+serve"* — on a build where the section itself was correctly hidden. It now
+reads `sectionFeedMissing('messaging', availableReports)`, the same one gate.
+
+*Generalise it: a new fetch has to pass every gate the old ones pass, and "the
+section is hidden" is not the same as "nothing asks for the feed".*
 
 ### Guards
 
-`scripts/messaging-widgets.spec.js` 124 → **178 assertions**, lifting and
+`scripts/messaging-widgets.spec.js` 124 → **193 assertions**, lifting and
 RUNNING `msgAvgSegments`, `msgSegmentUsage`, `normalizeSmsThresholds`,
 `smsSegmentAlertPoint` and `smsAlertsDue` — every defect here is arithmetic
 about a comparison and a regex passes on an inverted one. **Mutation-tested 12

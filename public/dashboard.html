@@ -1150,17 +1150,37 @@ function msgAvgSegments(rows) {
   return t.smsSegments / t.smsRecipients;
 }
 
-// Usage against a configured allowance. Presence, not value: an org with no
-// allowance set gets null and the tile says so, rather than rendering a
-// confident "0% of 0" that reads as headroom.
-function msgSegmentUsage(rows, thresholds) {
+/* THE BUCKET IS A POSITION, NOT A FLOW — and that is why this reads two
+   numbers. An org is given 10,000 or 15,000 segments ONCE at signup and is
+   billed per segment after; nothing refills. So "how much of the bucket is
+   gone" is an all-time question and cannot be answered by whatever the date
+   picker happens to be showing.
+
+   Watertown is the worked example: 6,863 segments all time against a 15,000
+   bucket is 46% gone, while the SAME tile on a This-Month view holds 285. A
+   percentage taken from the window would read 1.9% and look like an org that
+   has barely started, which is the opposite of true. The window figure is
+   still worth having — it is the burn rate — so the tile shows the window and
+   names the all-time position underneath it.
+
+   Presence, not value: an org with no bucket set gets null and the tile says
+   so, rather than a confident "0% of 0" that reads as headroom. And `allTime`
+   NULL means the all-time feed has not answered yet — deliberately different
+   from 0, which would claim an untouched bucket. */
+function msgSegmentUsage(rows, thresholds, allTime) {
   const t = msgTotals(rows);
   const limit = thresholds && thresholds.smsSegmentLimit != null ? thresholds.smsSegmentLimit : null;
+  const used = allTime && typeof allTime.segments === 'number' ? allTime.segments : null;
   return {
+    windowSegments: t.smsSegments,
+    // Kept for callers that only care about the window.
     segments: t.smsSegments,
     limit,
-    pct: limit ? (t.smsSegments / limit) * 100 : null,
-    over: limit ? t.smsSegments >= limit : false,
+    used,
+    usedMessages: allTime && typeof allTime.messages === 'number' ? allTime.messages : null,
+    pct: (limit && used != null) ? (used / limit) * 100 : null,
+    remaining: (limit && used != null) ? Math.max(0, limit - used) : null,
+    over: (limit && used != null) ? used >= limit : false,
   };
 }
 
@@ -2153,14 +2173,18 @@ const W = {
     transform: rows => { const t = msgTotals(rows);
       return { value: t.costCents / 100, format: 'currency2',
         sub: t.smsSegments ? t.smsSegments.toLocaleString() + ' carrier segments' : null }; } },
-  'msg-sms-segments': { label: 'SMS Segments', description: 'Carrier segments used — what the allowance is counted in', note: 'A text is billed in 160-character segments and most are two, so this runs about double the message count. This is the number an SMS allowance is measured against, not Messages Sent', section: 'messaging',
+  'msg-sms-segments': { label: 'SMS Segments', description: 'Carrier segments in range, against the one-time bucket', note: 'A text is billed in 160-character segments and most are two, so this runs about double the message count. The big number follows the date range; the line beneath is the all-time position against the segments included at signup, which is what the alert watches and what billing starts from', section: 'messaging',
     reportType: 'messaging', size: 'sm', icon: '🧾', component: 'metric', delta: true, deltaGoodWhenDown: true,
-    transform: rows => { const u = msgSegmentUsage(rows, typeof window !== 'undefined' ? window._smsThresholds : null);
-      return { value: u.segments, format: 'number',
-        sub: u.limit
-          ? Math.round(u.pct) + '% of the ' + u.limit.toLocaleString() + ' allowance'
-          : 'no allowance set — configure one in settings',
-        tone: u.over ? 'bad' : null }; } },
+    transform: rows => { const w = typeof window !== 'undefined' ? window : {};
+      const u = msgSegmentUsage(rows, w._smsThresholds, w._smsAllTime);
+      let sub;
+      if (!u.limit) sub = 'no allowance set — configure one in settings';
+      // The all-time feed has not answered yet. Saying so beats printing a
+      // percentage of a number we do not have.
+      else if (u.used == null) sub = u.limit.toLocaleString() + ' included — checking all-time use…';
+      else sub = u.used.toLocaleString() + ' of ' + u.limit.toLocaleString() + ' used all time ('
+               + Math.round(u.pct) + '%)' + (u.over ? ' — billed from here' : '');
+      return { value: u.windowSegments, format: 'number', sub, tone: u.over ? 'bad' : null }; } },
   'msg-avg-segments': { label: 'Avg Segments per SMS', description: 'How many billed segments one text costs', note: 'Segments divided by SMS recipients. Platform-wide this averages 1.99, so a 10,000-segment allowance is about 5,000 real messages — the conversion nobody expects', section: 'messaging',
     reportType: 'messaging', size: 'sm', icon: '📐', component: 'metric',
     transform: rows => { const a = msgAvgSegments(rows); const t = msgTotals(rows);
@@ -6467,22 +6491,25 @@ function SettingsPopover({ cacheTTL, onCacheTTLChange, onClearCache, onReset, th
             {'\uD83D\uDCF1'} SMS Allowance Alerts
           </div>
           <div style={{fontSize:10,color:'var(--text-secondary)',marginBottom:8,lineHeight:1.45}}>
-            Texts are billed in 160-character <strong>segments</strong>, and one message averages
-            about two of them {'\u2014'} so a 10,000 segment allowance is roughly 5,000 messages.
-            Leave a box blank to switch that alert off.
+            The segments included at signup are a <strong>one-time bucket</strong> {'\u2014'} once
+            they are gone, sending is billed per segment. Texts are billed in 160-character
+            <strong>segments</strong> and one message averages about two of them, so a
+            10,000 bucket is roughly 5,000 messages. Alerts are measured across
+            the whole account, not the date range above. Leave a box blank to
+            switch that alert off.
           </div>
 
-          <label style={{fontSize:10,color:'var(--text-secondary)',display:'block',marginBottom:3}}>Segment allowance (contract)</label>
+          <label style={{fontSize:10,color:'var(--text-secondary)',display:'block',marginBottom:3}}>Segments included at signup (one-time)</label>
           <input type="number" min="1" value={smsLimit} data-sms-limit
             onChange={function(e){setSmsLimit(e.target.value);}}
             placeholder="10000" style={{width:'100%',padding:'6px 8px',borderRadius:6,border:'1px solid var(--border)',background:'var(--bg-surface)',color:'var(--text-primary)',fontSize:12,marginBottom:6,fontFamily:'var(--font-body)',outline:'none',boxSizing:'border-box'}} />
 
-          <label style={{fontSize:10,color:'var(--text-secondary)',display:'block',marginBottom:3}}>Alert me at (segments) {'\u2014'} defaults to the allowance</label>
+          <label style={{fontSize:10,color:'var(--text-secondary)',display:'block',marginBottom:3}}>Alert me at (segments, all time) {'\u2014'} defaults to the bucket</label>
           <input type="number" min="1" value={smsNotifyAt} data-sms-notify-at
             onChange={function(e){setSmsNotifyAt(e.target.value);}}
             placeholder={smsLimit || '10000'} style={{width:'100%',padding:'6px 8px',borderRadius:6,border:'1px solid var(--border)',background:'var(--bg-surface)',color:'var(--text-primary)',fontSize:12,marginBottom:6,fontFamily:'var(--font-body)',outline:'none',boxSizing:'border-box'}} />
 
-          <label style={{fontSize:10,color:'var(--text-secondary)',display:'block',marginBottom:3}}>Alert me at (spend, $)</label>
+          <label style={{fontSize:10,color:'var(--text-secondary)',display:'block',marginBottom:3}}>Alert me at (spend, $, all time)</label>
           <input type="number" min="0" step="0.01" value={smsSpend} data-sms-spend
             onChange={function(e){setSmsSpend(e.target.value);}}
             placeholder="300.00" style={{width:'100%',padding:'6px 8px',borderRadius:6,border:'1px solid var(--border)',background:'var(--bg-surface)',color:'var(--text-primary)',fontSize:12,marginBottom:6,fontFamily:'var(--font-body)',outline:'none',boxSizing:'border-box'}} />
@@ -6806,6 +6833,8 @@ function DashboardApp() {
     setEditOpen(true);
     track('edit_opened', { from: 'section', section: sectionId });
   }
+  // Bumped when the all-time SMS figure lands, so the segment tile repaints.
+  const [allTimeTick, setAllTimeTick] = useState(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [lastRefresh, setLastRefresh] = useState(null);
   const [fetchErrors, setFetchErrors] = useState({});
@@ -6859,6 +6888,54 @@ function DashboardApp() {
       } catch (e) { setConfig('new'); }
     })();
   }, []);
+
+  /* THE ALL-TIME SEGMENT POSITION, fetched once and only when it is needed.
+     The bucket does not refill, so "how much is gone" is an all-time question
+     the windowed feed structurally cannot answer.
+
+     GATED ON A CONFIGURED BUCKET. This is a second messaging fetch, unwindowed
+     — West Haven's whole history measured 4.8s — and spending that on the
+     orgs that have no allowance to compare against would be paying for a line
+     nothing renders. Same gate as the server's alert job, for the same reason.
+
+     No dates in the query at all: the card's bounds are optional and omitting
+     them is how it reports every send. A wide literal start would silently
+     truncate the bucket for an org that predates it. */
+  useEffect(() => {
+    const t = window._smsThresholds;
+    if (!t || t.smsSegmentLimit == null) return;
+    /* AND THE FEED HAS TO BE SERVABLE. Gating only on the bucket fires this
+       at an org whose messaging card has no public link — the request 404s
+       and raises the dashboard's own failure banner naming a report the org
+       never asked for, which is the whole reason the section gate exists.
+       Found by `messaging · absent until the card has a public link`, which
+       counts the fetches: the section was correctly hidden and this effect
+       went and asked for the feed anyway. ONE gate, read the same way. */
+    if (sectionFeedMissing('messaging', availableReports)) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const url = IS_SHARE
+          ? `/share/${SHARE_TOKEN}/data/messaging`
+          : `/${ORG_SLUG}/api/data/messaging?token=${TOKEN}`;
+        const resp = await fetch(url);
+        if (!resp.ok) return;              // leave _smsAllTime unset; the tile says "checking…"
+        const json = await resp.json();
+        if (cancelled) return;
+        const rows = json.rows || [];
+        let segments = 0, messages = 0;
+        rows.forEach(r => {
+          if (String(r['Channel'] || '').toUpperCase() !== 'SMS') return;
+          segments += Number(r['SMS Segments']) || 0;
+          messages += Number(r['Recipients']) || 0;
+        });
+        window._smsAllTime = { segments, messages };
+        // The tile reads a global, so nothing would repaint on its own.
+        setAllTimeTick(n => n + 1);
+      } catch (e) { /* the tile degrades to "checking…" rather than a wrong percentage */ }
+    })();
+    return () => { cancelled = true; };
+  }, [config, availableReports]);
 
   // Only refetch when sections/widgets change or date range changes, NOT theme/cacheTTL
   // Sections this org can actually be served. Folded into dataKey on purpose:

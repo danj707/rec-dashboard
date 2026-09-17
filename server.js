@@ -2205,10 +2205,16 @@ async function runMetabaseCanary() {
    Irvine, via Hannah: "notification before exceeding the 10,000-message
    monthly allowance." Fires at most ONCE PER ORG PER THRESHOLD PER MONTH.
 
-   THE WINDOW IS THE CALENDAR MONTH, NOT THE DASHBOARD'S DATE PICKER. The
-   allowance is monthly, and an alert whose trigger depends on what somebody
-   last clicked is not an alert. The card's tiles follow the picker; this does
-   not, and the email says which month it is about.
+   THE BUCKET IS ALL-TIME AND DOES NOT REFILL. An org is given 10,000 or
+   15,000 segments at signup; once that is gone they are billed. So the alert
+   evaluates EVERY segment the org has ever sent, not a window — and it fires
+   ONCE, because a bucket is crossed once. An alert that re-armed each month
+   would announce the same exhausted bucket in October, November and December.
+
+   The card's tiles follow the date picker. This does not, and cannot: a
+   trigger that depended on what somebody last clicked is not a trigger, and
+   Watertown's own numbers show why — 6,863 segments all time against a 15,000
+   bucket is 46%, while the same tile on a This-Month view reads 1.9%.
 
    ONLY ORGS WITH A THRESHOLD ARE PROBED. That is the cost gate, not a nicety:
    this reads the messaging card per org, and fanning ~29 of those at the
@@ -2216,10 +2222,11 @@ async function runMetabaseCanary() {
    paid for once. Today that set is empty, so this job costs nothing until
    somebody is given an allowance.
 
-   THE FIRED MARKER IS ON DISK, keyed by org + threshold + month. In memory it
-   would reset on every deploy, and this service deploys several times a day —
-   an org over its allowance would get the same email every deploy for the
-   rest of the month, which is how an alert gets filtered to trash. */
+   THE FIRED MARKER IS ON DISK, keyed by org + threshold. In memory it would
+   reset on every deploy, and this service deploys several times a day — an
+   org past its bucket would get the same email every deploy, forever, which
+   is how an alert gets filtered to trash. It is deliberately NOT keyed by
+   month: the bucket is crossed once and stays crossed. */
 const SMS_ALERT_FILE = path.join(DATA_DIR, 'sms-alerts.json');
 function loadSmsAlerts() { try { if (fs.existsSync(SMS_ALERT_FILE)) return JSON.parse(fs.readFileSync(SMS_ALERT_FILE, 'utf8')); } catch(e){} return {}; }
 function saveSmsAlerts(a) { ensureDataDir(); fs.writeFileSync(SMS_ALERT_FILE, JSON.stringify(a, null, 2)); }
@@ -2228,14 +2235,10 @@ let smsAlerts = loadSmsAlerts();
 const SMS_ALERT_INTERVAL_MS = 60 * 60 * 1000;   // hourly
 const SMS_ALERT_ORG_PACE_MS = 4000;             // between orgs, same pacing as the reporting project's daily job
 
-function smsMonthKey(d) { return (d || new Date()).toISOString().slice(0, 7); }
-function smsMonthRange(d) {
-  const now = d || new Date();
-  const y = now.getUTCFullYear(), m = now.getUTCMonth();
-  const start = new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 10);
-  const end   = new Date(Date.UTC(y, m + 1, 0)).toISOString().slice(0, 10);
-  return { start, end };
-}
+// All-time is what the bucket is measured in, and the card's date bounds are
+// optional — omitting them is how it reports every send the org has made.
+// Deliberately NOT a wide literal range: a hardcoded start silently truncates
+// the bucket the day an org predates it.
 
 // Orgs worth probing at all. Presence of ANY threshold, never a value test:
 // an org whose allowance is set and whose spend alert is blank still wants the
@@ -2287,16 +2290,16 @@ function sumSmsUsage(rows) {
 async function runSmsAlertCheck() {
   const slugs = smsAlertOrgs();
   if (!slugs.length) return;
-  const month = smsMonthKey();
-  const { start, end } = smsMonthRange();
-
   for (const slug of slugs) {
     const org = ORGS[slug];
     try {
-      const rows = await fetchMetabaseData(slug, 'messaging', { start, end });
+      // No date bounds — the card's [[ ]] blocks drop out and it reports the
+      // org's whole history, which is the only thing a one-time bucket can be
+      // measured against.
+      const rows = await fetchMetabaseData(slug, 'messaging', {});
       const usage = sumSmsUsage(rows);
       const t = orgSmsThresholds(org);
-      const fired = (smsAlerts[slug] && smsAlerts[slug][month]) || {};
+      const fired = smsAlerts[slug] || {};
       const due = smsAlertsDue(usage, t, fired);
       if (!due.length) { await new Promise(r => setTimeout(r, SMS_ALERT_ORG_PACE_MS)); continue; }
 
@@ -2305,31 +2308,38 @@ async function runSmsAlertCheck() {
         // MARK BEFORE SENDING. A send that throws halfway is one missed email;
         // a mark that never lands is the same email every hour for a month.
         if (!smsAlerts[slug]) smsAlerts[slug] = {};
-        if (!smsAlerts[slug][month]) smsAlerts[slug][month] = {};
-        smsAlerts[slug][month][d.kind] = new Date().toISOString();
+        smsAlerts[slug][d.kind] = new Date().toISOString();
         saveSmsAlerts(smsAlerts);
 
         const isSeg = d.kind === 'segments';
+        const left = t.smsSegmentLimit != null ? t.smsSegmentLimit - usage.segments : null;
         const subject = isSeg
-          ? `${org.name}: ${usage.segments.toLocaleString()} SMS segments used in ${month}`
-          : `${org.name}: $${(usage.costCents / 100).toFixed(2)} of SMS spend in ${month}`;
+          ? `${org.name}: ${usage.segments.toLocaleString()} of ${(t.smsSegmentLimit || d.at).toLocaleString()} SMS segments used`
+          : `${org.name}: $${(usage.costCents / 100).toFixed(2)} of SMS spend to date`;
         const body = [
-          isSeg ? `The ${month} SMS allowance alert has been reached.`
-                : `The ${month} SMS spend alert has been reached.`,
+          isSeg ? 'The SMS segment alert has been reached.'
+                : 'The SMS spend alert has been reached.',
           '',
           `Segments used     ${usage.segments.toLocaleString()}` +
-            (t.smsSegmentLimit != null ? ` of ${t.smsSegmentLimit.toLocaleString()} allowed` : ''),
+            (t.smsSegmentLimit != null ? ` of the ${t.smsSegmentLimit.toLocaleString()} included` : ''),
           `Messages sent     ${usage.messages.toLocaleString()}`,
           `Carrier cost      $${(usage.costCents / 100).toFixed(2)}`,
           `Alert set at      ${isSeg ? d.at.toLocaleString() + ' segments' : '$' + (d.at / 100).toFixed(2)}`,
           '',
+          // The included segments are a ONE-TIME bucket given at signup. Saying
+          // what happens next is the whole point of warning early.
+          left != null && left > 0
+            ? `${left.toLocaleString()} segments remain of the one-time allowance included at signup. `
+              + 'Sending past it is billed per segment.'
+            : 'The one-time allowance included at signup is used up. Further sending is billed per segment.',
+          '',
           // Said on every one of these, because it is the thing nobody expects:
-          // the allowance is counted in SEGMENTS and a text is usually two.
+          // the bucket is counted in SEGMENTS and a text is usually two.
           `A text message is billed in 160-character segments, and across the platform ` +
           `a message averages about two of them — so ${usage.segments.toLocaleString()} segments ` +
           `is roughly ${usage.messages.toLocaleString()} messages, not ${usage.segments.toLocaleString()}.`,
           '',
-          `Window: ${start} to ${end}`,
+          'Counted across the whole account, not a date range.',
         ].join('\n');
 
         if (to) {
