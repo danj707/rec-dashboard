@@ -542,6 +542,57 @@ is(sbD.due({ segments: 10000, costCents: 30000 }, THR, { segments: '2026-09' }).
 is(sbD.due({ segments: 99999, costCents: 0 }, { smsSegmentLimit: null, smsSegmentNotifyAt: null, smsSpendNotifyCents: null }, {}).length, 0,
   'an org with no thresholds is never alerted, however much it sends');
 
+/* ONE EMAIL PER PASS, LIFTED AND RUN over every combination. Crossing both
+   thresholds in the same pass sent two messages carrying the identical figures
+   block and the identical two paragraphs — Dan, on receiving them: "maybe a bit
+   verbose but all good", then "yes, fold them into one email when both fire".
+
+   RUN rather than regexed, because the defect worth catching is a subject or a
+   line naming the WRONG threshold, and a regex over a template literal passes
+   on all of them. */
+const mailSrc = liftFrom(server, 'function smsAlertEmail(', 'async function runSmsAlertCheck(');
+const sbM = {};
+// eslint-disable-next-line no-new-func
+new Function('exports', mailSrc + '\nexports.mail=smsAlertEmail;')(sbM);
+
+const MU = { segments: 6863, messages: 3400, costCents: 20589 };
+const MT = { smsSegmentLimit: 15000, smsSegmentNotifyAt: 6000, smsSpendNotifyCents: 20000 };
+const SEG = { kind: 'segments', at: 6000 };
+const SPD = { kind: 'spend', at: 20000 };
+
+const both = sbM.mail([SEG, SPD], MU, MT, 'Watertown Recreation');
+ok(/6,863 of 15,000 SMS segments used/.test(both.subject) && /\$205\.89 spent/.test(both.subject),
+  'both fired: ONE subject carrying both numbers — the number leads, because that is what is readable in an inbox list');
+ok(/both been reached/.test(both.body), '...and the opener says both');
+ok(/Segment alert at  6,000 segments/.test(both.body) && /Spend alert at    \$200\.00/.test(both.body),
+  '...with one line per threshold actually crossed, which is the only part that differs');
+is((both.body.match(/Carrier cost/g) || []).length, 1,
+  'the shared figures block appears ONCE — the duplication was the verbosity, not the wording');
+is((both.body.match(/billed in 160-character segments/g) || []).length, 1,
+  '...and so does the explanation nobody expects');
+
+const segOnly = sbM.mail([SEG], MU, MT, 'Watertown Recreation');
+ok(/segments used$/.test(segOnly.subject), 'segments alone keeps its own subject');
+ok(/The SMS segment alert has been reached/.test(segOnly.body), '...and its own opener');
+ok(!/Spend alert at/.test(segOnly.body),
+  '...and does NOT name a spend threshold that has not been crossed');
+
+const spendOnly = sbM.mail([SPD], MU, MT, 'Watertown Recreation');
+ok(/\$205\.89 of SMS spend to date/.test(spendOnly.subject), 'spend alone keeps its own subject');
+ok(!/Segment alert at/.test(spendOnly.body),
+  '...and does NOT name a segment threshold that has not been crossed');
+ok(/8,137 segments remain/.test(spendOnly.body),
+  '...while still stating the bucket position, which is what the reader acts on either way');
+
+is((server.match(/function smsAlertEmail\(/g) || []).length, 1,
+  'ONE composer — a second copy is how the folded email and a single one start disagreeing about the same figures');
+ok(/for \(const d of due\) smsAlerts\[slug\]\[d\.kind\] = new Date\(\)\.toISOString\(\);\s*\n\s*saveSmsAlerts\(smsAlerts\);/.test(server),
+  'EVERY due threshold is marked before the send — otherwise the next pass re-announces the half of a folded email that already landed');
+is((server.match(/await sendOrgEmail\(to, subject, body\)/g) || []).length, 1,
+  '...and the send is ONE call, not one per threshold');
+ok(!/for \(const d of due\) \{[\s\S]{0,400}sendOrgEmail/.test(server),
+  '...outside the per-threshold loop entirely, which is the fold');
+
 // Only configured orgs are probed — the cost gate, and the reason this job is
 // free until somebody is given an allowance.
 ok(/function smsAlertOrgs\(\)[\s\S]{0,320}smsSegmentAlertPoint\(t\) != null \|\| t\.smsSpendNotifyCents != null/.test(server),
@@ -554,7 +605,10 @@ ok(!/smsMonthRange|smsMonthKey/.test(server),
   'and the calendar-month window is gone entirely — a bucket crossed in September is still crossed in October');
 ok(/smsAlerts\[slug\]\[d\.kind\] = new Date\(\)\.toISOString\(\)/.test(server),
   'the fired marker is keyed by org + threshold, NOT by month — re-arming monthly would announce the same exhausted bucket every month');
-ok(/smsAlerts\[slug\]\[d\.kind\] = new Date\(\)\.toISOString\(\);\s*\n\s*saveSmsAlerts\(smsAlerts\);\s*\n\s*\n?\s*const isSeg/.test(server),
+/* Was pinned to `const isSeg`, the line that used to follow it — the fold
+   removed that line, so it now tests the ORDERING it was always about. */
+ok(server.indexOf('saveSmsAlerts(smsAlerts);', server.indexOf('for (const d of due) smsAlerts[slug]'))
+     < server.indexOf('await sendOrgEmail(to, subject, body)'),
   'the fired marker is written BEFORE the send — a send that throws is one missed email, a mark that never lands is the same email every hour forever');
 ok(/const SMS_ALERT_FILE = path\.join\(DATA_DIR, 'sms-alerts\.json'\)/.test(server),
   '...and it is on disk, or every deploy re-alerts');
