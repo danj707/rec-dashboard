@@ -61,6 +61,15 @@ const near = (a, b, what) => { n++; assert.ok(Math.abs(a - b) < 0.05, what + ' (
 //  LIFT AND RUN the helpers. A regex over a rate passes on an inverted
 //  comparison, and every defect this section can have is arithmetic.
 // ═══════════════════════════════════════════════════════════════════════════
+// Same marker slice, against a named source — the server half needs it, and a
+// slice that silently read the wrong file would assert nothing about either.
+function liftFrom(text, startMarker, endMarker) {
+  const a = text.indexOf(startMarker);
+  assert.ok(a > 0, 'could not find ' + startMarker);
+  const b = text.indexOf(endMarker, a);
+  assert.ok(b > a, 'could not find ' + endMarker + ' after ' + startMarker);
+  return text.slice(a, b);
+}
 function lift(startMarker, endMarker) {
   const a = src.indexOf(startMarker);
   assert.ok(a > 0, 'could not find ' + startMarker);
@@ -363,8 +372,13 @@ is(sandbox6.n(undefined).ok, true, 'an absent field is empty, not invalid');
 is(sandbox6.n('nope').ok, false, 'a malformed address is refused — a bad prefill fails silently every time somebody presses Send');
 is(sandbox6.n('a@b').ok, false, 'a domain with no dot is refused');
 is(sandbox6.n('a b@c.com').ok, false, 'whitespace is refused');
-is((server.match(/normalizeOrgEmail\(/g) || []).length, 3,
-  'ONE validator, read by the add route and the edit route — two copies is how a value is accepted by one and refused by the other');
+// The claim is ONE DEFINITION and several readers, not a head count. Pinning
+// the literal 3 broke the day a fourth caller (the SMS alert address) reused
+// it correctly — the same brittleness as pinning the end of an array.
+is((server.match(/function normalizeOrgEmail\(/g) || []).length, 1,
+  'ONE validator — two copies is how a value is accepted by one route and refused by the other');
+ok((server.match(/normalizeOrgEmail\(/g) || []).length >= 4,
+  '...read by the add route, the edit route and the SMS alert address');
 ok(/app\.post\('\/admin\/api\/orgs\/:slug\/default-email'/.test(server),
   'the address is editable after creation, or the field does nothing for the twenty-nine orgs already onboarded');
 ok(/defaultEmail: org\.defaultEmail \|\| ''/.test(server), 'and it reaches the dashboard');
@@ -374,5 +388,130 @@ ok(/defaultEmail \}\)/.test(admin) || /defaultEmail\s*\}/.test(admin), '...and s
 ok(/const \[sendEmail, setSendEmail\] = useState\(defaultEmail \|\| ''\)/.test(src),
   'the digest box is SEEDED from the default, never driven by it — an effect writing it back would take a typed address away mid-sentence');
 ok(/const \[subEmail, setSubEmail\] = useState\(defaultEmail \|\| ''\)/.test(src), 'and so is the summary box');
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  SMS ALLOWANCE — segments, the conversion, and the two alerts
+// ═══════════════════════════════════════════════════════════════════════════
+// THE WHITELIST BUG, pinned so it cannot come back. The server has sent
+// defaultEmail since the field shipped; the page's orgMeta map is a WHITELIST
+// and did not copy it, so `orgMeta.defaultEmail` was undefined and every box
+// it seeds fell back to '' — indistinguishable from an org with no default.
+// A source assertion is the only thing that can see this: the popover, the
+// prop and the server were all correct on their own.
+ok(/defaultEmail: json\.defaultEmail \|\| ''/.test(src),
+  "orgMeta copies defaultEmail — it is a whitelist, so a key the server sends and this map forgets is absent SILENTLY and the prefill quietly never happens");
+ok(/<SettingsPopover[^>]*defaultEmail=\{orgMeta\.defaultEmail/.test(src),
+  '...and the popover is handed it');
+ok(/<SettingsPopover[^>]*smsThresholds=\{window\._smsThresholds/.test(src),
+  '...and the SMS thresholds too, or the boxes cannot seed from what is stored');
+ok(/window\._smsThresholds = json\.smsThresholds \|\| null/.test(src),
+  'the thresholds are published as null when unset, never {} — an empty object makes the tile claim an allowance of zero');
+
+// The conversion helper, LIFTED AND RUN. Every defect here is arithmetic, and
+// a regex passes on a ratio computed per SEND instead of per recipient.
+const segSrc = lift('/* AVERAGE SEGMENTS PER SMS', '// SENDS per segment, not recipients');
+const sb = {};
+// eslint-disable-next-line no-new-func
+new Function('exports', 'msgTotals', segSrc + '\nexports.avg=msgAvgSegments;exports.usage=msgSegmentUsage;')(sb, sandbox.msgTotals);
+
+// A campaign to 1,600 people at 2 segments each. Per RECIPIENT this is 2.0;
+// per SEND it would read 3200, which is the mistake the fixture exists to catch.
+const bulk = [{ Channel: 'SMS', Recipients: 1600, 'SMS Segments': 3200, 'Cost Cents': 9600 }];
+is(sb.avg(bulk), 2, 'segments per RECIPIENT, not per send — a send to 1,600 people is 1,600 texts');
+is(sb.avg([]), null, 'no SMS in the window is NULL, never 1 — "no texts" and "one segment each" are different facts, and the second makes an allowance look twice as roomy');
+is(sb.avg([{ Channel: 'EMAIL', Recipients: 500 }]), null, 'email does not count toward an SMS ratio');
+
+// The measured platform shape: 17,850 messages, 35,604 segments.
+const plat = [{ Channel: 'SMS', Recipients: 17850, 'SMS Segments': 35604, 'Cost Cents': 106812 }];
+ok(Math.abs(sb.avg(plat) - 1.9946) < 0.0001, 'reproduces the measured platform mean of 1.99 segments per SMS');
+ok(Math.round(10000 / sb.avg(plat)) === 5013,
+  '...so a 10,000 SEGMENT allowance is about 5,013 real messages — the conversion the contract term hides');
+
+const u = sb.usage(bulk, { smsSegmentLimit: 10000 });
+is(u.segments, 3200, 'usage reports segments');
+is(Math.round(u.pct), 32, '...as a share of the allowance');
+is(u.over, false, 'under the allowance');
+is(sb.usage(bulk, { smsSegmentLimit: 3200 }).over, true,
+  'AT the allowance counts as reached — "once they reach that limit", and the next text is billed');
+is(sb.usage(bulk, null).limit, null, 'no allowance configured is null, not zero');
+is(sb.usage(bulk, null).pct, null, '...and no percentage is invented against it');
+is(sb.usage(bulk, {}).over, false, 'an org with no allowance is never "over" it');
+
+// The two tiles must not both be called Segments. "Segments" already meant
+// saved AUDIENCES on this card; the allowance is counted in CARRIER segments.
+ok(/'msg-segments-used': \{ label: 'Audience Segments'/.test(src),
+  'the audience tile says AUDIENCE — two tiles reading "Segments" on one card is a number nobody can act on');
+ok(/'msg-sms-segments': \{ label: 'SMS Segments'/.test(src), 'and the billing tile says SMS');
+ok(/'msg-avg-segments'/.test(src) && /msg-sms-segments/.test(src),
+  'both new tiles exist');
+ok(/'msg-no-outcome','msg-sms-cost','msg-sms-segments','msg-avg-segments'/.test(src),
+  'and both are ON by default — the allowance is the reason this section exists for Irvine');
+
+// ── the server half ────────────────────────────────────────────────────────
+const thrSrc = liftFrom(server, 'const SMS_THRESHOLD_MAX_SEGMENTS', 'function normalizeOrgEmail(v)');
+const sbT = {};
+// eslint-disable-next-line no-new-func
+new Function('exports', 'normalizeOrgEmail', thrSrc +
+  '\nexports.norm=normalizeSmsThresholds;exports.point=smsSegmentAlertPoint;')(sbT, sandbox6.n);
+
+is(sbT.norm({ smsSegmentLimit: 10000 }).thresholds.smsSegmentLimit, 10000, 'an allowance is stored');
+is(sbT.norm({ smsSegmentLimit: '' }).thresholds.smsSegmentLimit, null,
+  'blank switches the alert OFF as null — never 0, which would put every org permanently over its allowance');
+is(sbT.norm({ smsSegmentLimit: 0 }).ok, false, 'zero is refused outright');
+is(sbT.norm({ smsSegmentLimit: -5 }).ok, false, 'and so is a negative');
+is(sbT.norm({ smsSegmentLimit: 1.5 }).ok, false, 'and a fraction of a segment');
+is(sbT.norm({ smsSegmentLimit: 99999999999 }).ok, false, 'an implausible number is a typo, not a policy');
+is(sbT.norm({ smsSpendNotifyCents: 30000 }).thresholds.smsSpendNotifyCents, 30000, 'spend is stored in CENTS');
+is(sbT.norm({}, { smsSegmentLimit: 10000 }).thresholds.smsSegmentLimit, 10000,
+  'an ABSENT key leaves the stored value alone — saving the spend alert must not clear the allowance');
+is(sbT.norm({ smsNotifyEmail: 'nope' }).ok, false, 'the alert address goes through the same email validator');
+is(sbT.norm({ smsNotifyEmail: '' }).thresholds.smsNotifyEmail, '', 'and blank is allowed — it falls back to the org default');
+
+is(sbT.point({ smsSegmentLimit: 10000, smsSegmentNotifyAt: null }), 10000,
+  'the alert DEFAULTS to the allowance — 10,000 set and nothing else means "tell me at 10,000", not "never tell me"');
+is(sbT.point({ smsSegmentLimit: 10000, smsSegmentNotifyAt: 8000 }), 8000,
+  '...and a lower alert is honoured, which is what "notify BEFORE exceeding" needs');
+is(sbT.point({ smsSegmentLimit: null, smsSegmentNotifyAt: null }), null, 'nothing configured is no alert');
+
+// The due-check, lifted and RUN — a regex passes on an inverted comparison.
+const dueSrc = liftFrom(server, 'function smsAlertsDue(', 'function smsAlertRecipient(');
+const sbD = {};
+// eslint-disable-next-line no-new-func
+new Function('exports', 'smsSegmentAlertPoint', dueSrc + '\nexports.due=smsAlertsDue;')(sbD, sbT.point);
+
+const THR = { smsSegmentLimit: 10000, smsSegmentNotifyAt: null, smsSpendNotifyCents: 30000 };
+is(sbD.due({ segments: 9999, costCents: 100 }, THR, {}).length, 0, 'under both thresholds, nothing fires');
+is(sbD.due({ segments: 10000, costCents: 100 }, THR, {}).length, 1, 'AT the segment threshold it fires');
+is(sbD.due({ segments: 10000, costCents: 100 }, THR, {})[0].kind, 'segments', '...naming which one');
+is(sbD.due({ segments: 10, costCents: 30000 }, THR, {})[0].kind, 'spend', 'and spend fires on its own');
+is(sbD.due({ segments: 10000, costCents: 30000 }, THR, {}).length, 2,
+  'both can be due at once — Irvine wants both, and one must not mask the other');
+is(sbD.due({ segments: 10000, costCents: 30000 }, THR, { segments: '2026-09' }).length, 1,
+  'an alert already sent this month does not fire again — this service deploys several times a day');
+is(sbD.due({ segments: 99999, costCents: 0 }, { smsSegmentLimit: null, smsSegmentNotifyAt: null, smsSpendNotifyCents: null }, {}).length, 0,
+  'an org with no thresholds is never alerted, however much it sends');
+
+// Only configured orgs are probed — the cost gate, and the reason this job is
+// free until somebody is given an allowance.
+ok(/function smsAlertOrgs\(\)[\s\S]{0,320}smsSegmentAlertPoint\(t\) != null \|\| t\.smsSpendNotifyCents != null/.test(server),
+  'only orgs with a threshold are probed — fanning the messaging card at ~29 orgs hourly is the prewarm storm the reporting project already paid for');
+ok(/smsMonthRange/.test(server) && /THE WINDOW IS THE CALENDAR MONTH/.test(server),
+  'the alert window is the calendar month, not the dashboard date picker — an allowance is monthly and a trigger must not depend on what somebody last clicked');
+ok(/smsAlerts\[slug\]\[month\]\[d\.kind\] = new Date\(\)\.toISOString\(\);\s*\n\s*saveSmsAlerts\(smsAlerts\);\s*\n\s*\n?\s*const isSeg/.test(server),
+  'the fired marker is written BEFORE the send — a send that throws is one missed email, a mark that never lands is the same email every hour for a month');
+ok(/const SMS_ALERT_FILE = path\.join\(DATA_DIR, 'sms-alerts\.json'\)/.test(server),
+  '...and it is on disk, or every deploy re-alerts');
+ok(/function smsAlertRecipient\([\s\S]{0,200}org\.smsNotifyEmail\) \|\| \(org && org\.defaultEmail\)/.test(server),
+  "the org's own alert address wins, with the platform default as the fallback — which is what that field was added for");
+ok(/sendOpsAlert\(`⚠️ \$\{subject\} \(no alert email set/.test(server),
+  'an org with no address still raises the crossing to ops — silence about a contractual allowance is the one outcome nobody wants');
+is((server.match(/function applySmsThresholds\(/g) || []).length, 1,
+  'ONE handler behind both the admin route and the org gear — two would accept different numbers on each side');
+ok(/app\.post\('\/admin\/api\/orgs\/:slug\/sms-thresholds', adminAuth/.test(server), 'the admin route is behind adminAuth');
+ok(/app\.post\('\/:org\/api\/sms-thresholds', authMiddleware/.test(server), 'and the org route behind the org token');
+ok(/smsThresholds: orgSmsThresholds\(org\)/.test(server), 'and the values reach the dashboard');
+ok(!/dashboardConfigs\[[^\]]*\]\.smsSegmentLimit/.test(server),
+  'stored on the ORG, never in dashboardConfigs — Reset Dashboard must not be able to wipe a contractual allowance');
 
 console.log('✓ messaging-widgets.spec.js — ' + n + ' assertions passed.');

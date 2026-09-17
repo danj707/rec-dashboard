@@ -926,6 +926,7 @@ app.get('/admin/api/orgs', adminAuth, (req, res) => {
       token: org.token,
       reportCount: Object.keys(availableReports).length,
       defaultEmail: org.defaultEmail || '',
+      smsThresholds: orgSmsThresholds(org),
       perOrgReports: Object.keys(org.reports || {}),
       configured: !!config,
       template: config?.template || null,
@@ -1217,6 +1218,31 @@ app.post('/admin/api/orgs/:slug/default-email', adminAuth, (req, res) => {
   res.json({ ok: true, defaultEmail: check.email, persisted: !!org._dynamic });
 });
 
+/* SMS allowance + alert thresholds. Settable from BOTH sides on purpose: the
+   admin grid (adminAuth) because we set the allowance when a contract is
+   signed, and the org's own settings gear (org token) because the number is
+   theirs and Dan asked for it there. One validator either way.
+
+   Stored on the ORG, never in dashboardConfigs — Reset Dashboard must not be
+   able to wipe a contractual allowance, which is the same argument that put
+   defaultEmail here. */
+function applySmsThresholds(req, res, org, slug) {
+  const check = normalizeSmsThresholds(req.body, orgSmsThresholds(org));
+  if (!check.ok) return res.status(400).json({ error: check.error });
+  Object.assign(org, check.thresholds);
+  if (org._dynamic) saveDynamicOrgs();
+  console.log(`[orgs] sms thresholds for ${slug}: limit=${check.thresholds.smsSegmentLimit} ` +
+              `notifyAt=${check.thresholds.smsSegmentNotifyAt} spend=${check.thresholds.smsSpendNotifyCents}` +
+              `${org._dynamic ? '' : ' (static org — not persisted)'}`);
+  res.json({ ok: true, thresholds: check.thresholds, persisted: !!org._dynamic });
+}
+
+app.post('/admin/api/orgs/:slug/sms-thresholds', adminAuth, (req, res) => {
+  const org = ORGS[req.params.slug];
+  if (!org) return res.status(404).json({ error: 'Not found' });
+  applySmsThresholds(req, res, org, req.params.slug);
+});
+
 // ── Escalation recipients — one stored list, editable from both sides ──
 function parseNotifyEmails(body) {
   const raw = Array.isArray(body?.emails) ? body.emails : String(body?.emails || '').split(',');
@@ -1258,6 +1284,88 @@ app.get('/admin/api/reporting-identity', adminAuth, async (req, res) => {
    empty has to look like an address — a malformed one stored here is a prefill
    that silently fails every time somebody presses Send, on a control whose
    whole job is to already be right. */
+/* ── SMS THRESHOLDS ────────────────────────────────────────────────────────
+   Irvine, via Hannah: "notification before exceeding the 10,000-message
+   monthly allowance." Watertown's allowance is 15,000. Dan: notify on BOTH
+   total segments and total spend.
+
+   THE ALLOWANCE IS COUNTED IN SEGMENTS, AND THAT IS THE WHOLE REASON THESE
+   ARE TWO FIELDS RATHER THAN ONE. Carriers bill per 160-character SEGMENT,
+   and `organization_sms_config.rate_cents` (3 on all 175 orgs) is charged per
+   segment despite the admin UI calling it "Rate per Message". Measured over
+   every SMS on the platform — 17,850 messages, 35,604 segments — the mean is
+   1.99 segments per message, and nothing exceeds 3. So a 10,000 allowance
+   read as messages is ~5,000 real messages, and an org told "10,000" runs out
+   at half of what they budgeted. The limit stored here is SEGMENTS; the card
+   shows the conversion beside it so nobody has to hold that in their head.
+
+   NULL IS UNSET AND MEANS NO ALERT — never 0. A 0 limit would put every org
+   permanently over its allowance the moment this shipped, which is the
+   confident-zero failure this repo keeps writing down. Only orgs that have
+   been given a number are ever checked, which is also what keeps the periodic
+   check off the other twenty-seven orgs' Metabase budget.
+
+   `notifyAt` DEFAULTS TO THE LIMIT and may be set HIGHER — Dan: "once they
+   reach that limit or a higher, configurable limit". It may not be set LOWER
+   than nothing: an alert at 0 fires on the first text of the month. */
+const SMS_THRESHOLD_MAX_SEGMENTS = 10000000;   // 10M segments = $300k at 3c; a typo guard, not a policy
+const SMS_THRESHOLD_MAX_CENTS    = 100000000;  // $1M, same reasoning
+
+function normalizeSmsThresholds(body, prev) {
+  const out = Object.assign({
+    smsSegmentLimit: null, smsSegmentNotifyAt: null,
+    smsSpendNotifyCents: null, smsNotifyEmail: '',
+  }, prev || {});
+
+  function num(key, max, label) {
+    if (!body || !(key in body)) return null;          // absent = leave as-is
+    const raw = body[key];
+    if (raw === null || raw === '' || raw === undefined) { out[key] = null; return null; }
+    const n = Number(raw);
+    if (!Number.isFinite(n) || !Number.isInteger(n) || n <= 0) {
+      return `${label} must be a whole number above zero, or blank to switch the alert off`;
+    }
+    if (n > max) return `${label} is implausibly large — check the units`;
+    out[key] = n;
+    return null;
+  }
+
+  let err = num('smsSegmentLimit',     SMS_THRESHOLD_MAX_SEGMENTS, 'Segment allowance')
+         || num('smsSegmentNotifyAt',  SMS_THRESHOLD_MAX_SEGMENTS, 'Segment alert')
+         || num('smsSpendNotifyCents', SMS_THRESHOLD_MAX_CENTS,    'Spend alert');
+  if (err) return { ok: false, error: err };
+
+  if (body && 'smsNotifyEmail' in body) {
+    const e = normalizeOrgEmail(body.smsNotifyEmail);
+    if (!e.ok) return { ok: false, error: 'SMS alert email must be a valid email address' };
+    out.smsNotifyEmail = e.email;
+  }
+
+  /* An alert BELOW the allowance is legitimate — Hannah asked to be warned
+     BEFORE exceeding, so 8,000 against a 10,000 allowance is the useful
+     setting. What is refused is an alert with no allowance to read it
+     against... no: that is also legitimate on its own. Nothing to cross-check,
+     so nothing is refused here. The one derived rule is the default. */
+  return { ok: true, thresholds: out };
+}
+
+// The segment alert defaults to the allowance itself: an org that sets 10,000
+// and nothing else means "tell me at 10,000", not "never tell me".
+function smsSegmentAlertPoint(t) {
+  if (!t) return null;
+  return t.smsSegmentNotifyAt != null ? t.smsSegmentNotifyAt
+       : (t.smsSegmentLimit != null ? t.smsSegmentLimit : null);
+}
+
+function orgSmsThresholds(org) {
+  return {
+    smsSegmentLimit:     org && org.smsSegmentLimit     != null ? org.smsSegmentLimit     : null,
+    smsSegmentNotifyAt:  org && org.smsSegmentNotifyAt  != null ? org.smsSegmentNotifyAt  : null,
+    smsSpendNotifyCents: org && org.smsSpendNotifyCents != null ? org.smsSpendNotifyCents : null,
+    smsNotifyEmail:      (org && org.smsNotifyEmail) || '',
+  };
+}
+
 function normalizeOrgEmail(v) {
   const e = String(v == null ? '' : v).trim();
   if (!e) return { ok: true, email: '' };
@@ -1515,6 +1623,7 @@ app.get('/:org/api/config', authMiddleware, async (req, res) => {
     // Absent stays absent: '' leaves the boxes on their placeholder rather
     // than seeding a wrong address somebody then has to notice and delete.
     defaultEmail: org.defaultEmail || '',
+    smsThresholds: orgSmsThresholds(org),
     toggles: config?.toggles || { ai: true, reportLinks: false, aiBriefing: false, emailDigest: false },
     reportingBaseUrl: REPORTING_BASE_URL,
     // The slug and token rental-report actually serves this org under. The page
@@ -1798,6 +1907,15 @@ const EMAIL_SUBS_FILE = path.join(DATA_DIR, 'email-subscriptions.json');
 function loadEmailSubs() { try { if (fs.existsSync(EMAIL_SUBS_FILE)) return JSON.parse(fs.readFileSync(EMAIL_SUBS_FILE, 'utf8')); } catch(e){} return {}; }
 function saveEmailSubs(subs) { ensureDataDir(); fs.writeFileSync(EMAIL_SUBS_FILE, JSON.stringify(subs, null, 2)); }
 let emailSubs = loadEmailSubs();
+
+// The org's own settings gear writes here. Same validator, same storage as
+// the admin route — an allowance the org sets and one we set are the same
+// number, and two validators is how one side accepts what the other refuses.
+app.post('/:org/api/sms-thresholds', authMiddleware, (req, res) => {
+  const org = ORGS[req.orgSlug];
+  if (!org) return res.status(404).json({ error: 'Not found' });
+  applySmsThresholds(req, res, org, req.orgSlug);
+});
 
 app.post('/:org/api/email-subscribe', authMiddleware, (req, res) => {
   const { email, frequency } = req.body;
@@ -2083,5 +2201,170 @@ async function runMetabaseCanary() {
     }
   }
 }
+/* ── SMS ALLOWANCE ALERTS ───────────────────────────────────────────────────
+   Irvine, via Hannah: "notification before exceeding the 10,000-message
+   monthly allowance." Fires at most ONCE PER ORG PER THRESHOLD PER MONTH.
+
+   THE WINDOW IS THE CALENDAR MONTH, NOT THE DASHBOARD'S DATE PICKER. The
+   allowance is monthly, and an alert whose trigger depends on what somebody
+   last clicked is not an alert. The card's tiles follow the picker; this does
+   not, and the email says which month it is about.
+
+   ONLY ORGS WITH A THRESHOLD ARE PROBED. That is the cost gate, not a nicety:
+   this reads the messaging card per org, and fanning ~29 of those at the
+   Metabase replica hourly is the prewarm storm the reporting project already
+   paid for once. Today that set is empty, so this job costs nothing until
+   somebody is given an allowance.
+
+   THE FIRED MARKER IS ON DISK, keyed by org + threshold + month. In memory it
+   would reset on every deploy, and this service deploys several times a day —
+   an org over its allowance would get the same email every deploy for the
+   rest of the month, which is how an alert gets filtered to trash. */
+const SMS_ALERT_FILE = path.join(DATA_DIR, 'sms-alerts.json');
+function loadSmsAlerts() { try { if (fs.existsSync(SMS_ALERT_FILE)) return JSON.parse(fs.readFileSync(SMS_ALERT_FILE, 'utf8')); } catch(e){} return {}; }
+function saveSmsAlerts(a) { ensureDataDir(); fs.writeFileSync(SMS_ALERT_FILE, JSON.stringify(a, null, 2)); }
+let smsAlerts = loadSmsAlerts();
+
+const SMS_ALERT_INTERVAL_MS = 60 * 60 * 1000;   // hourly
+const SMS_ALERT_ORG_PACE_MS = 4000;             // between orgs, same pacing as the reporting project's daily job
+
+function smsMonthKey(d) { return (d || new Date()).toISOString().slice(0, 7); }
+function smsMonthRange(d) {
+  const now = d || new Date();
+  const y = now.getUTCFullYear(), m = now.getUTCMonth();
+  const start = new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 10);
+  const end   = new Date(Date.UTC(y, m + 1, 0)).toISOString().slice(0, 10);
+  return { start, end };
+}
+
+// Orgs worth probing at all. Presence of ANY threshold, never a value test:
+// an org whose allowance is set and whose spend alert is blank still wants the
+// segment alert.
+function smsAlertOrgs() {
+  return Object.keys(ORGS).filter(slug => {
+    const t = orgSmsThresholds(ORGS[slug]);
+    return smsSegmentAlertPoint(t) != null || t.smsSpendNotifyCents != null;
+  });
+}
+
+/* Which alerts a month's usage has crossed. Pure, so the spec can RUN it —
+   every defect in here is arithmetic about a comparison, and a regex passes on
+   an inverted one.
+
+   `>=`, not `>`: "once they reach that limit" is Dan's wording and it is also
+   the safer direction — an org that lands exactly on 10,000 has spent its
+   allowance and the next message is billed. */
+function smsAlertsDue(usage, thresholds, alreadyFired) {
+  const due = [];
+  const segPoint = smsSegmentAlertPoint(thresholds);
+  if (segPoint != null && usage && usage.segments >= segPoint && !alreadyFired.segments) {
+    due.push({ kind: 'segments', at: segPoint, value: usage.segments });
+  }
+  if (thresholds && thresholds.smsSpendNotifyCents != null && usage &&
+      usage.costCents >= thresholds.smsSpendNotifyCents && !alreadyFired.spend) {
+    due.push({ kind: 'spend', at: thresholds.smsSpendNotifyCents, value: usage.costCents });
+  }
+  return due;
+}
+
+// The org's own address wins; the platform default is the fallback, which is
+// exactly what the default-email field was added for.
+function smsAlertRecipient(org) {
+  return (org && org.smsNotifyEmail) || (org && org.defaultEmail) || '';
+}
+
+function sumSmsUsage(rows) {
+  let segments = 0, costCents = 0, messages = 0;
+  (rows || []).forEach(r => {
+    if (String(r['Channel'] || '').toUpperCase() !== 'SMS') return;
+    messages  += Number(r['Recipients']) || 0;
+    segments  += Number(r['SMS Segments']) || 0;
+    costCents += Number(r['Cost Cents']) || 0;
+  });
+  return { messages, segments, costCents };
+}
+
+async function runSmsAlertCheck() {
+  const slugs = smsAlertOrgs();
+  if (!slugs.length) return;
+  const month = smsMonthKey();
+  const { start, end } = smsMonthRange();
+
+  for (const slug of slugs) {
+    const org = ORGS[slug];
+    try {
+      const rows = await fetchMetabaseData(slug, 'messaging', { start, end });
+      const usage = sumSmsUsage(rows);
+      const t = orgSmsThresholds(org);
+      const fired = (smsAlerts[slug] && smsAlerts[slug][month]) || {};
+      const due = smsAlertsDue(usage, t, fired);
+      if (!due.length) { await new Promise(r => setTimeout(r, SMS_ALERT_ORG_PACE_MS)); continue; }
+
+      const to = smsAlertRecipient(org);
+      for (const d of due) {
+        // MARK BEFORE SENDING. A send that throws halfway is one missed email;
+        // a mark that never lands is the same email every hour for a month.
+        if (!smsAlerts[slug]) smsAlerts[slug] = {};
+        if (!smsAlerts[slug][month]) smsAlerts[slug][month] = {};
+        smsAlerts[slug][month][d.kind] = new Date().toISOString();
+        saveSmsAlerts(smsAlerts);
+
+        const isSeg = d.kind === 'segments';
+        const subject = isSeg
+          ? `${org.name}: ${usage.segments.toLocaleString()} SMS segments used in ${month}`
+          : `${org.name}: $${(usage.costCents / 100).toFixed(2)} of SMS spend in ${month}`;
+        const body = [
+          isSeg ? `The ${month} SMS allowance alert has been reached.`
+                : `The ${month} SMS spend alert has been reached.`,
+          '',
+          `Segments used     ${usage.segments.toLocaleString()}` +
+            (t.smsSegmentLimit != null ? ` of ${t.smsSegmentLimit.toLocaleString()} allowed` : ''),
+          `Messages sent     ${usage.messages.toLocaleString()}`,
+          `Carrier cost      $${(usage.costCents / 100).toFixed(2)}`,
+          `Alert set at      ${isSeg ? d.at.toLocaleString() + ' segments' : '$' + (d.at / 100).toFixed(2)}`,
+          '',
+          // Said on every one of these, because it is the thing nobody expects:
+          // the allowance is counted in SEGMENTS and a text is usually two.
+          `A text message is billed in 160-character segments, and across the platform ` +
+          `a message averages about two of them — so ${usage.segments.toLocaleString()} segments ` +
+          `is roughly ${usage.messages.toLocaleString()} messages, not ${usage.segments.toLocaleString()}.`,
+          '',
+          `Window: ${start} to ${end}`,
+        ].join('\n');
+
+        if (to) {
+          await sendOrgEmail(to, subject, body);
+          console.log(`[sms-alert] ${slug} ${d.kind} -> ${to}`);
+        } else {
+          // No address is not a reason to stay silent about an org crossing a
+          // contractual allowance — it goes to ops instead, naming the gap.
+          await sendOpsAlert(`⚠️ ${subject} (no alert email set for ${slug})`, body);
+          console.log(`[sms-alert] ${slug} ${d.kind} -> ops (no org address)`);
+        }
+      }
+    } catch (e) {
+      console.error(`[sms-alert] ${slug} check failed: ${e.message}`);
+    }
+    await new Promise(r => setTimeout(r, SMS_ALERT_ORG_PACE_MS));
+  }
+}
+
+async function sendOrgEmail(to, subject, body) {
+  const key = process.env.RESEND_API_KEY;
+  if (!key) { console.log(`[sms-alert] RESEND_API_KEY unset — would have emailed ${to}: ${subject}`); return; }
+  await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      from: `${process.env.FROM_NAME || 'Rec Dashboard'} <${process.env.FROM_EMAIL || 'reports@rec.us'}>`,
+      to, subject,
+      html: `<pre style="font-family:sans-serif;white-space:pre-wrap">${body}</pre>`,
+    }),
+  });
+}
+
+setTimeout(runSmsAlertCheck, 5 * 60 * 1000);
+setInterval(runSmsAlertCheck, SMS_ALERT_INTERVAL_MS);
+
 setTimeout(runMetabaseCanary, 2 * 60 * 1000);      // first probe 2 min after boot
 setInterval(runMetabaseCanary, CANARY_INTERVAL_MS);

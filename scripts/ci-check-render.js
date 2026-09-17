@@ -601,6 +601,7 @@ const CONFIG = {
                    anything. */
                 { id: 'messaging', widgets: ['msg-sent','msg-recipients','msg-sms','msg-email',
                                              'msg-delivery-rate','msg-bounced','msg-no-outcome','msg-sms-cost',
+                                             'msg-sms-segments','msg-avg-segments',
                                              'msg-segments-used','msg-by-channel','msg-by-type','msg-daily',
                                              'msg-top-segments','tbl-msg-campaigns'] }],
     toggles: { ai: false, reportLinks: true, aiBriefing: false, emailDigest: false },
@@ -619,6 +620,20 @@ const CONFIG = {
   // dashboard's own slug or token — a link built from those is the drift that
   // broke every report link for five weeks.
   recOrgId: 'rec-org-uuid',
+  /* A CONFIGURED ALLOWANCE the fixture's SMS traffic is already OVER, because
+     over is the state Irvine cares about and the only one that exercises the
+     tone. The fixture carries 67 carrier segments across 57 texts, so an
+     allowance of 50 reads 134% — a number no other tile on the card produces,
+     where a round 100% could be arrived at by accident.
+
+     The 57 texts against 67 segments also make the ratio 1.18, which is
+     nothing like the 33.50 a per-SEND ratio would give over this fixture's 2
+     SMS sends. A fixture where those two agreed could not tell the correct
+     implementation from the one that divides by the wrong denominator. */
+  smsThresholds: { smsSegmentLimit: 50, smsSegmentNotifyAt: null, smsSpendNotifyCents: 50000, smsNotifyEmail: '' },
+  // The prefill this seeds. Its absence from orgMeta's whitelist is what made
+  // the digest box silently never prefill, so the case below reads the BOX.
+  defaultEmail: 'parks@rendercheck.gov',
   orgName: 'Render Check Parks',
   toggles: { ai: false, reportLinks: true, aiBriefing: false, emailDigest: false },
   // THE LINK IDENTITY. Deliberately DIFFERENT from this dashboard's own slug and
@@ -2016,6 +2031,28 @@ const CASES = [
     note: '1,458 here would be counting recipients' },
   { name: 'messaging · Recipients Reached counts deliveries',
     metric: 'Recipients Reached', value: '1,458' },
+  /* THE ALLOWANCE. 67 carrier segments against 57 texts — the tile must show
+     the SEGMENT count, because that is what an SMS allowance is measured in
+     and "SMS Sent" (57) is the number everyone reaches for instead. */
+  { name: 'messaging · SMS Segments is the carrier count, not the message count',
+    metric: 'SMS Segments', value: '67',
+    note: '57 here would be the message count, which is what an allowance is NOT measured in' },
+  { name: 'messaging · ...against the configured allowance',
+    metric: 'SMS Segments', sub: /134% of the 50 allowance/,
+    note: 'a tile ignoring smsThresholds renders a plausible 67 and no percentage at all' },
+  /* THE CONVERSION. 1.18 per RECIPIENT; a per-SEND ratio over this fixture's
+     two SMS sends would read 33.50, so the two implementations cannot be
+     confused for one another here. */
+  { name: 'messaging · Avg Segments per SMS divides by texts, not sends',
+    metric: 'Avg Segments per SMS', value: '1.18',
+    note: '33.50 would be segments per SEND — a campaign counted as one text' },
+  { name: 'messaging · ...and shows the two numbers behind it',
+    metric: 'Avg Segments per SMS', sub: /67 segments over 57 texts/ },
+  /* "Segments" meant saved AUDIENCES on this card before the allowance work.
+     Two tiles reading "Segments" is a number nobody can act on. */
+  { name: 'messaging · the audience tile renders under its own name',
+    metric: 'Audience Segments', value: '2',
+    note: 'two saved audiences targeted. If this tile is still called "Segments Used" the lookup finds nothing and the case fails — which is the point, because two tiles reading "Segments" on one card is a number nobody can act on' },
   { name: 'messaging · emails are the rest',
     metric: 'Emails Sent', value: '1,401' },
   /* THE RATE IS REC'S OWN, delivered / SENT. 97.9% is delivered / terminal —
@@ -2049,7 +2086,7 @@ const CASES = [
      name surviving whole is pinned directly in messaging-widgets.spec.js,
      which runs msgBySegment rather than looking at a canvas. */
   { name: 'messaging · a segment name with a comma is not split in two',
-    metric: 'Segments Used', value: '2',
+    metric: 'Audience Segments', value: '2',
     note: 'a comma split on "Adults, Seniors" reads 3 here' },
   /* NO OPEN RATE. first_opened_at is NULL and open_count is 0 on all 818,239
      deliveries platform-wide, so a tile here would be a confident number over
