@@ -926,7 +926,7 @@ app.get('/admin/api/orgs', adminAuth, (req, res) => {
       token: org.token,
       reportCount: Object.keys(availableReports).length,
       defaultEmail: org.defaultEmail || '',
-      smsThresholds: orgSmsThresholds(org),
+      smsThresholds: orgSmsThresholds(org, slug),
       perOrgReports: Object.keys(org.reports || {}),
       configured: !!config,
       template: config?.template || null,
@@ -1227,14 +1227,16 @@ app.post('/admin/api/orgs/:slug/default-email', adminAuth, (req, res) => {
    able to wipe a contractual allowance, which is the same argument that put
    defaultEmail here. */
 function applySmsThresholds(req, res, org, slug) {
-  const check = normalizeSmsThresholds(req.body, orgSmsThresholds(org));
+  const check = normalizeSmsThresholds(req.body, orgSmsThresholds(org, slug));
   if (!check.ok) return res.status(400).json({ error: check.error });
+  // Both: the org record so this process reads it without a lookup, and the
+  // file so the next process does. Static or dynamic makes no difference.
   Object.assign(org, check.thresholds);
-  if (org._dynamic) saveDynamicOrgs();
+  smsThresholdStore[slug] = check.thresholds;
+  saveSmsThresholdStore(smsThresholdStore);
   console.log(`[orgs] sms thresholds for ${slug}: limit=${check.thresholds.smsSegmentLimit} ` +
-              `notifyAt=${check.thresholds.smsSegmentNotifyAt} spend=${check.thresholds.smsSpendNotifyCents}` +
-              `${org._dynamic ? '' : ' (static org — not persisted)'}`);
-  res.json({ ok: true, thresholds: check.thresholds, persisted: !!org._dynamic });
+              `notifyAt=${check.thresholds.smsSegmentNotifyAt} spend=${check.thresholds.smsSpendNotifyCents}`);
+  res.json({ ok: true, thresholds: check.thresholds, persisted: true });
 }
 
 app.post('/admin/api/orgs/:slug/sms-thresholds', adminAuth, (req, res) => {
@@ -1357,7 +1359,37 @@ function smsSegmentAlertPoint(t) {
        : (t.smsSegmentLimit != null ? t.smsSegmentLimit : null);
 }
 
-function orgSmsThresholds(org) {
+/* THE THRESHOLDS PERSIST IN THEIR OWN FILE, NOT ON THE ORG RECORD.
+
+   First written onto the ORGS entry and saved via saveDynamicOrgs(), which
+   only writes the orgs that came from the store — so a STATIC org (one in the
+   ORGS literal) kept its allowance in this process's memory alone and lost it
+   on the next deploy. Watertown is static, and hit exactly that within minutes
+   of the feature shipping: the value saved, the tile showed it, the log said
+   "(static org — not persisted)", and a deploy would have silently switched
+   the alert off with nothing on screen to say so.
+
+   An allowance is a contract term. Losing it quietly is the worst available
+   failure, so it is stored by SLUG in a file of its own and read back over
+   whatever the org record says. That also removes the static/dynamic split
+   from the question entirely — one path for every org. */
+const SMS_THRESHOLD_FILE = path.join(DATA_DIR, 'sms-thresholds.json');
+function loadSmsThresholdStore() {
+  try { if (fs.existsSync(SMS_THRESHOLD_FILE)) return JSON.parse(fs.readFileSync(SMS_THRESHOLD_FILE, 'utf8')); } catch (e) {}
+  return {};
+}
+function saveSmsThresholdStore(v) { ensureDataDir(); fs.writeFileSync(SMS_THRESHOLD_FILE, JSON.stringify(v, null, 2)); }
+let smsThresholdStore = loadSmsThresholdStore();
+
+function orgSmsThresholds(org, slug) {
+  // The stored value wins over the org record: it is the one that survives a
+  // deploy, and the two only ever disagree while a process is mid-write.
+  const st = (slug && smsThresholdStore[slug]) || null;
+  if (st) org = Object.assign({}, org, st);
+  return _orgSmsThresholdsFrom(org);
+}
+
+function _orgSmsThresholdsFrom(org) {
   return {
     smsSegmentLimit:     org && org.smsSegmentLimit     != null ? org.smsSegmentLimit     : null,
     smsSegmentNotifyAt:  org && org.smsSegmentNotifyAt  != null ? org.smsSegmentNotifyAt  : null,
@@ -1623,7 +1655,7 @@ app.get('/:org/api/config', authMiddleware, async (req, res) => {
     // Absent stays absent: '' leaves the boxes on their placeholder rather
     // than seeding a wrong address somebody then has to notice and delete.
     defaultEmail: org.defaultEmail || '',
-    smsThresholds: orgSmsThresholds(org),
+    smsThresholds: orgSmsThresholds(org, req.orgSlug),
     toggles: config?.toggles || { ai: true, reportLinks: false, aiBriefing: false, emailDigest: false },
     reportingBaseUrl: REPORTING_BASE_URL,
     // The slug and token rental-report actually serves this org under. The page
@@ -2245,7 +2277,7 @@ const SMS_ALERT_ORG_PACE_MS = 4000;             // between orgs, same pacing as 
 // segment alert.
 function smsAlertOrgs() {
   return Object.keys(ORGS).filter(slug => {
-    const t = orgSmsThresholds(ORGS[slug]);
+    const t = orgSmsThresholds(ORGS[slug], slug);
     return smsSegmentAlertPoint(t) != null || t.smsSpendNotifyCents != null;
   });
 }
@@ -2298,7 +2330,7 @@ async function runSmsAlertCheck() {
       // measured against.
       const rows = await fetchMetabaseData(slug, 'messaging', {});
       const usage = sumSmsUsage(rows);
-      const t = orgSmsThresholds(org);
+      const t = orgSmsThresholds(org, slug);
       const fired = smsAlerts[slug] || {};
       const due = smsAlertsDue(usage, t, fired);
       if (!due.length) { await new Promise(r => setTimeout(r, SMS_ALERT_ORG_PACE_MS)); continue; }

@@ -489,8 +489,20 @@ ok(/'msg-no-outcome','msg-sms-cost','msg-sms-segments','msg-avg-segments'/.test(
 const thrSrc = liftFrom(server, 'const SMS_THRESHOLD_MAX_SEGMENTS', 'function normalizeOrgEmail(v)');
 const sbT = {};
 // eslint-disable-next-line no-new-func
-new Function('exports', 'normalizeOrgEmail', thrSrc +
-  '\nexports.norm=normalizeSmsThresholds;exports.point=smsSegmentAlertPoint;')(sbT, sandbox6.n);
+/* The slice now carries the threshold FILE STORE too, which reaches for path,
+   fs, DATA_DIR and ensureDataDir. Injected rather than the marker moved: the
+   store sits between the validator and the reader this lift is about, so
+   narrowing the slice would cut one of them out. DATA_DIR points at a path
+   that does not exist, so the module-scope load returns {} and the pure
+   functions under test are unaffected. */
+new Function('exports', 'normalizeOrgEmail', 'path', 'fs', 'DATA_DIR', 'ensureDataDir', thrSrc +
+  '\nexports.norm=normalizeSmsThresholds;exports.point=smsSegmentAlertPoint;'
+  + 'exports.store=smsThresholdStore;exports.read=orgSmsThresholds;')(
+  sbT, sandbox6.n, require('path'), require('fs'), '/nonexistent-spec-dir', () => {});
+
+is(JSON.stringify(sbT.store), '{}', 'an absent threshold file loads as {} rather than throwing — a fresh volume must not take the server down');
+is(sbT.read({ smsSegmentLimit: 10 }, 'nosuchorg').smsSegmentLimit, 10,
+  'with nothing stored the org record is read as-is');
 
 is(sbT.norm({ smsSegmentLimit: 10000 }).thresholds.smsSegmentLimit, 10000, 'an allowance is stored');
 is(sbT.norm({ smsSegmentLimit: '' }).thresholds.smsSegmentLimit, null,
@@ -549,11 +561,34 @@ ok(/function smsAlertRecipient\([\s\S]{0,200}org\.smsNotifyEmail\) \|\| \(org &&
   "the org's own alert address wins, with the platform default as the fallback — which is what that field was added for");
 ok(/sendOpsAlert\(`⚠️ \$\{subject\} \(no alert email set/.test(server),
   'an org with no address still raises the crossing to ops — silence about a contractual allowance is the one outcome nobody wants');
+/* PERSISTENCE, AND IT IS NOT saveDynamicOrgs. That writes only the orgs that
+   came from the store, so a STATIC org kept its allowance in one process's
+   memory and lost it on the next deploy. Watertown is static and hit exactly
+   that within minutes of the feature shipping — the value saved, the tile
+   showed it, and the log said "(static org — not persisted)". An allowance is
+   a contract term; losing it quietly is the worst available failure. */
+ok(/const SMS_THRESHOLD_FILE = path\.join\(DATA_DIR, 'sms-thresholds\.json'\)/.test(server),
+  'thresholds persist in a file of their own, keyed by slug — not on the org record, which only survives for dynamic orgs');
+ok(/smsThresholdStore\[slug\] = check\.thresholds;\s*\n\s*saveSmsThresholdStore\(smsThresholdStore\);/.test(server),
+  '...and every save writes it');
+ok(!/if \(org\._dynamic\) saveDynamicOrgs\(\);[\s\S]{0,200}sms thresholds for/.test(server),
+  'the static/dynamic split is gone from this path entirely — one storage route for every org');
+// Scoped to the SMS path. The defaultEmail route still logs that line and is
+// still right to — that field has the SAME gap and has not been moved yet, so
+// a file-wide test here would be refuted by unrelated, honest code.
+ok(!/sms thresholds for[\s\S]{0,120}static org — not persisted/.test(server),
+  "the SMS path no longer admits a loss, because there is no longer a loss");
+ok(/const st = \(slug && smsThresholdStore\[slug\]\) \|\| null;/.test(server),
+  'the stored value is read back over the org record — it is the one that survives a deploy');
+
 is((server.match(/function applySmsThresholds\(/g) || []).length, 1,
   'ONE handler behind both the admin route and the org gear — two would accept different numbers on each side');
 ok(/app\.post\('\/admin\/api\/orgs\/:slug\/sms-thresholds', adminAuth/.test(server), 'the admin route is behind adminAuth');
 ok(/app\.post\('\/:org\/api\/sms-thresholds', authMiddleware/.test(server), 'and the org route behind the org token');
-ok(/smsThresholds: orgSmsThresholds\(org\)/.test(server), 'and the values reach the dashboard');
+ok(/smsThresholds: orgSmsThresholds\(org, (slug|req\.orgSlug)\)/.test(server),
+  'and the values reach the dashboard — read BY SLUG, or the persisted store cannot be consulted');
+is((server.match(/orgSmsThresholds\(org, req\.orgSlug\)/g) || []).length, 1,
+  "...and the org-facing route passes req.orgSlug, since `slug` is not bound there — a bare `slug` would be a ReferenceError on every dashboard load");
 ok(!/dashboardConfigs\[[^\]]*\]\.smsSegmentLimit/.test(server),
   'stored on the ORG, never in dashboardConfigs — Reset Dashboard must not be able to wipe a contractual allowance');
 
