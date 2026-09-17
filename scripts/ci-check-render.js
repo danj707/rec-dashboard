@@ -2037,9 +2037,15 @@ const CASES = [
   { name: 'messaging · SMS Segments is the carrier count, not the message count',
     metric: 'SMS Segments', value: '67',
     note: '57 here would be the message count, which is what an allowance is NOT measured in' },
-  { name: 'messaging · ...against the configured allowance',
-    metric: 'SMS Segments', sub: /134% of the 50 allowance/,
-    note: 'a tile ignoring smsThresholds renders a plausible 67 and no percentage at all' },
+  /* THE BUCKET IS ALL-TIME. The windowed feed and the unwindowed one are the
+     same stub here, so all-time reads 67 against the 50 bucket — over, and
+     billed from here. What this case is really pinning is that the sub-line
+     is the ALL-TIME position and says so, not a percentage of the window. */
+  { name: 'messaging · ...against the one-time bucket, all time',
+    metric: 'SMS Segments', sub: /67 of 50 used all time \(134%\)/,
+    note: 'a tile ignoring smsThresholds renders a plausible 67 and no sub-line at all' },
+  { name: 'messaging · ...and says billing starts past it',
+    metric: 'SMS Segments', sub: /billed from here/ },
   /* THE CONVERSION. 1.18 per RECIPIENT; a per-SEND ratio over this fixture's
      two SMS sends would read 33.50, so the two implementations cannot be
      confused for one another here. */

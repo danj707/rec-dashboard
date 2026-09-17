@@ -428,21 +428,58 @@ ok(Math.abs(sb.avg(plat) - 1.9946) < 0.0001, 'reproduces the measured platform m
 ok(Math.round(10000 / sb.avg(plat)) === 5013,
   '...so a 10,000 SEGMENT allowance is about 5,013 real messages — the conversion the contract term hides');
 
-const u = sb.usage(bulk, { smsSegmentLimit: 10000 });
-is(u.segments, 3200, 'usage reports segments');
-is(Math.round(u.pct), 32, '...as a share of the allowance');
-is(u.over, false, 'under the allowance');
-is(sb.usage(bulk, { smsSegmentLimit: 3200 }).over, true,
-  'AT the allowance counts as reached — "once they reach that limit", and the next text is billed');
-is(sb.usage(bulk, null).limit, null, 'no allowance configured is null, not zero');
-is(sb.usage(bulk, null).pct, null, '...and no percentage is invented against it');
-is(sb.usage(bulk, {}).over, false, 'an org with no allowance is never "over" it');
+/* THE BUCKET IS ALL-TIME AND THE WINDOW IS NOT. An org is given 10,000 or
+   15,000 segments once at signup and billed per segment after; nothing
+   refills. So the percentage must be taken from the all-time figure, never
+   from whatever the date picker is showing.
+
+   Watertown is the case that proves it: 6,863 all time against a 15,000
+   bucket is 46% gone, while the same tile on a This-Month view holds 285. A
+   percentage from the window reads 1.9% — an org that looks untouched and is
+   actually halfway through. The fixture keeps the two numbers far apart for
+   exactly that reason. */
+const WIN = [{ Channel: 'SMS', Recipients: 149, 'SMS Segments': 285, 'Cost Cents': 855 }];
+const ALL = { segments: 6863, messages: 3400 };
+
+const u = sb.usage(WIN, { smsSegmentLimit: 15000 }, ALL);
+is(u.windowSegments, 285, 'the big number is the WINDOW — that is the burn rate and every other tile follows the picker');
+is(u.used, 6863, '...and the bucket position is ALL TIME');
+is(Math.round(u.pct), 46, 'the percentage comes from all-time, not the window');
+ok(Math.round((u.windowSegments / u.limit) * 100) === 2,
+  '...and a window-based percentage would read 2%, which is the misreading this exists to prevent');
+is(u.remaining, 8137, 'what is left of the one-time bucket');
+is(u.over, false, 'under the bucket');
+
+is(sb.usage(WIN, { smsSegmentLimit: 6863 }, ALL).over, true,
+  'AT the bucket counts as used up — the next segment is billed');
+is(sb.usage(WIN, { smsSegmentLimit: 200 }, ALL).remaining, 0, 'remaining never goes negative');
+
+// The all-time feed is a second fetch and can be in flight or fail.
+is(sb.usage(WIN, { smsSegmentLimit: 15000 }, null).used, null,
+  'no all-time figure yet is NULL — deliberately not 0, which would claim an untouched bucket');
+is(sb.usage(WIN, { smsSegmentLimit: 15000 }, null).pct, null,
+  '...and no percentage is invented while it is unknown');
+is(sb.usage(WIN, { smsSegmentLimit: 15000 }, null).over, false,
+  '...and an org is never reported over a bucket we have not measured');
+
+is(sb.usage(WIN, null, ALL).limit, null, 'no bucket configured is null, not zero');
+is(sb.usage(WIN, null, ALL).pct, null, '...and no percentage is invented against it');
+is(sb.usage(WIN, {}, ALL).over, false, 'an org with no bucket is never "over" it');
 
 // The two tiles must not both be called Segments. "Segments" already meant
 // saved AUDIENCES on this card; the allowance is counted in CARRIER segments.
 ok(/'msg-segments-used': \{ label: 'Audience Segments'/.test(src),
   'the audience tile says AUDIENCE — two tiles reading "Segments" on one card is a number nobody can act on');
 ok(/'msg-sms-segments': \{ label: 'SMS Segments'/.test(src), 'and the billing tile says SMS');
+ok(/used all time/.test(src), 'the tile names the all-time position in words, or a reader cannot tell which window the percentage came from');
+ok(/checking all-time use/.test(src),
+  '...and says so while that second feed is in flight, rather than printing a percentage of a number it does not have');
+ok(/if \(!t \|\| t\.smsSegmentLimit == null\) return;/.test(src),
+  'the all-time fetch is gated on a configured bucket — an unwindowed messaging pull measured 4.8s and buys nothing for an org with no allowance');
+ok(/if \(sectionFeedMissing\('messaging', availableReports\)\) return;/.test(src),
+  "...and on the feed being servable at all — without it this asks for a report the org has no link for, 404s, and raises the failure banner naming a report nobody asked for. ONE gate, read the same way the section reads it");
+ok(/_smsAllTime/.test(src) && !/_smsAllTime = \{ segments: 0/.test(src),
+  'and the all-time global is only set from a real answer');
 ok(/'msg-avg-segments'/.test(src) && /msg-sms-segments/.test(src),
   'both new tiles exist');
 ok(/'msg-no-outcome','msg-sms-cost','msg-sms-segments','msg-avg-segments'/.test(src),
@@ -496,10 +533,16 @@ is(sbD.due({ segments: 99999, costCents: 0 }, { smsSegmentLimit: null, smsSegmen
 // free until somebody is given an allowance.
 ok(/function smsAlertOrgs\(\)[\s\S]{0,320}smsSegmentAlertPoint\(t\) != null \|\| t\.smsSpendNotifyCents != null/.test(server),
   'only orgs with a threshold are probed — fanning the messaging card at ~29 orgs hourly is the prewarm storm the reporting project already paid for');
-ok(/smsMonthRange/.test(server) && /THE WINDOW IS THE CALENDAR MONTH/.test(server),
-  'the alert window is the calendar month, not the dashboard date picker — an allowance is monthly and a trigger must not depend on what somebody last clicked');
-ok(/smsAlerts\[slug\]\[month\]\[d\.kind\] = new Date\(\)\.toISOString\(\);\s*\n\s*saveSmsAlerts\(smsAlerts\);\s*\n\s*\n?\s*const isSeg/.test(server),
-  'the fired marker is written BEFORE the send — a send that throws is one missed email, a mark that never lands is the same email every hour for a month');
+ok(/THE BUCKET IS ALL-TIME AND DOES NOT REFILL/.test(server),
+  'the alert reads the whole account, not a window — the bucket is given once at signup and billing starts when it is gone');
+ok(/fetchMetabaseData\(slug, 'messaging', \{\}\)/.test(server),
+  '...so the probe sends NO date bounds; the card reports every send when its [[ ]] blocks drop out');
+ok(!/smsMonthRange|smsMonthKey/.test(server),
+  'and the calendar-month window is gone entirely — a bucket crossed in September is still crossed in October');
+ok(/smsAlerts\[slug\]\[d\.kind\] = new Date\(\)\.toISOString\(\)/.test(server),
+  'the fired marker is keyed by org + threshold, NOT by month — re-arming monthly would announce the same exhausted bucket every month');
+ok(/smsAlerts\[slug\]\[d\.kind\] = new Date\(\)\.toISOString\(\);\s*\n\s*saveSmsAlerts\(smsAlerts\);\s*\n\s*\n?\s*const isSeg/.test(server),
+  'the fired marker is written BEFORE the send — a send that throws is one missed email, a mark that never lands is the same email every hour forever');
 ok(/const SMS_ALERT_FILE = path\.join\(DATA_DIR, 'sms-alerts\.json'\)/.test(server),
   '...and it is on disk, or every deploy re-alerts');
 ok(/function smsAlertRecipient\([\s\S]{0,200}org\.smsNotifyEmail\) \|\| \(org && org\.defaultEmail\)/.test(server),
