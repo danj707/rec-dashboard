@@ -27,6 +27,7 @@ const _recTracer = otelApi.trace.getTracer('rec-dashboard');
 
 const express = require('express');
 const path = require('path');
+const weatherLib = require('./lib/weather'); // current conditions on the org's own toolbar
 const fs = require('fs');
 
 const app = express();
@@ -144,6 +145,7 @@ const ORGS = {
   watertown: {
     name: 'Watertown Recreation',
     orgId: 'd781690b-c5a0-43c5-8443-9ae43899528c',
+    coords: { lat: 42.3709, lon: -71.1828 },
     token: '7qNNXDFo4HGpOh5B',
     city: 'Watertown',
     state: 'MA',
@@ -155,6 +157,7 @@ const ORGS = {
   niagarafalls: {
     name: 'City of Niagara Falls',
     orgId: 'a976a11a-5303-4785-838a-1b281ca77678',
+    coords: { lat: 43.0962, lon: -79.0377 },
     token: 'LjW1vF7eZJCyjWVN',
     city: 'Niagara Falls',
     state: 'NY',
@@ -164,6 +167,7 @@ const ORGS = {
   torrance: {
     name: 'City of Torrance',
     orgId: '4246b144-a4e2-4bf1-bb7f-a89f47d71973',
+    coords: { lat: 33.8358, lon: -118.3406 },
     token: 'Xq3RtBnW8vKdM2Ly',
     city: 'Torrance',
     state: 'CA',
@@ -568,6 +572,77 @@ function saveAllConfigs(configs) {
 
 let dashboardConfigs = loadAllConfigs();
 
+/* ── Current conditions on the org's own toolbar ───────────────────────────
+   The arithmetic is in lib/weather.js so a spec can RUN it; what lives here is
+   the cache and the one rule that cannot: /:org/api/config is what the whole
+   dashboard waits on, so it MUST NOT block on a third party. `orgWeatherFor`
+   is therefore SYNCHRONOUS — it answers from memory and kicks a refresh behind
+   the reader.
+
+   The cost is one cold load per org per window with no card at all, which is
+   the right way round: a dashboard that paints instantly and gains a sky a
+   moment later beats one that waits on api.open-meteo.com. Nothing is
+   pre-warmed and nothing is fanned out — an org nobody opens is an org we
+   never fetch.
+
+   WHAT THIS PORT DELIBERATELY DOES NOT DO, unlike its twin on the reporting
+   side: night does not darken the page. This dashboard already has a dark
+   mode and it is the VIEWER'S setting; night is the ORG'S clock. Painting the
+   ground after sunset would take that choice away from whoever set it.
+   ───────────────────────────────────────────────────────────────────────── */
+const _wxCache = new Map();      // slug → { ts, data }
+const _wxInFlight = new Set();
+const WX_TIMEOUT_MS = 6000;
+
+async function refreshOrgWeather(slug) {
+  if (_wxInFlight.has(slug)) return;
+  const coords = weatherLib.coordsOf(ORGS[slug]);
+  if (!coords) return;
+  _wxInFlight.add(slug);
+  try {
+    const resp = await fetch(weatherLib.requestUrlFor(coords), {
+      signal: AbortSignal.timeout(WX_TIMEOUT_MS),
+      headers: { 'user-agent': 'rec-dashboard (dan@rec.us)' },
+    });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const readout = weatherLib.readoutFrom(await resp.json());
+    // A reading we could not parse must NOT overwrite one we could. The last
+    // good answer keeps serving and ages out on its own, where storing the
+    // unreadable one would blank the card until the next refresh lands.
+    if (readout) _wxCache.set(slug, { ts: Date.now(), data: readout });
+    else console.warn(`[weather] ${slug} returned a reading with no temperature`);
+  } catch (err) {
+    console.warn(`[weather] ${slug} feed failed: ${err.message}`);
+  } finally {
+    _wxInFlight.delete(slug);
+  }
+}
+
+/* The per-org kill switch. It DEFAULTS ON — Dan approved the treatment — so
+   the test is `=== false` rather than truthiness: an org that has never been
+   toggled has no `weather` key at all, and reading that as "off" would ship
+   the feature dark for everybody. What must not need a deploy is turning it
+   OFF, which is the admin checkbox. */
+function orgWeatherEnabled(slug) {
+  const t = (dashboardConfigs[slug] || {}).toggles || {};
+  return t.weather !== false;
+}
+
+function orgWeatherFor(slug) {
+  if (!orgWeatherEnabled(slug)) return null;
+  // No coordinates, no weather — never a guess from the org's name. There are
+  // Watertowns in MA, NY, CT and WI, and the wrong city's sky is worse than
+  // none. Every org added through the admin panel lands here until somebody
+  // gives it coordinates, and renders exactly as it does today.
+  if (!weatherLib.coordsOf(ORGS[slug])) return null;
+  const entry = _wxCache.get(slug);
+  const state = weatherLib.ageStateOf(entry, Date.now());
+  if (state !== 'fresh') refreshOrgWeather(slug);
+  // `expired` is DO NOT SERVE, not "serve it anyway": an org nobody has opened
+  // for a week must not be shown last Tuesday's snow.
+  return state === 'expired' ? null : entry.data;
+}
+
 // ═══════════════════════════════════════════
 //  AUTH MIDDLEWARE
 // ═══════════════════════════════════════════
@@ -726,6 +801,12 @@ async function fetchMetabaseData(orgSlug, reportType, query) {
 //  UPDATES LOG
 // ═══════════════════════════════════════════
 const UPDATES = [
+  { date: '2026-09-19', title: 'Local weather in the toolbar', items: [
+    'The dashboard toolbar now carries a live weather card for the org\u2019s own location \u2014 temperature, conditions, today\u2019s high and low, and sunrise or sunset \u2014 and the card itself is painted with the current sky.',
+    'Rain and snow fall on it, clear days get a sun, and after dark it goes to a night sky with stars. Night is the ORG\u2019s clock: the dashboard\u2019s own light/dark theme is still whatever you set it to.',
+    'Hovering the card shows the next few days\u2019 rain outlook, the feels-like temperature and the wind.',
+    'Orgs without coordinates on file show no card and are otherwise unchanged. Per-org on/off switch in the admin grid.',
+  ]},
   { date: '2026-08-03', title: 'Program Revenue fix', items: [
       'Fixed Program Revenue widget using || instead of ?? -- sections with $0 net_total (fully refunded) were falling back to charged (gross), inflating the number. Now correctly shows lifetime net revenue matching the Programs report.',
       'Same fix applied to Revenue by Stream programs bar and Revenue Trend line chart.',
@@ -934,7 +1015,14 @@ app.get('/admin/api/orgs', adminAuth, (req, res) => {
       widgetCount: config?.sections?.reduce((s, sec) => s + sec.widgets.length, 0) || 0,
       theme: config?.theme || 'dark',
       cacheTTL: config?.cacheTTL || 15,
-      toggles: config?.toggles || { ai: true, reportLinks: false, aiBriefing: false, emailDigest: false },
+      /* `weather` is normalised through the SAME predicate the server gates on,
+         not read raw. Every org already has a saved `toggles` object with no
+         `weather` key in it, so a raw read renders the box UNCHECKED while the
+         card is very much on — which is the inverted-eye bug the reporting
+         project shipped once, where the grid drew one state and the org page
+         drew the other. One function owns the default; every reader asks it. */
+      toggles: Object.assign({ ai: true, reportLinks: false, aiBriefing: false, emailDigest: false },
+                             config?.toggles || {}, { weather: orgWeatherEnabled(slug) }),
       updatedAt: config?.updatedAt || null,
     };
   });
@@ -1587,6 +1675,11 @@ app.get('/share/:shareToken/config', (req, res) => {
     city: org.city,
     state: org.state,
     toggles: { ai: false, reportLinks: false, aiBriefing: !!orgToggles.aiBriefing, emailDigest: false },
+    // The sky travels with a shared dashboard. It says nothing about the org
+    // that its own public rec.us page does not, and a share link is still that
+    // org's dashboard — the narrowed `toggles` above are about what a viewer
+    // may DO, which is a different question.
+    weather: orgWeatherFor(share.orgSlug),
     dateRange: share.dateRange,
     readOnly: true,
     expiresAt: share.expiresAt,
@@ -1690,7 +1783,13 @@ app.get('/:org/api/config', authMiddleware, async (req, res) => {
     // than seeding a wrong address somebody then has to notice and delete.
     defaultEmail: orgDefaultEmail(org, req.orgSlug),
     smsThresholds: orgSmsThresholds(org, req.orgSlug),
-    toggles: config?.toggles || { ai: true, reportLinks: false, aiBriefing: false, emailDigest: false },
+    // Normalised through the same predicate the card is gated on, for the same
+    // reason the admin grid is: every org's saved toggles object predates this
+    // key, so a raw pass-through leaves `weather` UNDEFINED here while the
+    // admin grid says true. Two payloads describing one switch must not
+    // disagree, even while nothing on the page reads this one yet.
+    toggles: Object.assign({ ai: true, reportLinks: false, aiBriefing: false, emailDigest: false },
+                           config?.toggles || {}, { weather: orgWeatherEnabled(req.orgSlug) }),
     reportingBaseUrl: REPORTING_BASE_URL,
     // The slug and token rental-report actually serves this org under. The page
     // must build report links from these rather than from its own ORG_SLUG/TOKEN,
@@ -1698,7 +1797,11 @@ app.get('/:org/api/config', authMiddleware, async (req, res) => {
     reportingSlug: reportingIdentity(req.orgSlug).slug || req.orgSlug,
     reportingToken: reportingIdentity(req.orgSlug).token || org.token,
     announcements: activeAnnouncementsForOrg(req.orgSlug),
-    reportVisibility: reportVisibility?.available || null });
+    reportVisibility: reportVisibility?.available || null,
+    // Current conditions for the toolbar card. NULL, never a default: no
+    // coordinates, an unreadable reading or one older than two hours all mean
+    // the card simply does not render, and the toolbar is the one it is today.
+    weather: orgWeatherFor(req.orgSlug) });
 });
 
 app.post('/:org/api/config', authMiddleware, (req, res) => {

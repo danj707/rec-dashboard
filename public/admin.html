@@ -319,6 +319,10 @@ async function saveDefaultEmail(slug) {
                   <input type="checkbox" ${o.toggles.emailDigest ? 'checked' : ''} onchange="toggleOrg('${o.slug}','emailDigest',this.checked)" style="accent-color:#06b6d4;width:16px;height:16px">
                   <span>\uD83D\uDCE7 Email Digest</span>
                 </label>
+                <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:#4b5563;cursor:pointer" title="The toolbar's current-conditions card. Defaults ON; an org with no coordinates never shows one whatever this says.">
+                  <input type="checkbox" ${o.toggles.weather ? 'checked' : ''} onchange="toggleOrg('${o.slug}','weather',this.checked)" style="accent-color:#0ea5e9;width:16px;height:16px">
+                  <span>\u2600\uFE0F Weather Card</span>
+                </label>
               </div>
               <div style="margin-top:10px;padding-top:10px;border-top:1px solid #e5e7eb">
                 <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">

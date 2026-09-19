@@ -659,6 +659,34 @@ const server = http.createServer((req, res) => {
    a case's act() runs, so the /api/config stub serves the light availability
    map on this fetch — which is the only way to exercise the single-day cards
    in a harness that loads the page once. */
+/* ── The toolbar's weather card ────────────────────────────────────────────
+   The readout is computed server-side, so the harness supplies it directly and
+   the real open-meteo path is never reached. CONFIG deliberately carries NO
+   `weather` key: an org with no coordinates is the common case and the honest
+   default, so the baseline proves the absence and each case below opts in. */
+const WX_CLEAR_DAY = { sky: 'clear', night: false, code: 0, temp: 71, feels: 69, label: 'Clear',
+  hi: 76, lo: 58, wind: '7 mph', sunLabel: 'Sunset 6:47 PM', ahead: 'Rain arrives Sunday — 90%',
+  day: 'Saturday', observedAt: '2026-09-19T16:48' };
+const WX_RAIN_NIGHT = { ...WX_CLEAR_DAY, sky: 'rain', night: true, code: 61, temp: 48,
+  feels: 44, label: 'Light rain', hi: 57, lo: 46, sunLabel: 'Sunrise 6:31 AM' };
+
+/* A RELOAD ONTO THIS CASE'S SKY, then the computed styles stamped where a
+   selector can reach them. The stamping is the point: a stylesheet reads
+   plausibly whichever colours it holds, and "a card rendered" passes on a card
+   painted in the wrong sky, on a night card still wearing daylight, and on
+   particles that were never mounted. */
+async function loadWx(page) {
+  await page.reload({ waitUntil: 'networkidle2', timeout: 60000 });
+  await page.waitForSelector('.dash-header-left', { timeout: 20000 });
+  await page.evaluate(() => {
+    const c = document.querySelector('.wxc');
+    const fx = document.querySelector('.wxc-fx');
+    document.body.setAttribute('data-wxbg', c ? getComputedStyle(c).backgroundImage : '');
+    document.body.setAttribute('data-wxfx', fx ? getComputedStyle(fx).backgroundImage : '');
+    document.body.setAttribute('data-wxtheme', document.documentElement.getAttribute('data-theme') || '');
+  });
+}
+
 async function loadLight(page) {
   await page.reload({ waitUntil: 'networkidle2', timeout: 60000 });
   await page.waitForSelector('[data-live-section="1"]', { timeout: 20000 });
@@ -2136,6 +2164,52 @@ const CASES = [
     },
     needs: 'a[data-rec-link="messaging"]' },
 
+  /* ── The toolbar's weather card ─────────────────────────────────────────
+     NONE of this is visible in source: the CSS reads plausibly whichever sky
+     it paints, a class called `wxc-night` is not a night sky, and a card that
+     renders in the wrong half of the toolbar is the same markup. */
+  { name: 'weather · no reading means no card at all', act: loadWx, wx: null,
+    needs: '.dash-header-left', absent: '.wxc' },
+  { name: 'weather · the card is in the toolbar', act: loadWx, wx: WX_CLEAR_DAY,
+    needs: '.wxc[data-wx-sky="clear"][data-wx-night="0"][data-wx-temp="71"]' },
+  // Placement, not presence: both layouts render a card and a toolbar.
+  { name: 'weather · ...beside the org name, not with the controls', act: loadWx, wx: WX_CLEAR_DAY,
+    needs: '.dash-header-left > .wxc', absent: '.dash-header-right .wxc' },
+  { name: 'weather · it reads the temperature and the condition', act: loadWx, wx: WX_CLEAR_DAY,
+    needs: '.wxc .wxc-l1 b', text: /71°\s*Clear/ },
+  { name: 'weather · the hi/lo line carries the sun', act: loadWx, wx: WX_CLEAR_DAY,
+    needs: '.wxc .wxc-l2', text: /H 76° · L 58° · Sunset 6:47 PM/ },
+  /* THE LOOK-AHEAD RIDES THE TOOLTIP. It is the one line a parks department
+     acts on and it does not fit 206px, so it must be somewhere — losing it
+     entirely is the regression this catches. */
+  { name: 'weather · the rain look-ahead survives, on the tooltip', act: loadWx, wx: WX_CLEAR_DAY,
+    needs: '.wxc[title*="Rain arrives Sunday"]' },
+  /* NIGHT IS A MODIFIER. The night ramp must WIN — `.wxc-night.wxc-rain` is
+     (0,2,0) against `.wxc-rain`'s (0,1,0) — and the rain must keep falling.
+     Keyed on the COMPUTED gradient, because a class that is present and loses
+     the cascade renders in broad daylight. */
+  { name: 'weather · night paints its own sky', act: loadWx, wx: WX_RAIN_NIGHT,
+    needs: 'body[data-wxbg*="rgb(19, 26, 34)"]',
+    note: 'the night rain ramp starts #131a22; daylight rain starts #2f3a45' },
+  { name: 'weather · ...and a wet night still rains', act: loadWx, wx: WX_RAIN_NIGHT,
+    needs: '.wxc[data-wx-night="1"][data-wx-sky="rain"] .wxc-fx-rain',
+    absent: 'body[data-wxfx="none"]' },
+  /* NIGHT IS THE ORG'S CLOCK. The dashboard's own dark mode belongs to whoever
+     is looking at it, and a card after sunset must not reach out and take it. */
+  { name: 'weather · night leaves the viewer’s theme alone', act: loadWx, wx: WX_RAIN_NIGHT,
+    needs: 'body[data-wxtheme="light"]' },
+  /* An unknown sky must fall back to something that PAINTS. Un-whitelisted it
+     builds `wxc-meteor-shower`, which has no rule at all — a transparent card
+     sitting in the middle of the toolbar. */
+  { name: 'weather · an unknown sky falls back rather than painting nothing', act: loadWx,
+    wx: { ...WX_CLEAR_DAY, sky: 'meteor-shower' },
+    needs: '.wxc[data-wx-sky="overcast"]', absent: 'body[data-wxbg="none"]' },
+  { name: 'weather · a reading with no temperature renders nothing', act: loadWx,
+    wx: { ...WX_CLEAR_DAY, temp: null }, needs: '.dash-header-left', absent: '.wxc' },
+  /* Put the page back on the plain config, or whichever case runs next
+     inherits this one's sky. */
+  { name: 'weather · the dashboard still renders around it', act: loadWx, wx: WX_CLEAR_DAY,
+    needs: '.widget-card' },
 ];
 
 (async () => {
@@ -2210,6 +2284,9 @@ const CASES = [
           const { messaging, ...rest } = CONFIG.availableReports;
           return json({ ...CONFIG, availableReports: rest });
         }
+        // `!== undefined` and not truthiness: `wx: null` is a real case — it is
+        // what an org with no coordinates gets, and the card must be absent.
+        if (currentCase.wx !== undefined) return json({ ...CONFIG, weather: currentCase.wx });
         return json(CONFIG);
       }
       // fetchReportData reads json.rows off /:org/api/data/:reportType.

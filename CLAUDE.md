@@ -1,5 +1,154 @@
 # Project notes for Claude
 
+## THE TOOLBAR PAINTS THE LOCAL SKY (2026-09-19)
+
+Dan, with Watertown's dashboard open: *"can we do the same weather treatment to
+the org-dashboard project? I'm thinking something small about the weather on a
+card in the top bar, then the whole background for the card reflects current
+weather, time of day, etc."* Then, on the mockup: **"merge it!"**
+
+A 206×44 card in `.dash-header-left`, beside the org's name, whose own
+background is that org's current sky. Mockup (both placements, all eight skies,
+day and night): https://claude.ai/artifact/2G79aJQgE56vZAG2Ckiy9B
+
+### THE LIBRARY IS A TWIN, BYTE FOR BYTE, AND THAT IS THE WHOLE POINT
+
+`lib/weather.js` is rental-report's file copied across. Two deployed services
+in two repositories cannot share a module, and **no CI job on either side can
+assert the two agree** — so the note at the top of both says *change both or
+neither*, and the spec here fails if that note is ever deleted. A WMO code that
+means rain on the report and overcast on the dashboard is the
+two-surfaces-disagreeing bug, one repo over.
+
+Everything it already encodes carries over unchanged and is not re-derived
+here: an unknown code is **never CLEAR**, `strictNum` rejects `null`/`""`/
+booleans by name before coercing, an expired reading is not served, and the
+look-ahead line is withheld rather than softened.
+
+### THE COORDINATES WERE ALREADY THERE, ON THE SAME orgId
+
+Two of the three static orgs are in rental-report's `ORGS` under the **same
+organisation uuid**, so their coords came across rather than being looked up
+again — the two projects sharing an org must not disagree about where it is.
+
+| | |
+|---|---|
+| watertown `d781690b…` | 42.3709, -71.1828 — carried over |
+| niagarafalls `a976a11a…` | 43.0962, -79.0377 — carried over |
+| **torrance `4246b144…`** | **33.8358, -118.3406 — NEW.** Not a static org over there |
+
+Torrance is safe to look up because the org record carries **`state` as well as
+`city`**; the "never guess from the name" rule is about a name ALONE, and there
+are Watertowns in MA, NY, CT and WI. **Every dynamic org has no coords and
+therefore no card**, and renders exactly as it does today.
+
+### NIGHT IS THE ORG'S CLOCK. DARK MODE IS THE VIEWER'S.
+
+**The one place this port is deliberately SMALLER than the original**, and it
+is not laziness. On the reporting side night takes the whole page dark, because
+that page has no dark mode of its own. This one does, and `data-theme` is a
+setting somebody chose — so `wxc-night` paints the CARD and nothing else. A
+render case reads `data-theme` after sunset and requires it untouched.
+
+Night is still a **MODIFIER, NOT A SKY**: `wxc-night` rides on top of whichever
+sky is current (`.wxc-night.wxc-rain` is (0,2,0) against `.wxc-rain`'s (0,1,0)),
+so rain at 9pm still rains. A single `night` class silently drops the weather,
+which is the half the original mockup got wrong.
+
+### THE PALETTE **IS** THE LEGIBILITY FIX, and the spec COMPUTES it
+
+The full-page version floats its text on cards sitting ABOVE the sky. **A 44px
+card has nowhere to hide** — the temperature sits directly on the gradient — so
+every day sky is kept wholly in the light range with dark ink and every night
+and wet one wholly in the dark range with light ink.
+
+That is a rule a stylesheet cannot show: it reads plausibly whatever hexes it
+holds. So `org-weather.spec.js` **parses every gradient stop out of
+dashboard.html and works out the real ratio** against that sky's declared ink,
+at 4.5:1 for both lines. It found three failures in my own palette on its first
+run — overcast's sub-line at 4.26, night fog's at 4.32, drizzle's at 4.14 — all
+three of them colours I had reasoned about and not measured. Prettying up a
+gradient without re-checking it now fails CI.
+
+### `Number(null)` IS 0 — THE SAME DEFECT, IN THE SAME FEATURE, AGAIN
+
+`if (!wx || !Number.isFinite(Number(wx.temp))) return null` reads like a guard
+and is not one: **`Number(null)` is 0 and `Number.isFinite(0)` is true**, so a
+reading with no temperature rendered a confident **0°**. That is precisely the
+bug the reporting side shipped — a missing weather code read as code 0 and
+painted sunshine — and `lib/weather.js` has `strictNum` for it. The page runs
+in a browser and cannot require that file, so it carries `wxcNum`, and the spec
+**LIFTS AND RUNS** it against `null`, `undefined`, `''`, `false`, `true`, `NaN`
+and a real `0` rather than reading it.
+
+**Found by the render check on the first run of the new cases, not by review.**
+A regex over the old guard passes on the broken version.
+
+### THE FRONT DOOR MUST NOT BLOCK ON A THIRD PARTY
+
+`orgWeatherFor` is **synchronous** — `/:org/api/config` is what the whole
+dashboard waits on. It answers from memory and kicks a refresh behind the
+reader. Measured end to end on a real boot: the first call returns
+`weather: null`, the next one four seconds later returns the reading. That cost
+is the right way round, and nothing is pre-warmed or fanned out.
+
+### THE KILL SWITCH DEFAULTS ON, SO THE TEST IS `!== false`
+
+Dan approved the treatment, so it ships on; what must not need a deploy is
+turning it **off**, which is a checkbox in the admin grid.
+
+**Every org already has a saved `toggles` object with no `weather` key in it**,
+so a truthy read (`!!t.weather`) would ship the feature dark for all of them.
+`orgWeatherEnabled` is the one predicate, and **both** payloads that carry
+`toggles` — the admin listing and the org's own config route — are normalised
+through it. A raw pass-through draws the box UNCHECKED while the card is very
+much on, which is the inverted-eye bug this repo's sibling shipped once.
+
+### Guards
+
+`scripts/org-weather.spec.js` (**326 assertions, in CI**), which LIFTS AND RUNS
+`lib/weather.js` and `wxcNum`, and computes the contrast of every gradient stop.
+**Mutation-tested 22 ways, all 22 failing by an assertion that names the
+defect**: the kill switch read as truthy, the front door awaiting the fetch, an
+unreadable reading overwriting a good one, an expired reading served, the coords
+gate removed, the share route dropping the readout, either toggle payload read
+raw, watertown's coords drifting from the reporting project's, `orgMeta`
+defaulting to `{}` instead of null, the sky un-whitelisted, night replacing the
+sky instead of riding on it, a wet night stopping, a night ramp dropped, a
+gradient prettied up past the contrast bar, the card rendering with no
+temperature, `strictNum` reverted, a real 0°F thrown away, night reaching for
+`data-theme`, the card printed into the PDF, and the admin losing its switch.
+
+**Twelve `ci-check-render.js` cases**, because none of this is visible in
+source — the CSS reads plausibly whichever sky it paints, and a card in the
+wrong half of the toolbar is the same markup. They key on the **computed**
+`background-image`, so a night class that loses the cascade fails
+(`rgb(19, 26, 34)` is the night rain ramp; daylight rain starts `rgb(47, 58, 69)`).
+**Browser-mutation-tested five ways, each failing exactly the case that names
+it**: the night ramp losing the cascade, the particle layer never mounted, the
+card removed, the card moved to the controls side, and the look-ahead dropped
+from the tooltip.
+
+The fixture deliberately carries **no** `weather` key by default — an org with
+no coordinates is the common case and the honest baseline — so each case opts
+in, and `wx: null` is checked with `!== undefined` rather than truthiness
+because null is a real case.
+
+### NOT DONE
+
+- **The look-ahead is on the TOOLTIP, not on the card.** *"Rain arrives Sunday
+  — 90%"* is the one line a parks department acts on and it does not fit 206px.
+  Dan was asked whether he wanted a hover and said "merge it" without picking,
+  so it rides the native `title` — no new surface, nothing lost.
+- **No city name.** Open-Meteo returns no place name and the org's own
+  `displayName` is *"Watertown Recreation"*; deriving a city from it is a guess.
+  The org record already carries `city` and `state`, so this is one line the day
+  it is wanted.
+- **Imperial units, hardcoded.** Every org here is in the US.
+- **`POST /admin/api/orgs/:slug/toggles` still accepts any key** and writes a
+  flag nothing reads — pre-existing, not touched here, and the same hole the
+  reporting project closed on its own flags route.
+
 ## THE ALLOWANCE IS COUNTED IN SEGMENTS, AND A MESSAGE IS TWO OF THEM (2026-09-17)
 
 Hannah, relaying Irvine: *"Irvine is asking to receive notification before
