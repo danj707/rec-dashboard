@@ -89,6 +89,15 @@ jobs:
       - name: CRM & Messaging widgets
         run: node scripts/messaging-widgets.spec.js
 
+      # THE TOOLBAR'S WEATHER CARD. lib/weather.js is a byte-for-byte TWIN of
+      # rental-report's, so the sky a code means has to be the same on both or
+      # the two surfaces disagree about the same org on the same afternoon.
+      # The contrast half is COMPUTED rather than asserted: this card carries
+      # its text ON the sky, so the palette is the only place legibility can
+      # come from, and a stylesheet reads plausibly whatever hexes it holds.
+      - name: Weather card
+        run: node scripts/org-weather.spec.js
+
       # THE PAGE MUST ACTUALLY RENDER. This repo had no render check at all, for
       # a 3,500-line React page compiled by in-browser Babel — and its sibling
       # shipped two blank pages to production before adding one. Every other

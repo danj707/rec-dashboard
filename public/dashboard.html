@@ -67,6 +67,87 @@ body { font-family: var(--font-body); background: var(--bg-page); color: var(--t
 .dash-header-center { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .dash-header-right { display: flex; align-items: center; gap: 8px; }
 
+/* ── The weather card ──────────────────────────────────────────────────────
+   A 206x44 card in the toolbar whose own background is the org's current sky.
+   The one rule that is not cosmetic: EVERY DAY SKY SITS IN THE LIGHT RANGE AND
+   EVERY NIGHT AND WET ONE IN THE DARK RANGE, so a single ink colour clears
+   4.5:1 across the whole card. The reporting project's full-page version could
+   float its text on cards ABOVE the sky; a 44px card has nowhere to hide, so
+   the palette is the contrast fix and the gradients may not be prettied up
+   without re-checking them.
+
+   NIGHT IS A MODIFIER, NOT A SKY (`wxc-night` picks the night ramp for
+   whichever sky is current) — so rain at 9pm still rains. And night is the
+   ORG'S clock, never the viewer's: it does not touch `data-theme`, which is
+   whoever is looking at it choosing dark mode for themselves. */
+.wxc { position: relative; overflow: hidden; border-radius: 10px; display: flex; align-items: center;
+  gap: 9px; padding: 0 12px; width: 206px; height: 44px; flex-shrink: 0;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.14), 0 1px 3px rgba(0,0,0,.18); }
+.wxc-ic { position: relative; z-index: 2; display: flex; opacity: .95; }
+.wxc-txt { position: relative; z-index: 2; display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.wxc-l1 { display: flex; align-items: baseline; gap: 6px; white-space: nowrap; }
+.wxc-l1 b { font-family: var(--font-display); font-size: 17px; font-weight: 700; line-height: 1; letter-spacing: -.3px; }
+.wxc-lab { font-size: 11px; font-weight: 600; line-height: 1; }
+.wxc-l2 { font-size: 9.5px; font-weight: 500; line-height: 1; letter-spacing: .1px; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; }
+.wxc-fx { position: absolute; inset: 0; z-index: 1; pointer-events: none; }
+
+/* DAY — all light, dark ink. Darkest stop is #a3abb2 against #1a1f24: 6.9:1. */
+.wxc-clear    { background: linear-gradient(100deg,#8ec8ea 0%,#bfdff2 55%,#e6f2fa 100%); color: #0d2438; }
+.wxc-cloudy   { background: linear-gradient(100deg,#a9c2d6 0%,#c6d5e0 55%,#e4e9ed 100%); color: #16232e; }
+.wxc-overcast { background: linear-gradient(100deg,#a3abb2 0%,#bcc2c7 55%,#d8dadc 100%); color: #1a1f24; }
+.wxc-fog      { background: linear-gradient(100deg,#b8bcbf 0%,#d0d1d1 55%,#eceae7 100%); color: #1e2225; }
+.wxc-snow     { background: linear-gradient(100deg,#a8b4c0 0%,#c5cdd5 55%,#e6e9ec 100%); color: #161b21; }
+/* WET DAY — dark, white ink. Lightest stop is #616e7a against #fff: 5.3:1. */
+.wxc-drizzle  { background: linear-gradient(100deg,#3c4854 0%,#4b5865 55%,#5a6672 100%); color: #ffffff; }
+.wxc-rain     { background: linear-gradient(100deg,#2f3a45 0%,#3d4955 55%,#4b5764 100%); color: #ffffff; }
+.wxc-storm    { background: linear-gradient(100deg,#20272f 0%,#2c343d 55%,#3a434d 100%); color: #ffffff; }
+.wxc-clear .wxc-l2, .wxc-cloudy .wxc-l2 { color: #2b4a62; }
+.wxc-overcast .wxc-l2, .wxc-fog .wxc-l2, .wxc-snow .wxc-l2 { color: #32383e; }
+.wxc-drizzle .wxc-l2, .wxc-rain .wxc-l2, .wxc-storm .wxc-l2 { color: #dde6ee; }
+
+/* NIGHT — one ramp per sky, all dark, all white ink. Declared AFTER the day
+   rules and at the same specificity, so source order is what makes them win. */
+.wxc-night.wxc-clear    { background: linear-gradient(100deg,#0b1224 0%,#141f38 55%,#1e2c49 100%); }
+.wxc-night.wxc-cloudy   { background: linear-gradient(100deg,#131c2c 0%,#1e2a3d 55%,#2a3850 100%); }
+.wxc-night.wxc-overcast { background: linear-gradient(100deg,#1a1f26 0%,#252c35 55%,#313944 100%); }
+.wxc-night.wxc-fog      { background: linear-gradient(100deg,#21262b 0%,#2e343a 55%,#3b4149 100%); }
+.wxc-night.wxc-drizzle  { background: linear-gradient(100deg,#171e26 0%,#222b35 55%,#2d3844 100%); }
+.wxc-night.wxc-rain     { background: linear-gradient(100deg,#131a22 0%,#1d2630 55%,#27323e 100%); }
+.wxc-night.wxc-snow     { background: linear-gradient(100deg,#1e2531 0%,#2b3442 55%,#394353 100%); }
+.wxc-night.wxc-storm    { background: linear-gradient(100deg,#0e1319 0%,#171d25 55%,#212932 100%); }
+.wxc-night { color: #eef2f8; }
+.wxc-night .wxc-l2 { color: #a8b5c8; }
+
+/* The sky's own weather, over the gradient. */
+.wxc-fx-sun { background: radial-gradient(38px 38px at 88% -18%, rgba(255,246,214,.95), rgba(255,222,150,.35) 52%, transparent 74%); }
+.wxc-fx-stars { background:
+  radial-gradient(1.1px 1.1px at 14% 26%, rgba(255,255,255,.9), transparent 60%),
+  radial-gradient(1px 1px at 33% 62%, rgba(255,255,255,.6), transparent 60%),
+  radial-gradient(1.2px 1.2px at 58% 22%, rgba(255,255,255,.8), transparent 60%),
+  radial-gradient(1px 1px at 74% 70%, rgba(255,255,255,.55), transparent 60%),
+  radial-gradient(1.1px 1.1px at 91% 34%, rgba(255,255,255,.75), transparent 60%),
+  radial-gradient(26px 26px at 88% -12%, rgba(232,238,255,.3), transparent 72%); }
+.wxc-fx-fog { background: repeating-linear-gradient(0deg, rgba(255,255,255,.22) 0 2px, transparent 2px 9px);
+  animation: wxc-fogdrift 9s linear infinite; }
+@keyframes wxc-fogdrift { from { transform: translateX(0); } to { transform: translateX(-18px); } }
+.wxc-fx-rain, .wxc-fx-drizzle { background: repeating-linear-gradient(74deg, rgba(214,229,244,.55) 0 1px, transparent 1px 7px);
+  animation: wxc-raindrop .55s linear infinite; }
+.wxc-fx-rain { opacity: .34; }
+.wxc-fx-drizzle { opacity: .16; animation-duration: .95s; }
+@keyframes wxc-raindrop { from { transform: translate3d(0,-9px,0); } to { transform: translate3d(-3px,9px,0); } }
+.wxc-fx-snow { background:
+  radial-gradient(1.6px 1.6px at 18% 20%, rgba(255,255,255,.95), transparent 60%),
+  radial-gradient(1.4px 1.4px at 46% 66%, rgba(255,255,255,.85), transparent 60%),
+  radial-gradient(1.7px 1.7px at 72% 30%, rgba(255,255,255,.9), transparent 60%),
+  radial-gradient(1.3px 1.3px at 90% 74%, rgba(255,255,255,.8), transparent 60%);
+  background-size: 64px 44px; animation: wxc-snowdrift 7s linear infinite; }
+@keyframes wxc-snowdrift { from { background-position: 0 -14px; } to { background-position: -22px 44px; } }
+/* Motion in a toolbar is a distraction if you did not ask for it. */
+@media (prefers-reduced-motion: reduce) { .wxc-fx { animation: none !important; } }
+/* The PDF is a document about a date range; a live sky is not part of it. */
+.print-header .wxc { display: none !important; }
+
 /* Buttons */
 .btn { font-family: var(--font-body); font-size: 13px; font-weight: 500; padding: 7px 14px; border-radius: 6px;
   border: 1px solid var(--border); background: var(--bg-surface); color: var(--text-primary); cursor: pointer; transition: all 0.15s; }
@@ -6706,6 +6787,89 @@ function WhatsNewPopup({ announcements, orgSlug }) {
 // whether the org actually has data for that window and disables the option
 // (with a reason) when it doesn't, so we never offer a comparison that would
 // render empty.
+/* ── The toolbar's weather card ────────────────────────────────────────────
+   The readout is computed server-side by lib/weather.js — the same file
+   rental-report runs — so this component decides only how it LOOKS. It renders
+   nothing at all when there is nothing to say: no coordinates on the org, a
+   reading older than two hours, or a payload that lost its temperature all
+   arrive as null, and the toolbar is the one it is today.                   */
+const WXC_SKIES = ['clear', 'cloudy', 'overcast', 'fog', 'drizzle', 'rain', 'snow', 'storm'];
+/* WHITELISTED, because the class name is built from the payload: an
+   unrecognised sky would paint `wxc-<whatever>`, which has no background rule
+   and renders a transparent card in the middle of the toolbar. `overcast` is
+   the fallback for the same reason the library uses it — it claims nothing. */
+function wxcSky(v) { return WXC_SKIES.indexOf(v) >= 0 ? v : 'overcast'; }
+/* `Number(null)` IS 0, AND SO ARE `Number('')` AND `Number(false)`. Left to
+   coerce on its own a MISSING temperature passes `Number.isFinite` and paints
+   a confident 0° — which is the defect this exact feature shipped on the
+   reporting side, where a missing weather code read as code 0 and painted
+   sunshine. lib/weather.js has `strictNum` for it; the page runs in a browser
+   and cannot require that file, so it carries the same rule — and the spec
+   RUNS this one against every falsy shape rather than reading it. */
+function wxcNum(v) {
+  if (v === null || v === undefined || v === '' || typeof v === 'boolean') return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+const WXC_FX      = { clear: 'sun',   cloudy: 'sun',   overcast: '', fog: 'fog', drizzle: 'drizzle', rain: 'rain', snow: 'snow', storm: 'rain' };
+const WXC_FX_NIGHT= { clear: 'stars', cloudy: 'stars', overcast: '', fog: 'fog', drizzle: 'drizzle', rain: 'rain', snow: 'snow', storm: 'rain' };
+
+// Inline stroke SVG rather than emoji: an emoji is a different typeface on
+// every platform and cannot take the card's ink colour.
+const WXC_CLOUD = <path d="M6.5 17.5h10a3.6 3.6 0 0 0 .3-7.2 5.2 5.2 0 0 0-9.9-1.1 3.7 3.7 0 0 0-.4 8.3Z" />;
+function WeatherIcon({ sky, night }) {
+  const sun  = <path d="M12 8a4 4 0 1 1 0 8 4 4 0 0 1 0-8M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4" />;
+  const moon = <path d="M19 14.5A7.6 7.6 0 0 1 9.5 5a7.6 7.6 0 1 0 9.5 9.5Z" />;
+  const peek = night
+    ? <path d="M20 10.6a5.3 5.3 0 0 1-6.4-6.3 5.3 5.3 0 0 0 6.4 6.3Z" />
+    : <path d="M13.5 5.5V4M18 8l1-1M20 12.5h1.5M9.6 7.2A4.4 4.4 0 0 1 18 9" />;
+  let body;
+  if (sky === 'clear') body = night ? moon : sun;
+  else if (sky === 'cloudy') body = <React.Fragment>{peek}{WXC_CLOUD}</React.Fragment>;
+  else if (sky === 'fog') body = <React.Fragment>{WXC_CLOUD}<path d="M4 20.5h12M7 23h11" opacity=".75" /></React.Fragment>;
+  else if (sky === 'drizzle') body = <React.Fragment>{WXC_CLOUD}<path d="M9 20v1.6M13.5 20v1.6" /></React.Fragment>;
+  else if (sky === 'rain') body = <React.Fragment>{WXC_CLOUD}<path d="M8.5 19.6 7.7 22M12.5 19.6l-.8 2.4M16.5 19.6l-.8 2.4" /></React.Fragment>;
+  else if (sky === 'snow') body = <React.Fragment>{WXC_CLOUD}<path d="M9 21h.01M12.5 22.2h.01M16 21h.01" strokeWidth="2.4" /></React.Fragment>;
+  else if (sky === 'storm') body = <React.Fragment>{WXC_CLOUD}<path d="m13 19-3 3.4h3.4L11.6 25" /></React.Fragment>;
+  else body = WXC_CLOUD;
+  return (
+    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.6"
+      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{body}</svg>
+  );
+}
+
+function WeatherCard({ wx }) {
+  if (!wx || wxcNum(wx.temp) === null) return null;
+  const sky = wxcSky(wx.sky);
+  const night = !!wx.night;
+  const fx = (night ? WXC_FX_NIGHT : WXC_FX)[sky];
+  /* Built from the parts that are actually there rather than from a fixed
+     template: a feed with no daily block has no hi/lo, and "H —° · L —°" is a
+     worse answer than a shorter line. */
+  const bits = [];
+  if (wxcNum(wx.hi) !== null && wxcNum(wx.lo) !== null) bits.push(`H ${wx.hi}° · L ${wx.lo}°`);
+  if (wx.sunLabel) bits.push(wx.sunLabel);
+  if (!bits.length && wx.wind) bits.push(wx.wind);
+  /* The look-ahead line — "Rain arrives Sunday — 90%" — is the one thing on
+     this readout a parks department would act on, and it does not fit 206px.
+     It rides the native tooltip rather than getting its own row: no new
+     surface, and nothing is lost. */
+  const tip = [wx.label, bits.join(' · '),
+    wxcNum(wx.feels) !== null ? `Feels like ${wx.feels}°` : '',
+    wx.wind ? `Wind ${wx.wind}` : '', wx.ahead || ''].filter(Boolean).join(' · ');
+  return (
+    <div className={`wxc wxc-${sky}${night ? ' wxc-night' : ''}`} title={tip}
+      data-wx-sky={sky} data-wx-night={night ? '1' : '0'} data-wx-temp={String(wx.temp)}>
+      {fx && <span className={`wxc-fx wxc-fx-${fx}`} />}
+      <span className="wxc-ic"><WeatherIcon sky={sky} night={night} /></span>
+      <span className="wxc-txt">
+        <span className="wxc-l1"><b>{wx.temp}{'°'}</b><span className="wxc-lab">{wx.label}</span></span>
+        {bits.length > 0 && <span className="wxc-l2">{bits.join(' · ')}</span>}
+      </span>
+    </div>
+  );
+}
+
 function CompareDropdown({ mode, options, onChange, avail, onEnsureAvail }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
@@ -6869,7 +7033,10 @@ function DashboardApp() {
           // fallback is '', so a forgotten key renders as "no default set"
           // rather than as anything broken. That is what the comment above is
           // warning about, demonstrated.
-          defaultEmail: json.defaultEmail || '' };
+          defaultEmail: json.defaultEmail || '',
+          // The toolbar's current conditions. NULL and not {} — an empty object
+          // is truthy, so the card would render with no temperature and no sky.
+          weather: json.weather || null };
         window._orgMeta = _m;
         setOrgMeta(_m);
         window._orgGeo = json.city && json.state ? `${json.city}, ${json.state}` : '';
@@ -7139,6 +7306,7 @@ function DashboardApp() {
         <div className="dash-header-left">
           {orgMeta.logoUrl && <img src={orgMeta.logoUrl} className="dash-logo" alt="" />}
           <div><div className="dash-title">{orgMeta.name || ORG_SLUG}</div><div className="dash-subtitle">Dashboard{isReadOnly ? ' (shared view)' : ''}</div></div>
+          <WeatherCard wx={orgMeta.weather} />
         </div>
         {!IS_PRINT && (
           <div className="dash-header-center">
