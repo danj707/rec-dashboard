@@ -675,6 +675,73 @@ const WX_RAIN_NIGHT = { ...WX_CLEAR_DAY, sky: 'rain', night: true, code: 61, tem
    plausibly whichever colours it holds, and "a card rendered" passes on a card
    painted in the wrong sky, on a night card still wearing daylight, and on
    particles that were never mounted. */
+/* THE SKY BEHIND THE WHOLE PAGE. Everything here is computed style: a
+   stylesheet reads plausibly whatever it holds, a layer that is present but
+   trapped in a stacking context paints nothing, and a ground that was never
+   tinted is the bug the first build of this shipped — a full sky behind a
+   dense grid of opaque cards, indistinguishable from no sky at all. */
+async function loadSky(page) {
+  await page.reload({ waitUntil: 'networkidle2', timeout: 60000 });
+  await page.waitForSelector('.dash-header', { timeout: 20000 });
+  await page.evaluate(() => {
+    const b = document.body, cs = getComputedStyle(b);
+    const layer = document.querySelector('.wx-layer');
+    const ground = cs.getPropertyValue('--wx-ground').trim();
+    const pageBg = cs.getPropertyValue('--bg-page').trim();
+    b.setAttribute('data-sky-portalled', layer && layer.parentElement === b ? '1' : '0');
+    b.setAttribute('data-sky-ground', ground);
+    /* A TINT, NOT A SUBSTITUTION. `ground !== pageBg` is not the claim and does
+       not discriminate: a ramp hardcoded to a light grey differs from a dark
+       page too, and that is exactly the bug — a sheet of daylight behind a
+       dark-themed dashboard. What has to hold is that the ground is a BLEND of
+       the page: a different colour, but near it in luminance in whichever
+       theme the viewer picked. */
+    const lum = (c) => {
+      const m = String(c).match(/\d+(\.\d+)?/g);
+      if (!m || m.length < 3) return null;
+      const f = m.slice(0, 3).map(v => {
+        const x = Number(v) / 255;
+        return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4);
+      });
+      return 0.2126 * f[0] + 0.7152 * f[1] + 0.0722 * f[2];
+    };
+    const lg = lum(ground), lp = lum(pageBg);
+    const tinted = ground && pageBg && ground !== pageBg &&
+      lg !== null && lp !== null && Math.abs(lg - lp) <= 0.22;
+    b.setAttribute('data-sky-tinted', tinted ? '1' : '0');
+    b.setAttribute('data-sky-lumgap', lg === null || lp === null ? '' : Math.abs(lg - lp).toFixed(3));
+    b.setAttribute('data-sky-bg', layer ? getComputedStyle(layer.querySelector('.wx-sky')).backgroundImage.slice(0, 46) : '');
+    const strip = document.querySelector('.settings-bar');
+    b.setAttribute('data-sky-strip', strip ? getComputedStyle(strip).backgroundColor : '');
+    /* WHAT IS ACTUALLY ON TOP. `body.has-wx > *:not(.wx-layer) { z-index: 1 }`
+       is the only thing keeping a fixed, positioned layer from painting over
+       the entire dashboard — and without it every selector below still finds
+       its card, because the card is in the DOM either way.
+
+       A HIT TEST CANNOT SEE THIS, and the first version of this stamp was one:
+       `.wx-layer` is `pointer-events: none`, which `elementFromPoint` honours,
+       so it can never return the layer and the assertion passed on the bug.
+       Found by mutation, not by review.
+
+       So the paint order is COMPUTED the way the browser resolves it: the layer
+       is positioned at z-index 0, and a positioned z-index-0 element paints
+       above every non-positioned in-flow sibling. The app therefore has to be
+       positioned AND carry a higher z-index; on a tie the layer wins anyway,
+       being appended to <body> after it. This reads the COMPUTED style, so it
+       still fails when the rule is present but no longer matches. */
+    const app = b.querySelector(':scope > div:not(.wx-layer)');
+    let onTop = 'none';
+    if (app && layer) {
+      const az = getComputedStyle(app), lz = getComputedStyle(layer);
+      const zOf = (cs) => cs.position === 'static' ? -1
+        : (cs.zIndex === 'auto' ? 0 : Number(cs.zIndex) || 0);
+      onTop = zOf(az) > zOf(lz) ? 'page' : 'sky';
+      b.setAttribute('data-sky-z', zOf(az) + '/' + zOf(lz));
+    }
+    b.setAttribute('data-sky-ontop', onTop);
+  });
+}
+
 async function loadWx(page) {
   await page.reload({ waitUntil: 'networkidle2', timeout: 60000 });
   await page.waitForSelector('.dash-header-left', { timeout: 20000 });
@@ -2208,6 +2275,33 @@ const CASES = [
     wx: { ...WX_CLEAR_DAY, temp: null }, needs: '.dash-header-left', absent: '.wxc' },
   /* Put the page back on the plain config, or whichever case runs next
      inherits this one's sky. */
+  /* ── the sky behind the whole page ── */
+  { name: 'weather · the sky is behind the whole page', act: loadSky, wx: WX_CLEAR_DAY,
+    needs: 'body.has-wx.wx-clear .wx-layer' },
+  /* A PORTAL, not a child of #root: `body.has-wx > *:not(.wx-layer)` needs the
+     layer to be a SIBLING of the app, and a fixed layer inside a stacking
+     context is trapped by it. Rendered in place it looks identical in source. */
+  { name: 'weather · ...as a sibling of the app, not inside it', act: loadSky, wx: WX_CLEAR_DAY,
+    needs: 'body[data-sky-portalled="1"]' },
+  /* THE GROUND IS THE WHOLE POINT on a page this dense. The first build put a
+     full sky behind 48 opaque cards and you could not tell overcast from clear. */
+  { name: 'weather · ...and the ground is tinted by it', act: loadSky, wx: WX_CLEAR_DAY,
+    needs: 'body[data-sky-tinted="1"]', absent: 'body[data-sky-ground=""]' },
+  { name: 'weather · the tint survives dark theme', act: loadSky, wx: WX_CLEAR_DAY, theme: 'dark',
+    needs: 'body[data-sky-tinted="1"]',
+    note: 'the ground is MIXED INTO var(--bg-page): a substituted light grey is a sheet of daylight here' },
+  { name: 'weather · night takes the page, not just the card', act: loadSky, wx: WX_RAIN_NIGHT,
+    needs: 'body.has-wx.wx-night.wx-rain[data-sky-bg*="rgb(7, 13, 30)"]',
+    note: 'the night ramp opens #070d1e; the daylight rain ramp opens #333d48' },
+  { name: 'weather · the sky stays BEHIND the dashboard', act: loadSky, wx: WX_CLEAR_DAY,
+    needs: 'body[data-sky-ontop="page"]', absent: 'body[data-sky-ontop="sky"]',
+    note: 'computed paint order — every selector still finds its card when the layer paints over it' },
+  { name: 'weather · the refresh strip keeps a plate over the sky', act: loadSky, wx: WX_RAIN_NIGHT,
+    needs: '.settings-bar', absent: 'body[data-sky-strip="rgba(0, 0, 0, 0)"]' },
+  { name: 'weather · no reading, no sky either', act: loadSky, wx: null,
+    needs: '.dash-header', absent: '.wx-layer' },
+  { name: 'weather · ...and the body carries no sky class', act: loadSky, wx: null,
+    needs: 'body:not(.has-wx)', absent: 'body[class*="wx-"]' },
   { name: 'weather · the dashboard still renders around it', act: loadWx, wx: WX_CLEAR_DAY,
     needs: '.widget-card' },
 ];
@@ -2286,7 +2380,13 @@ const CASES = [
         }
         // `!== undefined` and not truthiness: `wx: null` is a real case — it is
         // what an org with no coordinates gets, and the card must be absent.
-        if (currentCase.wx !== undefined) return json({ ...CONFIG, weather: currentCase.wx });
+        if (currentCase.wx !== undefined) {
+          // `theme` rides along because the ground is mixed INTO the theme's own
+          // page colour — the dark half is the case Dan's "full strength" choice
+          // actually risked, and it is unreachable without setting it here.
+          const cfg = currentCase.theme ? { ...CONFIG.config, theme: currentCase.theme } : CONFIG.config;
+          return json({ ...CONFIG, config: cfg, weather: currentCase.wx });
+        }
         return json(CONFIG);
       }
       // fetchReportData reads json.rows off /:org/api/data/:reportType.

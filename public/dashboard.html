@@ -148,6 +148,130 @@ body { font-family: var(--font-body); background: var(--bg-page); color: var(--t
 /* The PDF is a document about a date range; a live sky is not part of it. */
 .print-header .wxc { display: none !important; }
 
+/* ── The whole page takes the sky (Dan, 2026-09-19: "doesn't the whole org
+   page get the overcast treatment?") ───────────────────────────────────────
+   A FIXED layer behind everything, the same mechanism the reports project's
+   org landing uses. Inert until the server injects a reading: no reading, no
+   `has-wx`, and the page renders exactly as it did before.
+
+   THE ONE THING THAT COULD NOT BE LIFTED IS THE GROUND. Over there the page
+   has no theme switch, so every sky settles into one hardcoded near-white.
+   Here the viewer picks, so each ramp fades into `var(--bg-page)` instead —
+   in light theme that is the #f3f4f6 the reports version effectively uses, and
+   in dark theme the sky darkens into the near-black ground rather than
+   dropping a sheet of daylight behind a dark dashboard. Same sky, both
+   themes, and neither one fights its own chrome. */
+.wx-layer { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
+body.has-wx > *:not(.wx-layer) { position: relative; z-index: 1; }
+.wx-sky, .wx-glow { position: absolute; inset: 0; }
+.wx-fx, .wx-fx2 { position: absolute; inset: -14% -10%; }
+.wx-orb { position: absolute; border-radius: 50%; display: none; }
+
+body.wx-clear    .wx-sky { background: linear-gradient(180deg,#1d68a4 0%,#4593c6 8%,#8ec2df 17%,var(--wx-ground) 30%,var(--wx-ground) 100%); }
+body.wx-clear    .wx-glow { background: radial-gradient(520px 320px at 80% 4%,rgba(255,239,200,.8),rgba(255,207,130,.18) 48%,transparent 72%); }
+body.wx-cloudy   .wx-sky { background: linear-gradient(180deg,#4d7ea6 0%,#7ba3c2 8%,#a9c0d0 17%,var(--wx-ground) 30%,var(--wx-ground) 100%); }
+body.wx-cloudy   .wx-glow { background: radial-gradient(560px 300px at 70% 2%,rgba(255,255,255,.34),transparent 70%); }
+body.wx-overcast .wx-sky { background: linear-gradient(180deg,#5a646f 0%,#79828c 9%,#9aa1a8 18%,var(--wx-ground) 30%,var(--wx-ground) 100%); }
+body.wx-overcast .wx-glow { background: radial-gradient(620px 320px at 58% 0%,rgba(255,255,255,.3),transparent 70%); }
+body.wx-fog      .wx-sky { background: linear-gradient(180deg,#8e939a 0%,#a7abb0 9%,#c0c2c4 19%,var(--wx-ground) 30%,var(--wx-ground) 100%); }
+body.wx-fog      .wx-glow { background: radial-gradient(760px 420px at 50% 22%,rgba(255,255,255,.5),transparent 76%); }
+body.wx-drizzle .wx-sky,
+body.wx-rain     .wx-sky { background: linear-gradient(180deg,#333d48 0%,#485663 9%,#65727e 18%,var(--wx-ground) 30%,var(--wx-ground) 100%); }
+body.wx-drizzle  .wx-glow,
+body.wx-rain     .wx-glow { background: radial-gradient(620px 300px at 26% 0%,rgba(190,206,222,.22),transparent 66%); }
+body.wx-storm    .wx-sky { background: linear-gradient(180deg,#1f262f 0%,#333c47 9%,#4d5761 18%,var(--wx-ground) 30%,var(--wx-ground) 100%); }
+body.wx-storm    .wx-glow { background: radial-gradient(560px 300px at 34% 0%,rgba(226,214,180,.2),transparent 64%); }
+body.wx-snow     .wx-sky { background: linear-gradient(180deg,#78808e 0%,#919aa6 9%,#aeb4be 18%,var(--wx-ground) 30%,var(--wx-ground) 100%); }
+body.wx-snow     .wx-glow { background: radial-gradient(620px 320px at 52% 0%,rgba(255,255,255,.34),transparent 72%); }
+
+/* THE GROUND IS WHERE THE WEATHER ACTUALLY READS ON THIS PAGE. The reports
+   project's org landing is a sparse list of cards, so its sky shows. This one
+   is a dense grid — 48 widgets on Watertown — and the first build of this put
+   a beautiful sky entirely behind opaque cards: you could not tell overcast
+   from clear. So the strong sky keeps the top of the viewport and every ramp
+   settles by 30% into a GROUND TINTED WITH ITS OWN COLOUR, which then shows in
+   every gutter, every gap between cards and the whole page below the fold.
+   Mixed into `var(--bg-page)` rather than replacing it, so light theme gets a
+   tinted near-white and dark theme a tinted near-black. */
+body.wx-clear    { --wx-ground: color-mix(in srgb, var(--bg-page) 74%, #8ec2df); }
+body.wx-cloudy   { --wx-ground: color-mix(in srgb, var(--bg-page) 74%, #a9c0d0); }
+body.wx-overcast { --wx-ground: color-mix(in srgb, var(--bg-page) 74%, #9aa1a8); }
+body.wx-fog      { --wx-ground: color-mix(in srgb, var(--bg-page) 74%, #c0c2c4); }
+body.wx-drizzle  { --wx-ground: color-mix(in srgb, var(--bg-page) 74%, #65727e); }
+body.wx-rain     { --wx-ground: color-mix(in srgb, var(--bg-page) 74%, #65727e); }
+body.wx-storm    { --wx-ground: color-mix(in srgb, var(--bg-page) 74%, #4d5761); }
+body.wx-snow     { --wx-ground: color-mix(in srgb, var(--bg-page) 74%, #aeb4be); }
+/* Night is its own ground too, and it wins by source order. */
+body.wx-night { --wx-ground: color-mix(in srgb, var(--bg-page) 74%, #1e2f4c); }
+
+body.wx-clear .wx-orb, body.wx-cloudy .wx-orb { display: block; right: 15%; top: 6%; width: 44px; height: 44px;
+  background: #fff6dc; box-shadow: 0 0 50px 18px rgba(255,226,160,.5); }
+
+body.wx-drizzle .wx-fx, body.wx-rain .wx-fx, body.wx-storm .wx-fx {
+  animation: wx-rain .52s linear infinite;
+  background-image: repeating-linear-gradient(101deg,rgba(212,232,252,0) 0 5px,rgba(212,232,252,.55) 5px,rgba(212,232,252,.55) 6px,rgba(212,232,252,0) 6px 11px); }
+body.wx-drizzle .wx-fx2, body.wx-rain .wx-fx2, body.wx-storm .wx-fx2 {
+  animation: wx-rain .86s linear infinite;
+  background-image: repeating-linear-gradient(99deg,rgba(226,240,255,0) 0 9px,rgba(226,240,255,.45) 9px,rgba(226,240,255,.45) 10px,rgba(226,240,255,0) 10px 19px); }
+body.wx-rain .wx-fx, body.wx-storm .wx-fx { opacity: .34; }
+body.wx-rain .wx-fx2, body.wx-storm .wx-fx2 { opacity: .2; }
+body.wx-drizzle .wx-fx { opacity: .13; }
+body.wx-drizzle .wx-fx2 { opacity: .08; }
+@keyframes wx-rain { from { transform: translate3d(0,-10%,0); } to { transform: translate3d(-30px,10%,0); } }
+
+body.wx-snow .wx-fx {
+  animation: wx-snow 11s linear infinite; background-size: 300px 240px;
+  background-image: radial-gradient(2.4px 2.4px at 24px 28px,#fff 55%,transparent 56%),radial-gradient(1.9px 1.9px at 132px 92px,rgba(255,255,255,.9) 55%,transparent 56%),radial-gradient(2.8px 2.8px at 214px 40px,#fff 55%,transparent 56%),radial-gradient(2px 2px at 66px 170px,rgba(255,255,255,.85) 55%,transparent 56%),radial-gradient(2.4px 2.4px at 268px 210px,#fff 55%,transparent 56%); }
+body.wx-snow .wx-fx2 {
+  opacity: .55; animation: wx-snow 19s linear infinite; background-size: 200px 160px;
+  background-image: radial-gradient(1.6px 1.6px at 32px 22px,rgba(255,255,255,.8) 55%,transparent 56%),radial-gradient(1.4px 1.4px at 118px 70px,rgba(255,255,255,.7) 55%,transparent 56%),radial-gradient(1.7px 1.7px at 172px 126px,rgba(255,255,255,.8) 55%,transparent 56%); }
+@keyframes wx-snow { from { background-position: 0 -30px; } to { background-position: -80px 260px; } }
+
+/* NIGHT OVERRIDES THE SKY AND KEEPS THE CONDITION'S OWN PARTICLES, so a wet
+   night still rains. Declared after the day ramps at the same specificity —
+   source order is what makes them win. */
+body.wx-night .wx-sky { background: linear-gradient(180deg,#070d1e 0%,#101c36 9%,#1e2f4c 18%,var(--wx-ground) 30%,var(--wx-ground) 100%); }
+body.wx-night .wx-glow { background:
+  radial-gradient(1.7px 1.7px at 12% 9%,rgba(255,255,255,.9),transparent 60%),
+  radial-gradient(1.4px 1.4px at 25% 5%,rgba(255,255,255,.7),transparent 60%),
+  radial-gradient(1.6px 1.6px at 37% 13%,rgba(255,255,255,.8),transparent 60%),
+  radial-gradient(1.3px 1.3px at 48% 6%,rgba(255,255,255,.62),transparent 60%),
+  radial-gradient(1.7px 1.7px at 61% 12%,rgba(255,255,255,.85),transparent 60%),
+  radial-gradient(1.4px 1.4px at 72% 4%,rgba(255,255,255,.66),transparent 60%),
+  radial-gradient(1.5px 1.5px at 90% 15%,rgba(255,255,255,.75),transparent 60%),
+  radial-gradient(340px 210px at 78% 7%,rgba(198,218,255,.22),transparent 72%); }
+body.wx-night .wx-orb { display: block; width: 30px; height: 30px; right: 17%; top: 6%;
+  background: #f3efe1; box-shadow: 0 0 36px 12px rgba(226,233,255,.26); }
+
+/* THE TWO THINGS THAT SIT DIRECTLY ON THE GROUND rather than inside a card:
+   the refresh strip and each section's own header. They live in the TOP
+   fifth of a fixed layer, which is the part of every ramp that is actually
+   sky — 11px muted text on `#485663` is 3.2:1 — so they get a plate in the
+   theme's own page colour and keep the ink they already pass with. The
+   gutters and the gaps between cards are where the sky is meant to show. */
+/* The top bar sits over the most saturated part of every ramp, and opaque it
+   wastes it — so both strips go translucent and let the sky through. Kept high
+   enough (86/88%) that every ink ratio in them is what it is today. */
+body.has-wx .dash-header { background: color-mix(in srgb, var(--bg-card) 86%, transparent);
+  backdrop-filter: blur(6px); }
+body.has-wx .settings-bar { background: color-mix(in srgb, var(--bg-page) 88%, transparent);
+  backdrop-filter: blur(4px); }
+/* AND THE FIRST SECTION HEADER GETS ONE TOO. It is the one piece of chrome
+   that sits OUTSIDE a card and inside the strong part of the ramp — and where
+   it lands depends on the viewport height and on whether the early-access
+   banner is up, so the gradient cannot be tuned to dodge it. Without this its
+   11px "not date-filtered" chip is muted grey on mid-grey sky. The later
+   headers are already over the tinted ground, where the plate is within a hair
+   of the page colour and invisible. */
+body.has-wx .section-header { position: relative; }
+body.has-wx .section-header::before { content: ""; position: absolute; inset: 2px -16px;
+  background: color-mix(in srgb, var(--bg-page) 86%, transparent); backdrop-filter: blur(4px);
+  border-radius: 12px; z-index: -1; }
+
+@media (prefers-reduced-motion: reduce) { .wx-fx, .wx-fx2 { animation: none !important; } }
+/* The PDF is a document about a date range; a live sky is not part of it. */
+@media print { .wx-layer { display: none !important; } }
+
 /* Buttons */
 .btn { font-family: var(--font-body); font-size: 13px; font-weight: 500; padding: 7px 14px; border-radius: 6px;
   border: 1px solid var(--border); background: var(--bg-surface); color: var(--text-primary); cursor: pointer; transition: all 0.15s; }
@@ -6838,6 +6962,39 @@ function WeatherIcon({ sky, night }) {
   );
 }
 
+/* ── The sky behind the whole page ─────────────────────────────────────────
+   Dan, on the card: "doesn't the whole org page get the overcast treatment?"
+   It does now. The layer is PORTALLED to <body> rather than rendered inside
+   #root, because `body.has-wx > *:not(.wx-layer)` needs it to be a sibling of
+   the app and not a descendant — and because a fixed layer inside a stacking
+   context is trapped by it.
+
+   IT PAINTS NOTHING IN PRINT. The PDF is a document about a date range. */
+function WeatherSky({ wx }) {
+  const sky = (wx && wxcNum(wx.temp) !== null && !IS_PRINT) ? wxcSky(wx.sky) : '';
+  const night = !!(sky && wx && wx.night);
+  React.useEffect(() => {
+    const b = document.body;
+    /* The classes go on BODY, not on the layer: every sky rule is written
+       `body.wx-rain .wx-sky`, so the ground, the glow and the particles all
+       key off one place. Cleaned up on unmount, or a page that later loses
+       its reading keeps painting the last one it had. */
+    b.classList.toggle('has-wx', !!sky);
+    b.classList.toggle('wx-night', night);
+    WXC_SKIES.forEach(s => b.classList.toggle('wx-' + s, s === sky));
+    return () => {
+      b.classList.remove('has-wx', 'wx-night');
+      WXC_SKIES.forEach(s => b.classList.remove('wx-' + s));
+    };
+  }, [sky, night]);
+  if (!sky) return null;
+  return ReactDOM.createPortal(
+    <div className="wx-layer" aria-hidden="true" data-wx-layer={sky + (night ? '-night' : '')}>
+      <div className="wx-sky" /><div className="wx-glow" /><div className="wx-orb" />
+      <div className="wx-fx" /><div className="wx-fx2" />
+    </div>, document.body);
+}
+
 function WeatherCard({ wx }) {
   if (!wx || wxcNum(wx.temp) === null) return null;
   const sky = wxcSky(wx.sky);
@@ -7307,6 +7464,7 @@ function DashboardApp() {
           {orgMeta.logoUrl && <img src={orgMeta.logoUrl} className="dash-logo" alt="" />}
           <div><div className="dash-title">{orgMeta.name || ORG_SLUG}</div><div className="dash-subtitle">Dashboard{isReadOnly ? ' (shared view)' : ''}</div></div>
           <WeatherCard wx={orgMeta.weather} />
+          <WeatherSky wx={orgMeta.weather} />
         </div>
         {!IS_PRINT && (
           <div className="dash-header-center">

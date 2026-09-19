@@ -1,6 +1,6 @@
 # Project notes for Claude
 
-## THE TOOLBAR PAINTS THE LOCAL SKY (2026-09-19)
+## THE ORG DASHBOARD TAKES THE LOCAL SKY (2026-09-19)
 
 Dan, with Watertown's dashboard open: *"can we do the same weather treatment to
 the org-dashboard project? I'm thinking something small about the weather on a
@@ -10,6 +10,12 @@ weather, time of day, etc."* Then, on the mockup: **"merge it!"**
 A 206×44 card in `.dash-header-left`, beside the org's name, whose own
 background is that org's current sky. Mockup (both placements, all eight skies,
 day and night): https://claude.ai/artifact/2G79aJQgE56vZAG2Ckiy9B
+
+**AND THEN THE WHOLE PAGE, the same afternoon.** Dan, on the live card:
+*"doesn't the whole org page get the overcast treatment?"* Offered three
+landings — the sky in light theme only, damped in dark, or full strength in
+both like the reports project — he picked **"C"**. So a fixed layer sits
+behind the dashboard and the org's sky is the page.
 
 ### THE LIBRARY IS A TWIN, BYTE FOR BYTE, AND THAT IS THE WHOLE POINT
 
@@ -42,18 +48,83 @@ Torrance is safe to look up because the org record carries **`state` as well as
 are Watertowns in MA, NY, CT and WI. **Every dynamic org has no coords and
 therefore no card**, and renders exactly as it does today.
 
+### THE GROUND IS WHERE THE WEATHER ACTUALLY READS HERE
+
+The reports project's org landing is a sparse list of cards, so its sky shows.
+**This page is a dense grid — 48 widgets on Watertown — and the first build
+put a beautiful sky entirely behind opaque cards: you could not tell overcast
+from clear.** Rendered it and looked at it, which is the only way that is
+visible.
+
+So the strong part of every ramp keeps the top of the viewport and **settles by
+30% into a GROUND TINTED WITH ITS OWN COLOUR**, which is then what shows in
+every gutter, every gap between cards, and the whole page below the fold.
+
+**THE GROUND IS MIXED INTO `var(--bg-page)`, NEVER SUBSTITUTED FOR IT**, and
+that one word is what makes "C" possible at all. Over there the page has no
+theme switch and every ramp settles into one hardcoded near-white; here the
+viewer picks, and a ramp ending in a literal light grey drops a sheet of
+daylight behind a dark-themed dashboard. `color-mix(in srgb, var(--bg-page)
+74%, <sky>)` gives light theme a tinted near-white and dark theme a tinted
+near-black — same sky, both themes, neither fighting its own chrome. The spec
+reproduces that blend arithmetically and the render check drives a dark-theme
+case, because a stylesheet reads plausibly whichever way round it is written.
+
+### THE LAYER IS PORTALLED TO `<body>`, and both reasons are load-bearing
+
+`ReactDOM.createPortal(…, document.body)`: `body.has-wx > *:not(.wx-layer)`
+needs the layer to be a **SIBLING** of `#root` rather than a descendant of it,
+and **a fixed layer inside a stacking context is trapped by that context**.
+Rendered in place it is neither, and the page still looks approximately right
+in a screenshot — which is why there is a HIT TEST: `elementFromPoint` at a
+widget's top edge must find the dashboard and not the sky. Every other selector
+keeps matching when the layer paints over everything.
+
+- **The classes go on `<body>`, not on the layer.** Every rule is written
+  `body.wx-rain .wx-sky`, so the ground, the glow and the particles key off one
+  place — and the ground token has to be on `body` anyway, since it tints
+  chrome the layer does not contain.
+- **They are removed on unmount**, or a page that later loses its reading keeps
+  painting the last sky it had.
+- **No reading, no `has-wx`**, and the page renders exactly as it did before.
+  That is the state 21 of the 24 orgs are in.
+- **Nothing in print.** The PDF is a document about a date range.
+
+### TWO PIECES OF CHROME SIT ON THE SKY RATHER THAN IN A CARD
+
+The refresh strip and each section's own header, both in the TOP fifth of the
+layer — the part of every ramp that is actually sky. 11px muted text on
+`#485663` is **3.2:1**. Both get a plate in the theme's own page colour, so
+every ink ratio in them is what it was yesterday.
+
+- **The top bars are TRANSLUCENT, not opaque** (86%/88% with a blur). They sit
+  over the most saturated part of every ramp and opaque they waste it.
+- **THE SECTION-HEADER PLATE IS NOT DECORATION, and taking it out proved it:**
+  where the first section header lands depends on the viewport height and on
+  whether the early-access banner is up, so the gradient cannot be tuned to
+  dodge it — without the plate its 11px *"not date-filtered"* chip is muted
+  grey on mid-grey sky. The later headers are already over the tinted ground,
+  where the same plate is within a hair of the page colour and invisible.
+- **The gutters and the gaps between cards are where the sky is MEANT to show**,
+  which is why the cards themselves were left alone.
+
 ### NIGHT IS THE ORG'S CLOCK. DARK MODE IS THE VIEWER'S.
 
-**The one place this port is deliberately SMALLER than the original**, and it
-is not laziness. On the reporting side night takes the whole page dark, because
-that page has no dark mode of its own. This one does, and `data-theme` is a
-setting somebody chose — so `wxc-night` paints the CARD and nothing else. A
-render case reads `data-theme` after sunset and requires it untouched.
+**Night paints the sky and the ground; it does NOT touch `data-theme`**, and
+that is where this port stays deliberately smaller than the original. Over
+there night takes the whole page dark — ground, cards, their ink, the section
+labels and the footer — because that page has no dark mode of its own. This
+one does, and the theme is a setting somebody chose. So after sunset the sky
+goes dark behind a light dashboard if that is what the viewer asked for, and a
+render case reads `data-theme` at 9pm and requires it untouched.
 
-Night is still a **MODIFIER, NOT A SKY**: `wxc-night` rides on top of whichever
-sky is current (`.wxc-night.wxc-rain` is (0,2,0) against `.wxc-rain`'s (0,1,0)),
-so rain at 9pm still rains. A single `night` class silently drops the weather,
-which is the half the original mockup got wrong.
+Night is still a **MODIFIER, NOT A SKY**, on both surfaces: `wxc-night` rides
+on top of whichever sky is current (`.wxc-night.wxc-rain` is (0,2,0) against
+`.wxc-rain`'s (0,1,0)), and `body.wx-night .wx-sky` overrides the day ramp at
+equal specificity by **source order** while leaving the condition's own
+particles alone. So rain at 9pm still rains, on the card and on the page. A
+single `night` class silently drops the weather, which is the half the original
+mockup got wrong.
 
 ### THE PALETTE **IS** THE LEGIBILITY FIX, and the spec COMPUTES it
 
@@ -106,28 +177,78 @@ much on, which is the inverted-eye bug this repo's sibling shipped once.
 
 ### Guards
 
-`scripts/org-weather.spec.js` (**326 assertions, in CI**), which LIFTS AND RUNS
-`lib/weather.js` and `wxcNum`, and computes the contrast of every gradient stop.
-**Mutation-tested 22 ways, all 22 failing by an assertion that names the
-defect**: the kill switch read as truthy, the front door awaiting the fetch, an
-unreadable reading overwriting a good one, an expired reading served, the coords
-gate removed, the share route dropping the readout, either toggle payload read
-raw, watertown's coords drifting from the reporting project's, `orgMeta`
-defaulting to `{}` instead of null, the sky un-whitelisted, night replacing the
-sky instead of riding on it, a wet night stopping, a night ramp dropped, a
-gradient prettied up past the contrast bar, the card rendering with no
-temperature, `strictNum` reverted, a real 0°F thrown away, night reaching for
-`data-theme`, the card printed into the PDF, and the admin losing its switch.
+`scripts/org-weather.spec.js` (**398 assertions, in CI**), which LIFTS AND RUNS
+`lib/weather.js` and `wxcNum`, and computes the contrast of every gradient stop
+and every tinted ground in both themes.
 
-**Twelve `ci-check-render.js` cases**, because none of this is visible in
-source — the CSS reads plausibly whichever sky it paints, and a card in the
-wrong half of the toolbar is the same markup. They key on the **computed**
+**Mutation-tested 34 ways, all failing by an assertion that names the defect.**
+The card half: the kill switch read as truthy, the front door awaiting the
+fetch, an unreadable reading overwriting a good one, an expired reading served,
+the coords gate removed, the share route dropping the readout, either toggle
+payload read raw, watertown's coords drifting from the reporting project's,
+`orgMeta` defaulting to `{}` instead of null, the sky un-whitelisted, night
+replacing the sky instead of riding on it, a wet night stopping, a night ramp
+dropped, a gradient prettied up past the contrast bar, the card rendering with
+no temperature, `strictNum` reverted, a real 0°F thrown away, night reaching
+for `data-theme`, the card printed into the PDF, and the admin losing its
+switch. The page half: the layer rendered in place instead of portalled, a ramp
+ending in a hardcoded colour, a ground substituted for the page rather than
+mixed into it, the app no longer lifted above the layer, the section-header
+plate dropped, the settings-bar plate gone transparent, the sky printed into
+the PDF, the body classes never cleaned up on unmount, the sky reading a
+different object from the card, the ground swamping the theme's own colour, and
+night losing its own ground.
+
+**ONE MUTATION IS GENUINELY BENIGN AND IS RECORDED AS SUCH** rather than
+reported as caught: darkening a single sky's ground tone. At the shipped 74%
+mix the ground cannot travel far enough from the page for the ink to fail —
+the worst tone either way measures **7.78:1** — so the per-tone contrast loop
+cannot fail on its own. It is coupled to the mix percentage, which has its own
+bounded assertion, and at 30% light theme lands at **2.10:1**. Written into the
+spec beside the loop, or the next person reads it as vetting each tone.
+
+**Twenty-one `ci-check-render.js` cases**, because none of this is visible in
+source — the CSS reads plausibly whichever sky it paints, a card in the wrong
+half of the toolbar is the same markup, and a sky painted OVER the dashboard
+still leaves every selector matching. They key on the **computed**
 `background-image`, so a night class that loses the cascade fails
 (`rgb(19, 26, 34)` is the night rain ramp; daylight rain starts `rgb(47, 58, 69)`).
-**Browser-mutation-tested five ways, each failing exactly the case that names
-it**: the night ramp losing the cascade, the particle layer never mounted, the
-card removed, the card moved to the controls side, and the look-ahead dropped
-from the tooltip.
+**Browser-mutation-tested twelve ways, each failing exactly the case that names
+it**: the night card ramp losing the cascade, the particle layer never mounted,
+the card removed, the card moved to the controls side, the look-ahead dropped
+from the tooltip, the app not lifted above the layer, the layer rendered in
+place, the ground substituted rather than mixed, the page night ramp dropped,
+the settings-bar plate removed, the body classes never applied, and a page with
+no reading painting a sky anyway.
+
+### TWO OF MY OWN NEW GUARDS WERE BLIND, and mutation is what showed both
+
+Neither was found by review — both passed on correct code, read convincingly,
+and survived the mutation they were written for:
+
+- **A HIT TEST CANNOT SEE A LAYER PAINTING OVER THE PAGE.** `.wx-layer` is
+  `pointer-events: none`, and `document.elementFromPoint` **honours that**, so
+  it can never return the layer — the assertion reported `page` on the build
+  where the sky covers everything. My own comment beside it said *"only a hit
+  test can tell"*, which was exactly backwards. It computes the paint order
+  from the **computed** styles instead: the layer is positioned at z-index 0,
+  so the app has to be positioned AND higher, and on a tie the layer wins for
+  being appended after it. Still a browser check rather than a source one — it
+  fails when the rule is present but no longer matches.
+- **`ground !== pageBg` IS NOT "the ground is a tint".** A ground hardcoded to a
+  light grey differs from a dark page too, which is the whole bug. The stamp
+  measures **luminance distance** now: a different colour, but within 0.22 of
+  the page in whichever theme the viewer picked. The dark-theme case went from
+  passing on the substitution to failing by name.
+
+*Generalise it: a guard written for a mechanism has to be tested against that
+mechanism's own defences, and an inequality is rarely the claim you mean.*
+
+**AND ONE MUTATION DIED INSTEAD OF FAILING.** Dropping `ReactDOM.createPortal(`
+leaves its `, document.body);` tail behind — a SyntaxError, so the page never
+rendered and three unrelated cases failed while the portal case never ran. The
+form somebody would actually write closes the parenthesis too, and that fails
+by name. Nth instance in these two projects.
 
 The fixture deliberately carries **no** `weather` key by default — an org with
 no coordinates is the common case and the honest baseline — so each case opts
@@ -145,6 +266,15 @@ because null is a real case.
   The org record already carries `city` and `state`, so this is one line the day
   it is wanted.
 - **Imperial units, hardcoded.** Every org here is in the US.
+- **THE CARDS THEMSELVES ARE NOT TRANSLUCENT.** The sky shows in the gutters,
+  the gaps and below the fold; a widget stays opaque. 48 translucent cards over
+  a gradient is a different, much riskier change — every figure on this page
+  would then be sitting on a colour that moves with the weather.
+- **21 of the 24 orgs get no sky**, for the same reason they get no card: they
+  are dynamic and carry no coords. The reporting project's
+  `/api/admin/org-by-id/:orgId` could hand them across (it already returns
+  slug/token/orgId/logoUrl/displayName and this project already reconciles
+  against it on boot) — one field, and not asked for yet.
 - **`POST /admin/api/orgs/:slug/toggles` still accepts any key** and writes a
   flag nothing reads — pre-existing, not touched here, and the same hole the
   reporting project closed on its own flags route.
