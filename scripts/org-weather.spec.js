@@ -412,6 +412,101 @@ for (const sky of SKIES) {
   });
 }
 
+/* ── THE SKY BEHIND THE WHOLE PAGE ────────────────────────────────────────
+   Dan, on the card-only version: "doesn't the whole org page get the overcast
+   treatment?" It does now. Same fixed-layer mechanism as the reports project's
+   org landing — with the one thing that could not be lifted measured here. */
+/* ruleFor() escapes its argument — it was written for `.wxc-rain`. These
+   selectors are `body.wx-rain .wx-sky` and `body.has-wx .section-header::before`,
+   so they need the raw form; `[^}]*` crosses newlines, which the two-selector
+   drizzle/rain rule and the two-line plates both need. */
+function ruleSrc(src) {
+  const m = new RegExp(src + "[^{]*\\{([^}]*)\\}").exec(PAGE);
+  return m ? m[1] : "";
+}
+const layerFn = sliceIn(PAGE, "function WeatherSky({ wx })", "\nfunction WeatherCard", "WeatherSky");
+ok(/ReactDOM\.createPortal\(/.test(layerFn),
+  "the layer is PORTALLED to <body> — `body.has-wx > *:not(.wx-layer)` needs it to be a SIBLING of #root, "
+  + "and a fixed layer inside a stacking context is trapped by it");
+ok(/document\.body\)/.test(layerFn), "...specifically to document.body");
+ok(/!IS_PRINT/.test(layerFn), "no sky in the PDF — it is a document about a date range");
+ok(/wxcNum\(wx\.temp\) !== null/.test(layerFn), "a reading with no temperature paints no sky either");
+ok(/wxcSky\(wx\.sky\)/.test(layerFn), "and the sky goes through the same whitelist the card uses");
+ok(/classList\.toggle\('has-wx'/.test(layerFn) && /classList\.remove\('has-wx'/.test(layerFn),
+  "the body classes are set AND cleaned up — a page that later loses its reading must stop painting the last one");
+ok(/<WeatherSky wx=\{orgMeta\.weather\} \/>/.test(PAGE), "the layer is mounted");
+ok((PAGE.match(/wx=\{orgMeta\.weather\}/g) || []).length === 2,
+  "ONE reading, two surfaces: the card and the sky must read the same object or they can disagree about the same afternoon");
+ok(/@media print \{ \.wx-layer \{ display: none/.test(PAGE), "and the printer never draws it");
+ok(/body\.has-wx > \*:not\(\.wx-layer\) \{ position: relative; z-index: 1; \}/.test(PAGE),
+  "the app is lifted above the layer, or the sky paints over the dashboard");
+
+/* EVERY SKY SETTLES INTO ITS OWN GROUND, and that is what makes the treatment
+   visible at all: the first build put a full sky behind a dense grid of opaque
+   cards and you could not tell overcast from clear. */
+for (const sky of SKIES) {
+  const ramp = ruleSrc("body\\.wx-" + sky + "\\s+\\.wx-sky");
+  ok(/linear-gradient\(180deg/.test(ramp), `.wx-${sky} .wx-sky must declare a page ramp`);
+  ok(/var\(--wx-ground\) 100%\)/.test(ramp),
+    `.wx-${sky} must settle into --wx-ground — a ramp ending in a hardcoded colour drops a sheet of daylight `
+    + "behind a dark-themed dashboard");
+  const tone = ruleSrc("body\\.wx-" + sky + "\\s+\\{");
+  ok(/--wx-ground: color-mix\(in srgb, var\(--bg-page\) (\d+)%/.test(tone),
+    `body.wx-${sky} must mix its ground INTO var(--bg-page) rather than replacing it, or one theme loses its ground`);
+}
+ok(/body\.wx-night \{ --wx-ground: color-mix/.test(PAGE), "night has its own ground");
+ok(/body\.wx-night \.wx-sky \{ background: linear-gradient/.test(PAGE), "...and its own ramp");
+
+/* THE INK ON THE GROUND. `--wx-ground` is a real colour the section labels and
+   the page's own chrome sit on, so it is computed the same way the card's is.
+   color-mix(in srgb) is a plain linear mix of the sRGB values. */
+function mix(a, b, pctA) {
+  const h = x => [1, 3, 5].map(i => parseInt(x.slice(i, i + 2), 16));
+  const [A, B] = [h(a), h(b)], f = pctA / 100;
+  return "#" + A.map((v, i) => Math.round(v * f + B[i] * (1 - f)).toString(16).padStart(2, "0")).join("");
+}
+ok(mix("#ffffff", "#000000", 50) === "#808080", "sanity: the mix helper is a plain sRGB blend");
+
+const THEME_PAGE = { light: "#f3f4f6", dark: "#0a0a0a" };
+const THEME_INK  = { light: "#111111", dark: "#f0f0f0" };
+const groundPct = Number((/--wx-ground: color-mix\(in srgb, var\(--bg-page\) (\d+)%/.exec(PAGE) || [])[1]);
+ok(groundPct >= 60 && groundPct <= 85,
+  `the ground must stay mostly the theme's own colour (got ${groundPct}%) — too little and the page stops being `
+  + "this dashboard, too much and the weather is invisible again");
+const TONES = {};
+for (const sky of SKIES.concat(["night"])) {
+  const m = new RegExp("body\\.wx-" + sky + "(?![-a-z])[^{]*\\{[^}]*var\\(--bg-page\\) \\d+%, (#[0-9a-fA-F]{6})").exec(PAGE);
+  ok(!!m, `body.wx-${sky} must name the colour it leaves on the ground`);
+  if (m) TONES[sky] = m[1];
+}
+/* THESE TWO LOOPS ARE COUPLED TO groundPct AND CANNOT FAIL WITHOUT IT, which
+   is worth saying rather than leaving somebody to think each tone is being
+   vetted on its own. At the shipped 74% the ground can never travel far enough
+   from the page for the ink to fail: the worst tone either way measures
+   7.78:1. Drop the mix to 30% and light theme lands at 2.10:1. So the
+   assertion that does the work is the range above, and this is what makes
+   lowering it fail LOUDLY rather than only looking a bit murky. Mutating a
+   single tone to a dark grey is therefore benign, and was seen to be. */
+for (const [sky, tone] of Object.entries(TONES)) {
+  for (const theme of ["light", "dark"]) {
+    const ground = mix(THEME_PAGE[theme], tone, groundPct);
+    const r = ratio(THEME_INK[theme], ground);
+    ok(r >= 4.5, `${theme} theme, ${sky}: a section label on the tinted ground (${ground}) measures ${r.toFixed(2)}:1`);
+  }
+}
+
+/* THE TWO STRIPS THAT SIT OUTSIDE A CARD keep the ink they already pass with,
+   because their plate stays within a hair of the page colour. Without the
+   section-header plate the "not date-filtered" chip is muted grey on mid-grey
+   sky — seen in a browser, not reasoned about. */
+for (const sel of ["\\.dash-header", "\\.settings-bar", "\\.section-header::before"]) {
+  const rule = ruleSrc("body\\.has-wx " + sel);
+  const m = /color-mix\(in srgb, var\(--bg-(?:page|card)\) (\d+)%/.exec(rule);
+  ok(!!m, `body.has-wx ${sel.replace(/\\\\/g, "")} must carry a plate over the sky`);
+  if (m) ok(Number(m[1]) >= 80,
+    `...and it must stay at least 80% the theme's own colour (got ${m[1]}%), or the ink ratios under it change`);
+}
+
 /* ── report ──────────────────────────────────────────────────────────────
    LAST STATEMENT IN THE FILE, deliberately: this has been got wrong three
    times across these two projects — assertions appended below the print run,
