@@ -600,6 +600,31 @@ ok(refused({ x: { city: "Boulder", state: "CO", coords: { lat: 40.01, lon: -105.
            { "Boulder, CO": { lat: 40.01, lng: -105.27, state: "Colorado" } }).length === 0,
   "and a geocode that VERIFIES is kept — this drops the wrong ones, not the geocoded ones");
 
+/* WHAT PROTECTS A HARDCODED OR TABLE COORDINATE is that no cache entry exists
+   for its query, NOT a check on where it came from — `geocodePlace` is only
+   called for an org in `need`, and an org with coordinates is never in `need`.
+   So the guarantee is real but indirect, and it is written down because the
+   obvious reading ("hardcoded orgs are exempt") is FALSE: plant a stateless
+   entry matching one and it is refused. The outcome is benign — it is
+   re-resolved from the table or re-geocoded to the same place on the same boot
+   — but nobody should have to rediscover that. */
+const hardcoded = { watertown: { city: "Watertown", state: "MA", coords: { lat: 42.3709, lon: -71.1828 } } };
+ok(refused(hardcoded, {}).length === 0,
+  "a coordinate with no cache entry for its query is untouched — which is what actually spares the hardcoded "
+  + "and table orgs, since neither is ever geocoded");
+/* Discriminating only with a TAGGED org: an untagged one is spared by the value
+   match whatever the missing entry degrades to, so that fixture could not tell
+   the two implementations apart. The case is real — a poisoned entry is DELETED
+   before being re-asked, and a lost or cleared cache file would otherwise drop
+   every tagged coordinate on the platform at once. */
+ok(refused({ tagged: { city: "Elsewhere", state: "CO", coordsFrom: "Gone, CO",
+                       coords: { lat: 39, lon: -105 } } }, {}).length === 0,
+  "a TAGGED coordinate whose cache entry is gone is kept, not dropped — a cleared cache must not wipe every "
+  + "coordinate on the platform");
+ok(refused(hardcoded, { "Watertown, MA": { lat: 42.3709, lng: -71.1828 } }).length === 1,
+  "...and it is NOT exempt by provenance: plant a stateless entry that matches and it is refused, which is "
+  + "benign (same place, re-resolved that boot) but is not what the code appears to promise");
+
 /* The tag still earns its place: it is what makes the match exact rather than
    reconstructed, for every coordinate written from here on. */
 const tagged = { city: "Elsewhere", state: "CO", coordsFrom: "Woodman Hills, CO",
