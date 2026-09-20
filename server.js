@@ -679,6 +679,48 @@ function orgPlaceQuery(org) {
   return state ? `${city}, ${state}` : city;
 }
 
+/* THE ANSWER IS VERIFIED AGAINST THE STATE THE ORG GAVE, and this shipped
+   without it for one deploy. `Woodman Hills, CO` — the org's own spelling, one
+   letter off `Woodmen` — matched a STREET in Glen Allen, VIRGINIA, and
+   Nominatim ignored the `CO` entirely. The dashboard showed Virginia's weather
+   for a Colorado district, 1,900 km out, and the continental-US bounds check
+   waved it through because Virginia is in the continental US.
+
+   That is the exact failure the "no coords, no weather" rule exists to prevent,
+   arriving by a door I had opened. A BOUNDS BOX IS NOT A VERIFICATION: it asks
+   "is this a plausible point in America", and the question is "is this the
+   place they named".
+
+   A structured query (city= + state=) refuses the bad one — but it also refuses
+   `Marin County, CA` and `Pawnee, IN`, which resolve correctly freeform. So the
+   query stays freeform and the RESULT is checked: the org said CO, and a hit in
+   Virginia is not what they meant. */
+const US_STATES = {
+  AL:"alabama",AK:"alaska",AZ:"arizona",AR:"arkansas",CA:"california",CO:"colorado",
+  CT:"connecticut",DE:"delaware",FL:"florida",GA:"georgia",HI:"hawaii",ID:"idaho",
+  IL:"illinois",IN:"indiana",IA:"iowa",KS:"kansas",KY:"kentucky",LA:"louisiana",
+  ME:"maine",MD:"maryland",MA:"massachusetts",MI:"michigan",MN:"minnesota",
+  MS:"mississippi",MO:"missouri",MT:"montana",NE:"nebraska",NV:"nevada",
+  NH:"new hampshire",NJ:"new jersey",NM:"new mexico",NY:"new york",
+  NC:"north carolina",ND:"north dakota",OH:"ohio",OK:"oklahoma",OR:"oregon",
+  PA:"pennsylvania",RI:"rhode island",SC:"south carolina",SD:"south dakota",
+  TN:"tennessee",TX:"texas",UT:"utah",VT:"vermont",VA:"virginia",WA:"washington",
+  WV:"west virginia",WI:"wisconsin",WY:"wyoming",DC:"district of columbia",
+};
+
+/* Returns true when the hit is in the state the org named, or when there is
+   nothing to check against. An UNCHECKABLE answer is accepted — the org gave us
+   only a city and that is still their own statement — but a CONTRADICTED one
+   never is. */
+function geoStateMatches(hit, state) {
+  const want = (state || '').trim();
+  if (!want) return true;
+  const full = US_STATES[want.toUpperCase()] || want.toLowerCase();
+  const got = (hit && hit.state || '').trim().toLowerCase();
+  if (!got) return true;              // Nominatim did not say; not a contradiction
+  return got === full;
+}
+
 /* Nominatim answers {lat, lng} and the weather library wants {lat, lon}. A
    silent key mismatch is the `Number(null)` defect in a new costume — it would
    read as a missing field rather than an error — so the conversion is explicit
@@ -690,19 +732,35 @@ function coordsFromGeo(hit) {
   return weatherLib.coordsOf(cand);
 }
 
-async function geocodePlace(q) {
-  if (Object.prototype.hasOwnProperty.call(geoCache, q)) return coordsFromGeo(geoCache[q]);
+async function geocodePlace(q, state) {
+  /* The cached hit is re-verified rather than trusted: an entry written before
+     the state check existed can be in the wrong state, and it would otherwise
+     outlive the fix for as long as the volume does. */
+  if (Object.prototype.hasOwnProperty.call(geoCache, q)) {
+    const cached = geoCache[q];
+    if (!geoStateMatches(cached, state)) {
+      console.warn(`[coords] cached hit for ${q} is in ${cached.state} — discarding`);
+      delete geoCache[q];
+      saveGeoCache();
+    } else return coordsFromGeo(cached);
+  }
   try {
     const resp = await fetch(
-      `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1&countrycodes=us`,
+      `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1&countrycodes=us&addressdetails=1`,
       { headers: { 'User-Agent': 'rec-dashboard/1.0 (dan@rec.us)' }, signal: AbortSignal.timeout(8000) });
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const data = await resp.json();
     /* A MISS IS CACHED AS A MISS. "We asked and there is no such place" is a
        real answer and must not be re-asked on every boot; what it must never
-       do is become a coordinate. */
-    const hit = data.length ? { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) }
-                            : { lat: null, lng: null };
+       do is become a coordinate. A CONTRADICTED hit is cached as a miss too —
+       the answer for that query really is "nothing we can use". */
+    let hit = { lat: null, lng: null, state: null };
+    if (data.length) {
+      const got = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon),
+                    state: (data[0].address && data[0].address.state) || null };
+      if (geoStateMatches(got, state)) hit = got;
+      else console.warn(`[coords] ${q} resolved to ${got.state} — refused, the org said ${state}`);
+    }
     geoCache[q] = hit;
     saveGeoCache();
     return coordsFromGeo(hit);
@@ -714,7 +772,60 @@ async function geocodePlace(q) {
   }
 }
 
+/* WHICH STORED COORDINATES THIS CODE WOULD NO LONGER PRODUCE. A wrong one is
+   already persisted on the volume — Woodmen Hills was showing Virginia — and a
+   fix that only guards NEW lookups leaves the bad one serving for as long as
+   the store survives.
+
+   IT HAS TO WORK WITHOUT THE PROVENANCE TAG, and the first version did not:
+   `coordsFrom` ships in the same change as this pass, so the one org it exists
+   for carries none, and an `if (!org.coordsFrom) continue` skipped it. The
+   fixture I wrote supplied the tag, which is the recorded "a test that supplies
+   the field under test cannot say whether anything supplies it in production".
+
+   So an untagged coordinate is reconstructed from the org's own address — the
+   same string the same function produced when the coordinate was written — and
+   is only treated as ours when it IS the cached hit, value for value. A table
+   coordinate and a hardcoded one are not guesses and are not ours to drop, and
+   with the tag missing nothing else tells them apart. Both sides round-trip
+   through JSON as the same double, so the comparison is exact rather than
+   approximate. Returned rather than applied, so a spec can RUN it: every defect
+   in here is a comparison, and a regex passes on an inverted one. */
+function refusedGeocodes(orgs, cache) {
+  const out = [];
+  for (const slug of Object.keys(orgs)) {
+    const org = orgs[slug];
+    if (!weatherLib.coordsOf(org)) continue;
+    const q = org.coordsFrom || orgPlaceQuery(org);
+    const hit = q && cache[q];
+    if (!hit) continue;
+    const ours = !!org.coordsFrom
+      || (hit.lat === org.coords.lat && hit.lng === org.coords.lon);
+    if (!ours || geoStateMatches(hit, org.state)) continue;
+    out.push({ slug, q, was: hit.state });
+  }
+  return out;
+}
+
 async function backfillOrgCoords() {
+  const refused = refusedGeocodes(ORGS, geoCache);
+  let dropped = false;
+  for (const r of refused) {
+    const org = ORGS[r.slug];
+    console.warn(`[coords] ${r.slug} had ${org.coords.lat}, ${org.coords.lon} from "${r.q}" `
+                 + `which is in ${r.was} — dropping, the org says ${org.state}`);
+    delete org.coords; delete org.coordsFrom;
+    _wxCache.delete(r.slug);
+    /* Gated on `_dynamic` exactly as the backfill below is, and that is not
+       tidiness: `saveDynamicOrgs` writes ONLY the orgs carrying that flag, so
+       calling it because of an org that lacks one would delete every other org
+       from the store. The wrong sky would be fixed by losing the dashboard. The
+       in-memory drop happens either way, so such an org still stops showing it
+       this boot — there is simply nothing of ours on disk to update. */
+    if (org._dynamic) dropped = true;
+  }
+  if (dropped) saveDynamicOrgs();
+
   const need = Object.keys(ORGS).filter(slug => !weatherLib.coordsOf(ORGS[slug]));
   let fromTable = 0, geocoded = 0, stillNone = [];
   /* Pass one is synchronous and free, so it finishes before the first request
@@ -731,9 +842,13 @@ async function backfillOrgCoords() {
   for (const slug of left) {
     const q = orgPlaceQuery(ORGS[slug]);
     if (!q) { stillNone.push(slug); continue; }
-    const c = await geocodePlace(q);
+    const c = await geocodePlace(q, ORGS[slug].state);
     if (c) {
       ORGS[slug].coords = c;
+      /* Provenance, so a geocode this code would now refuse can be undone on a
+         later boot. A coordinate from the table needs no tag: it cannot go
+         stale, and only a geocoded one was ever a guess. */
+      ORGS[slug].coordsFrom = q;
       if (ORGS[slug]._dynamic) dirty = true;
       geocoded++;
       console.log(`[coords] ${slug} → ${c.lat}, ${c.lon} (${q})`);
@@ -1754,9 +1869,10 @@ app.post('/admin/api/orgs', adminAuth, async (req, res) => {
 
   if (!known) {
     const q = orgPlaceQuery(org);
-    if (q) geocodePlace(q).then(c => {
+    if (q) geocodePlace(q, org.state).then(c => {
       if (!c) return;
       org.coords = c;
+      org.coordsFrom = q;
       saveDynamicOrgs();
       console.log(`[coords] ${slug} → ${c.lat}, ${c.lon} (${q})`);
       refreshOrgWeather(slug);
