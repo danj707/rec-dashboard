@@ -352,6 +352,41 @@ so a truthy read (`!!t.weather`) would ship the feature dark for all of them.
 through it. A raw pass-through draws the box UNCHECKED while the card is very
 much on, which is the inverted-eye bug this repo's sibling shipped once.
 
+### THE FIX MERGED AND DID NOT REACH PRODUCTION — the fixture lied a third time
+
+The deploy came up clean and logged **`[weather] pre-warmed 24 org(s)`** and
+**not one `[coords]` line**. Nothing was dropped, and Woodmen Hills was still
+serving Virginia: reproduced locally at **69° / hi 88 / lo 66 / sunset 7:09 PM**,
+which is Dan's screenshot to the degree.
+
+**THE BACKFILL THAT SHIPPED FIRST WROTE `{lat, lng}` AND NO `state`.** So the
+entry on the volume has no state to contradict, `geoStateMatches` reads it as
+UNCHECKABLE, and the undo pass accepted it — the accept-the-uncheckable rule,
+which is right for an answer Nominatim declined to label, applied to an answer
+taken before anyone was looking.
+
+**And every fixture I wrote carried a `state` field the real file does not.**
+Third instance in one change of *"a test that supplies the field under test
+cannot say whether anything supplies it in production"* — and the only one that
+reached users, because the other two were caught by mutation while this one
+passed everything. The lesson is sharper than the recorded form: **a fixture
+built from the code's own output shape proves the code agrees with itself.**
+Build it from what is ON THE DISK.
+
+So an entry with **no `state` key at all** is refused on those grounds rather
+than on its contents. A MISS is not an unverified hit — it is stored as
+`{lat: null, lng: null, state: null}` and HAS the key, so `in` separates them
+where a truthiness test would not.
+
+- **A correct pre-check coordinate is not lost**, which is what makes this safe
+  to apply to all 17: Danvers is dropped, re-geocoded, verified, and comes back
+  to the same coordinate. What changes is that it is now vouched for.
+- Reaching the miss branch at all **needs a TAGGED org**, and the first fixture
+  could not: a miss has null coordinates, so the value match rejects it long
+  before the `unverified` line and the mutation SURVIVED. The case is real —
+  a contradicted answer is cached AS A MISS, so an org still carrying
+  `coordsFrom` for that query meets exactly this on the next boot.
+
 ### AND THE PLATFORM KNEW WHERE THEY WERE ALL ALONG
 
 Dan, seeing the card still reading 65°/Clear on production: *"looks fine to me on
@@ -397,7 +432,7 @@ Falcon, CO, against the 65°/H 88° the card was showing.
 
 ### Guards
 
-`scripts/org-weather.spec.js` (**514 assertions, in CI**), which LIFTS AND RUNS
+`scripts/org-weather.spec.js` (**517 assertions, in CI**), which LIFTS AND RUNS
 `lib/weather.js`, `wxcNum`, `orgPlaceQuery`, `coordsFromGeo`, `geoStateMatches`
 and `refusedGeocodes`, and computes the contrast of every gradient stop and
 every tinted ground in both themes.
