@@ -495,6 +495,37 @@ for (const [sky, tone] of Object.entries(TONES)) {
   }
 }
 
+/* ── EVERY PARTICLE CARRIES BOTH EDGES ────────────────────────────────────
+   Dan, on the merged page: "if it starts snowing there or raining, I better
+   see snow and rain." They were lifted off the card, whose background is a
+   dark saturated ramp; the page's ground is a light tint of the theme colour,
+   so white-on-near-white all but vanished — measured, snow worst of all.
+
+   A particle has to read on the dark sky band AND on the light ground, in
+   either theme, so each is drawn with a light edge and a dark one. THIS IS A
+   SOURCE ASSERTION AND SAYS SO: whether you can actually see it is a question
+   about composited pixels, and `ci-check-render.js` answers that one by
+   screenshotting the ground with the particles shown and hidden. This half
+   names the rule; that half measures it. */
+const rainFx = ruleSrc("body\\.wx-drizzle \\.wx-fx, body\\.wx-rain \\.wx-fx, body\\.wx-storm \\.wx-fx");
+ok(/rgba\(2\d\d,2\d\d,2\d\d,\.\d+\)/.test(rainFx),
+  "the rain streak keeps a LIGHT edge, which is what reads against the dark sky band at the top");
+ok(/rgba\(51,65,85,\.\d+\)/.test(rainFx),
+  "...and a SLATE one, which is what reads against the tinted ground below it — white-on-near-white is "
+  + "what made the merged build invisible");
+const snowShadow = ruleSrc("body\\.wx-snow \\.wx-fx, body\\.wx-snow \\.wx-fx2");
+ok(/drop-shadow\(/.test(snowShadow),
+  "a flake stays white, so its second edge is a SHADOW — invisible on the dark band, and the only thing "
+  + "separating it from the light ground");
+/* Drizzle is meant to be the faintest of the three and must still clear the
+   floor the render check measures against; it sat below it as merged. */
+for (const [sky, floor] of [["rain", 0.5], ["storm", 0.5], ["drizzle", 0.3]]) {
+  const m = new RegExp("body\\.wx-" + sky + " \\.wx-fx[^{]*\\{ opacity: (\\.\\d+)").exec(PAGE);
+  ok(!!m, `body.wx-${sky} .wx-fx must set its own opacity`);
+  if (m) ok(Number(m[1]) >= floor,
+    `...and ${sky}'s must stay at or above ${floor} (got ${m[1]}) — below that it stops being visible on the ground`);
+}
+
 /* THE TWO STRIPS THAT SIT OUTSIDE A CARD keep the ink they already pass with,
    because their plate stays within a hair of the page colour. Without the
    section-header plate the "not date-filtered" chip is muted grey on mid-grey

@@ -177,7 +177,7 @@ much on, which is the inverted-eye bug this repo's sibling shipped once.
 
 ### Guards
 
-`scripts/org-weather.spec.js` (**398 assertions, in CI**), which LIFTS AND RUNS
+`scripts/org-weather.spec.js` (**407 assertions, in CI**), which LIFTS AND RUNS
 `lib/weather.js` and `wxcNum`, and computes the contrast of every gradient stop
 and every tinted ground in both themes.
 
@@ -207,7 +207,7 @@ cannot fail on its own. It is coupled to the mix percentage, which has its own
 bounded assertion, and at 30% light theme lands at **2.10:1**. Written into the
 spec beside the loop, or the next person reads it as vetting each tone.
 
-**Twenty-one `ci-check-render.js` cases**, because none of this is visible in
+**Twenty-five `ci-check-render.js` cases**, because none of this is visible in
 source — the CSS reads plausibly whichever sky it paints, a card in the wrong
 half of the toolbar is the same markup, and a sky painted OVER the dashboard
 still leaves every selector matching. They key on the **computed**
@@ -220,6 +220,91 @@ from the tooltip, the app not lifted above the layer, the layer rendered in
 place, the ground substituted rather than mixed, the page night ramp dropped,
 the settings-bar plate removed, the body classes never applied, and a page with
 no reading painting a sky anyway.
+
+### "I BETTER SEE SNOW AND RAIN" — and on the page you could not (2026-09-20)
+
+Dan, the moment the page treatment merged. Fair, and it was worse than it
+looked: the particles were lifted straight off the CARD, whose background is a
+dark saturated ramp, onto a page whose ground is a light tint of the theme
+colour. **White-on-near-white.** Measured over the ground band, before and
+after, as strength (mean delta where the weather touches) over share of the
+band:
+
+| | as merged | with both edges |
+|---|---|---|
+| rain | 6.5 / 3.10% | **17.7 / 9.93%** |
+| snow | 13.4 / **0.04%** | **19.5 / 0.21%** |
+| drizzle | 19.7 / **0.03%** | **13.1 / 9.30%** |
+| storm | 7.5 / 0.41% | **15.3 / 9.93%** |
+
+**EVERY PARTICLE NOW CARRIES A LIGHT EDGE AND A DARK ONE.** It has to read on
+the dark sky band at the top of the viewport and on the light ground below it,
+in either theme, so each rain streak is drawn twice — a light line and a slate
+one beside it, which is also what rain actually looks like. **A flake stays
+white**, so its second edge is a `drop-shadow` instead: invisible against the
+dark band, and the only thing separating it from the light ground.
+
+**THE CARD IS UNTOUCHED.** Its particles were never the problem — they were
+designed against the right background, and the two surfaces have had separate
+classes (`.wxc-fx` / `.wx-fx`) since the page treatment shipped.
+
+*Generalise it: a treatment that works on one surface is not a treatment, it is
+a treatment tuned to that surface's background. The ground problem, one layer
+down from where it was already recorded.*
+
+### THE VISIBILITY CHECK TOOK FOUR TRIES, and three of them passed on the bug
+
+`loadWet` screenshots the ground band with the particles shown and hidden and
+decodes both to pixels. Every earlier version of it was wrong, and **not one of
+them was caught by review** — each was found by running it against the merged
+build and watching it pass:
+
+1. **It compared the two PNGs as FILES and asked whether they differed.** An
+   inequality where a magnitude was meant — a change nobody can perceive still
+   moves the bytes. Third time in this feature.
+2. **Then `peak >= 12`**, which passes the merged build for rain and snow, i.e.
+   would not have caught the thing it was written for.
+3. **Then a 48px gutter strip**, on which snow swung from a peak of 60 to 21
+   between two runs of the SAME build — flakes are sparse and drift, so which
+   ones were inside the strip when the shutter fell decided the answer. *A
+   flaky assertion is not a guard.*
+4. **And the band was pinned to the foot of the viewport**, which was open
+   ground in my probe's fixture and solid cards in the harness's — so the two
+   disagreed about the same build, and I calibrated somewhere the guard does
+   not run.
+
+What it measures now is **STRENGTH, not peak**: the mean delta over the pixels
+the weather touches. The brightest single pixel swung 48→155 across three runs
+of one build; strength moves by about one unit (rain 17.7 / 18.9 / 16.8). The
+band is everything below 36% of the viewport — **below 30% matters**, because
+that is where every ramp settles into the ground, and including the sky band
+scores a particle that reads beautifully on the dark top and vanishes on the
+ground, which is the whole bug.
+
+**BOTH FLOORS CARRY REAL CASES**, which is worth saying because usually one is
+decoration: strength catches merged rain and storm, and share catches merged
+snow and drizzle — merged drizzle has a perfectly healthy strength of 19.7 off
+a handful of pixels covering 0.03% of the band, which is the single-bright-spot
+case the share floor exists for, turning up in real data rather than in theory.
+
+**The PNG decoder is thirty lines and has no dependency** — a PNG is
+zlib-compressed scanlines and zlib ships with node. Round-tripped against an
+image built byte by byte before being trusted. Without pixels this check could
+only ever say the picture changed, which is version 1 above.
+
+### THE RAIN CASE IS BELT-AND-BRACES, and its mutations say so
+
+Rain got the dark edge AND an opacity lift, and **either alone is enough**: at
+the merged opacity with the new edge it passes, and at the new opacity without
+the edge it passes. Only the merged build, which has neither, fails. So no
+single mutation fails `the rain is actually visible on the page` — the same
+shape the reporting project records for its PDF filter gate and scoper.
+
+Removing the shared streak's dark edge fails **drizzle** rather than rain,
+because one rule serves `wx-drizzle`, `wx-rain` and `wx-storm` and drizzle is
+deliberately the faintest, so it crosses the floor first. Caught, and by the
+most sensitive of the three rather than the one it is named for — recorded
+rather than dressed up as a clean hit.
 
 ### TWO OF MY OWN NEW GUARDS WERE BLIND, and mutation is what showed both
 

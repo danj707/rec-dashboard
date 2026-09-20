@@ -680,6 +680,169 @@ const WX_RAIN_NIGHT = { ...WX_CLEAR_DAY, sky: 'rain', night: true, code: 61, tem
    trapped in a stacking context paints nothing, and a ground that was never
    tinted is the bug the first build of this shipped — a full sky behind a
    dense grid of opaque cards, indistinguishable from no sky at all. */
+/* A MINIMAL PNG READER — enough to turn a screenshot into pixels. Puppeteer
+   writes 8-bit colour-type 6 (RGBA) or 2 (RGB); anything else returns null and
+   the caller reports nothing rather than guessing. No dependency: a PNG is
+   zlib-compressed scanlines with a one-byte filter on each, and zlib ships with
+   node. Worth the thirty lines — without pixels this check can only say the
+   picture changed, which is what let the invisible build through. */
+/* Set from the measurement in loadWet's comment, not by eye. */
+const STRENGTH_FLOOR = 8;
+function decodePng(buf) {
+  if (buf.length < 8 || buf.readUInt32BE(0) !== 0x89504e47) return null;
+  let off = 8, w = 0, h = 0, depth = 0, ctype = 0;
+  const idat = [];
+  while (off + 8 <= buf.length) {
+    const len = buf.readUInt32BE(off), type = buf.toString('ascii', off + 4, off + 8);
+    const body = buf.subarray(off + 8, off + 8 + len);
+    if (type === 'IHDR') {
+      w = body.readUInt32BE(0); h = body.readUInt32BE(4);
+      depth = body[8]; ctype = body[9];
+      if (depth !== 8 || (ctype !== 6 && ctype !== 2) || body[12] !== 0) return null; // no interlace
+    } else if (type === 'IDAT') idat.push(body);
+    else if (type === 'IEND') break;
+    off += 12 + len;
+  }
+  if (!w || !h) return null;
+  let raw;
+  try { raw = require('zlib').inflateSync(Buffer.concat(idat)); } catch (e) { return null; }
+  const bpp = ctype === 6 ? 4 : 3, stride = w * bpp;
+  const out = Buffer.alloc(w * h * 4);
+  let prev = Buffer.alloc(stride), pos = 0;
+  for (let y = 0; y < h; y++) {
+    const f = raw[pos++];
+    const line = Buffer.from(raw.subarray(pos, pos + stride)); pos += stride;
+    for (let x = 0; x < stride; x++) {
+      const a = x >= bpp ? line[x - bpp] : 0, b = prev[x], c = x >= bpp ? prev[x - bpp] : 0;
+      if (f === 1) line[x] = (line[x] + a) & 255;
+      else if (f === 2) line[x] = (line[x] + b) & 255;
+      else if (f === 3) line[x] = (line[x] + ((a + b) >> 1)) & 255;
+      else if (f === 4) {
+        const p = a + b - c, pa = Math.abs(p - a), pb = Math.abs(p - b), pc = Math.abs(p - c);
+        line[x] = (line[x] + (pa <= pb && pa <= pc ? a : pb <= pc ? b : c)) & 255;
+      }
+    }
+    for (let x = 0; x < w; x++) {
+      out[(y * w + x) * 4] = line[x * bpp];
+      out[(y * w + x) * 4 + 1] = line[x * bpp + 1];
+      out[(y * w + x) * 4 + 2] = line[x * bpp + 2];
+      out[(y * w + x) * 4 + 3] = bpp === 4 ? line[x * bpp + 3] : 255;
+    }
+    prev = line;
+  }
+  return { width: w, height: h, data: out };
+}
+
+/* CAN YOU ACTUALLY SEE IT FALL? Dan, on the merged page: "if it starts
+   snowing there or raining, I better see snow and rain." The first version was
+   lifted off the card, whose background is a dark saturated ramp, onto a page
+   whose ground is a light tint — white-on-near-white, and snow was invisible.
+
+   Neither `getAnimations()` nor a computed opacity can answer this: a layer can
+   be running, painted and perfectly transparent against what it lands on. So
+   this SCREENSHOTS a strip of the gutter twice — particles shown, then hidden
+   — and reports how many of those pixels the weather actually changes. It is
+   the only assertion here that measures the thing the complaint was about. */
+async function loadWet(page) {
+  await page.reload({ waitUntil: 'networkidle2', timeout: 60000 });
+  await page.waitForSelector('.wx-layer .wx-fx', { timeout: 20000 });
+  await new Promise(r => setTimeout(r, 650));
+  const strip = await page.evaluate(() => {
+    /* EVERYTHING BELOW THE SKY BAND, full width. Three things this shape has
+       to get right, each of which the versions before it got wrong:
+
+       - WIDE, because a 48px gutter strip made snow swing from a peak of 60 to
+         21 between two runs of the same build: flakes are sparse and they
+         drift, so which ones were inside the strip when the shutter fell
+         decided the answer. A flaky assertion is not a guard.
+       - NOT PINNED TO THE FOOT of the viewport, because a band at 68% landed
+         on open ground in one fixture's layout and on solid cards in another —
+         the probe and the harness then disagreed about the same build.
+       - BELOW 30%, because that is where every ramp settles into the ground.
+         Include the sky band and a particle that reads beautifully on the dark
+         top and vanishes on the ground still scores well, which is precisely
+         the bug being guarded against.
+
+       Cards inside the band contribute nothing either way, so they dilute the
+       share and leave the peak alone — which is why the peak is what decides. */
+    return { x: 0, y: Math.round(innerHeight * 0.36), width: innerWidth,
+             height: Math.round(innerHeight * 0.62) };
+  });
+  const on = await page.screenshot({ encoding: 'base64', clip: strip });
+  await page.evaluate(() => {
+    const st = document.createElement('style');
+    st.id = 'wx-off';
+    st.textContent = '.wx-fx, .wx-fx2 { display: none !important; }';
+    document.head.appendChild(st);
+  });
+  await new Promise(r => setTimeout(r, 120));
+  const off = await page.screenshot({ encoding: 'base64', clip: strip });
+  await page.evaluate(() => { const n = document.getElementById('wx-off'); if (n) n.remove(); });
+
+  /* PIXELS, NOT BYTES. The first version of this compared the two PNGs as
+     files and asked whether they differed — which is an inequality where a
+     MAGNITUDE was meant, and it passed happily on the invisible build: a
+     one-unit change nobody can perceive still moves the bytes. Same defect as
+     the hit test and the ground test before it. Decoded here rather than with
+     a dependency, because a PNG is zlib scanlines and zlib is built in. */
+  const A = decodePng(Buffer.from(on, 'base64'));
+  const B = decodePng(Buffer.from(off, 'base64'));
+  let peak = 0, lit = 0, sum = 0, n = 0;
+  if (A && B && A.data.length === B.data.length) {
+    for (let i = 0; i < A.data.length; i += 4) {
+      const d = Math.max(Math.abs(A.data[i] - B.data[i]),
+                         Math.abs(A.data[i + 1] - B.data[i + 1]),
+                         Math.abs(A.data[i + 2] - B.data[i + 2]));
+      if (d > peak) peak = d;
+      if (d >= 6) { lit++; sum += d; }  // 6/255 is where a flat tone stops reading as flat
+      n++;
+    }
+  }
+  /* STRENGTH, NOT PEAK. The brightest single pixel swung 48 to 155 across
+     three runs of the SAME build — it depends on where one streak happens to
+     be when the shutter falls. The mean over the pixels the weather actually
+     touches is the same quantity a reader perceives and barely moves between
+     frames, so it is what the floor is set against; the peak is kept only
+     because it is the useful number in a failure message. */
+  const strength = lit ? sum / lit : 0;
+  /* THE FLOORS ARE MEASURED, NOT PICKED, and this is the third threshold in
+     this feature I first set by eye and had to correct. Across three runs of
+     each build, over the same band:
+
+                            strength / share of the band
+
+         as merged     rain  6.5 / 3.10%   snow 13.4 / 0.04%   drizzle 19.7 / 0.03%   storm  7.5 / 0.41%
+         with edges    rain 17.7 / 9.93%   snow 19.5 / 0.21%   drizzle 13.1 / 9.30%   storm 15.3 / 9.93%
+
+     BOTH FLOORS CARRY REAL CASES, which is unusual enough to say: strength
+     catches merged rain and storm (6.5 and 7.5 against a fixed minimum of
+     12.1), and share catches merged snow and DRIZZLE, whose strength is a
+     perfectly healthy 19.7 off a handful of pixels covering 0.03% of the band.
+     That is the single-bright-spot case the share floor exists for, turning up
+     in real data rather than in theory.
+
+     Margins, over three runs of each: strength 12.1 low on the fixed build
+     against 7.5 high on the merged one; share 0.21% low against 0.04% high.
+
+     TWO EARLIER VERSIONS OF THIS CHECK WERE WRONG, both caught by measuring
+     rather than by review. It first asked whether the two PNGs differed at all
+     — an inequality where a magnitude was meant, which passes on a change
+     nobody can see. Then it used peak >= 12, which PASSES the merged build for
+     rain and snow, i.e. would not have caught the thing it was written for. */
+  const share = n ? lit / n : 0;
+  const visible = strength >= STRENGTH_FLOOR && share >= 0.0012;
+  await page.evaluate((v, pk, sh) => {
+    document.body.setAttribute('data-wet-visible', v ? '1' : '0');
+    document.body.setAttribute('data-wet-peak', String(pk));
+    document.body.setAttribute('data-wet-share', sh.toFixed(4));
+  }, visible, peak, share);
+  if (process.env.WET_DEBUG) console.log('      measured — strength ' + strength.toFixed(1)
+    + '  share ' + (share * 100).toFixed(2) + '%  peak ' + peak
+    + '  -> ' + (visible ? 'visible' : 'NOT VISIBLE'));
+  /* deliberately NOT loadSky() afterwards: it opens with a reload, which would
+     wipe the two attributes this hook exists to set. Cost an entire run. */
+}
+
 async function loadSky(page) {
   await page.reload({ waitUntil: 'networkidle2', timeout: 60000 });
   await page.waitForSelector('.dash-header', { timeout: 20000 });
@@ -2304,6 +2467,22 @@ const CASES = [
     needs: 'body:not(.has-wx)', absent: 'body[class*="wx-"]' },
   { name: 'weather · the dashboard still renders around it', act: loadWx, wx: WX_CLEAR_DAY,
     needs: '.widget-card' },
+  /* "I better see snow and rain." Measured in the GUTTER, on the ground —
+     the card's own palette was designed against a dark ramp and white-on-
+     near-white is where it failed. A running animation is not visibility. */
+  { name: 'weather · the rain is actually visible on the page', act: loadWet,
+    wx: { ...WX_CLEAR_DAY, sky: 'rain', label: 'Rain', night: false },
+    needs: 'body.wx-rain[data-wet-visible="1"]', absent: 'body[data-wet-visible="0"]' },
+  { name: 'weather · ...and so is the snow', act: loadWet,
+    wx: { ...WX_CLEAR_DAY, sky: 'snow', label: 'Snow', temp: 28, night: false },
+    needs: 'body.wx-snow[data-wet-visible="1"]', absent: 'body[data-wet-visible="0"]',
+    note: 'white flakes on a light-tinted ground — the one that was invisible' },
+  { name: 'weather · ...and a wet night still rains on the page', act: loadWet,
+    wx: { ...WX_RAIN_NIGHT, sky: 'storm', label: 'Thunderstorm' },
+    needs: 'body.wx-night.wx-storm[data-wet-visible="1"]', absent: 'body[data-wet-visible="0"]' },
+  { name: 'weather · even drizzle is above the threshold of being seen', act: loadWet,
+    wx: { ...WX_CLEAR_DAY, sky: 'drizzle', label: 'Light drizzle', night: false },
+    needs: 'body.wx-drizzle[data-wet-visible="1"]', absent: 'body[data-wet-visible="0"]' },
 ];
 
 (async () => {
