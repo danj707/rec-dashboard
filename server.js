@@ -590,6 +590,43 @@ let dashboardConfigs = loadAllConfigs();
    mode and it is the VIEWER'S setting; night is the ORG'S clock. Painting the
    ground after sunset would take that choice away from whoever set it.
    ───────────────────────────────────────────────────────────────────────── */
+/* ── WHERE EVERY ORG IS ───────────────────────────────────────────────────
+   Dan: "backfill those coords — we need live weather data and sky/dark/weather
+   on boot."
+
+   Three orgs are hardcoded in ORGS above with coordinates somebody typed in.
+   EVERY OTHER ORG CAME THROUGH ADD ORG, which stores `city` and `state` and
+   has never stored coordinates — so `coordsOf` returned null and both gates
+   correctly declined. Not broken; unfinished. Apex was the one that made it
+   obvious.
+
+   KEYED ON orgId, NEVER ON SLUG. The two projects spell the same organisation
+   differently and have drifted before — this dashboard called Shrewsbury
+   `town-of-shrewsbury` for five weeks — and the org uuid is the half that is
+   stable. A slug-keyed table would silently miss exactly the orgs that have
+   drifted, which are the ones most likely to be wrong in other ways too.
+
+   The values are the reporting project's own, lifted rather than re-derived so
+   the two cannot disagree about where an org is. Cross-checked against an
+   independent geocode: it puts Arvada at 39.8006, -105.0812 against the 39.8028,
+   -105.0875 here — ~300 m apart, which is the difference between a city centroid
+   and a district office and is nothing at this zoom. */
+const ORG_COORDS_BY_ID = {
+  '460566d3-3a51-4387-a7a0-0b010923e40d': { lat: 38.2968, lon: -85.76 },   // Clarksville, IN
+  '574923bd-9e7b-43e0-9e5f-7ce256189cbf': { lat: 35.2226, lon: -97.4395 },   // Norman, OK
+  'efc0724c-8f32-481a-bab3-fc19c724f3a7': { lat: 33.8839, lon: -84.5144 },   // Smyrna, GA
+  'd781690b-c5a0-43c5-8443-9ae43899528c': { lat: 42.3709, lon: -71.1828 },   // watertown
+  'aeba47d0-c97f-49cb-a0e9-93c5af3a68fa': { lat: 39.8028, lon: -105.0875 },   // Arvada, CO
+  '2d147f38-068c-409e-890d-a8acc88d8079': { lat: 37.8735, lon: -122.4567 },   // Tiburon, CA
+  'ac04aa52-d629-435f-84af-0fc95e152e7b': { lat: 37.0842, lon: -94.5133 },   // Joplin, MO
+  '0a9c47af-b4c3-4601-ab0f-d2f401bb787a': { lat: 42.2959, lon: -71.7126 },   // Shrewsbury, MA
+  '7d22bf62-060a-4881-9821-9dea6a0538d6': { lat: 38.5805, lon: -121.5302 },   // West Sacramento, CA
+  'a976a11a-5303-4785-838a-1b281ca77678': { lat: 43.0962, lon: -79.0377 },   // Niagara Falls, NY
+  '0312ebc8-40de-4fc8-a737-8afa26334e13': { lat: 38.6955986, lon: -119.5198339 },   // Gardnerville, NV
+  '52efcded-a5e8-4dbf-8a45-100f70170de0': { lat: 38.82065625, lon: -94.29997011 },   // Pleasant Hill, MO
+  '17380e28-7e02-4b52-82c5-fab18557fd7a': { lat: 37.7648, lon: -122.4436 },   // San Francisco Parks and Rec
+};
+
 const _wxCache = new Map();      // slug → { ts, data }
 const _wxInFlight = new Set();
 const WX_TIMEOUT_MS = 6000;
@@ -616,6 +653,122 @@ async function refreshOrgWeather(slug) {
   } finally {
     _wxInFlight.delete(slug);
   }
+}
+
+/* ── BACKFILLING THE COORDINATES ──────────────────────────────────────────
+   Two sources, cheapest first, and the order is the point: the table is free
+   and exact, the geocoder is a third party that can be wrong.
+
+   1. the orgId table above — no network, no failure mode
+   2. the org's own `city` + `state`, geocoded once and remembered
+
+   A CITY AND A STATE ARE NOT A NAME. The standing rule here is "never a guess
+   from the org's name", and it stands: there are Watertowns in MA, NY, CT and
+   WI, so `displayName` is never consulted. But `city: 'Arvada', state: 'CO'`
+   is the org telling us where it is, in two fields somebody filled in on the
+   Add Org form. Resolving that is reading the answer, not guessing it.
+
+   AN ORG WITH NEITHER STILL GETS NOTHING, on purpose, and renders exactly as
+   it does today. The wrong city's sky is worse than no sky. */
+const GEOCODE_PACE_MS = 1200;   // Nominatim's published limit is 1 req/sec
+
+function orgPlaceQuery(org) {
+  const city = (org && org.city || '').trim();
+  const state = (org && org.state || '').trim();
+  if (!city) return null;          // a state alone is a region, not a point
+  return state ? `${city}, ${state}` : city;
+}
+
+/* Nominatim answers {lat, lng} and the weather library wants {lat, lon}. A
+   silent key mismatch is the `Number(null)` defect in a new costume — it would
+   read as a missing field rather than an error — so the conversion is explicit
+   and the result goes through `coordsOf`, which rejects nulls and anything off
+   the globe by name before anything is stored. */
+function coordsFromGeo(hit) {
+  if (!hit) return null;
+  const cand = { coords: { lat: hit.lat, lon: hit.lng != null ? hit.lng : hit.lon } };
+  return weatherLib.coordsOf(cand);
+}
+
+async function geocodePlace(q) {
+  if (Object.prototype.hasOwnProperty.call(geoCache, q)) return coordsFromGeo(geoCache[q]);
+  try {
+    const resp = await fetch(
+      `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1&countrycodes=us`,
+      { headers: { 'User-Agent': 'rec-dashboard/1.0 (dan@rec.us)' }, signal: AbortSignal.timeout(8000) });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    /* A MISS IS CACHED AS A MISS. "We asked and there is no such place" is a
+       real answer and must not be re-asked on every boot; what it must never
+       do is become a coordinate. */
+    const hit = data.length ? { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) }
+                            : { lat: null, lng: null };
+    geoCache[q] = hit;
+    saveGeoCache();
+    return coordsFromGeo(hit);
+  } catch (err) {
+    /* NOT cached: a timeout is not evidence about the place, and caching it
+       would make one bad minute permanent. */
+    console.warn(`[coords] geocode failed for ${q}: ${err.message}`);
+    return null;
+  }
+}
+
+async function backfillOrgCoords() {
+  const need = Object.keys(ORGS).filter(slug => !weatherLib.coordsOf(ORGS[slug]));
+  let fromTable = 0, geocoded = 0, stillNone = [];
+  /* Pass one is synchronous and free, so it finishes before the first request
+     can arrive — which is what makes the sky present on the FIRST load of a
+     shared org rather than the second. */
+  for (const slug of need) {
+    const hit = ORG_COORDS_BY_ID[ORGS[slug].orgId];
+    if (hit) { ORGS[slug].coords = { lat: hit.lat, lon: hit.lon }; fromTable++; }
+  }
+  const left = need.filter(slug => !weatherLib.coordsOf(ORGS[slug]));
+  if (fromTable) console.log(`[coords] ${fromTable} org(s) resolved from the shared table`);
+  /* Pass two talks to a third party, so it is paced and nothing waits on it. */
+  let dirty = false;
+  for (const slug of left) {
+    const q = orgPlaceQuery(ORGS[slug]);
+    if (!q) { stillNone.push(slug); continue; }
+    const c = await geocodePlace(q);
+    if (c) {
+      ORGS[slug].coords = c;
+      if (ORGS[slug]._dynamic) dirty = true;
+      geocoded++;
+      console.log(`[coords] ${slug} → ${c.lat}, ${c.lon} (${q})`);
+    } else stillNone.push(slug);
+    await new Promise(r => setTimeout(r, GEOCODE_PACE_MS));
+  }
+  /* Persisted only for orgs that live in the store; a hardcoded org's coords
+     come back from the table on the next boot for free. */
+  if (dirty) saveDynamicOrgs();
+  if (geocoded) console.log(`[coords] ${geocoded} org(s) geocoded from city/state`);
+  if (stillNone.length)
+    console.log(`[coords] ${stillNone.length} org(s) still have no coordinates and render without weather: ${stillNone.join(', ')}`);
+  return { fromTable, geocoded, stillNone };
+}
+
+/* ── WEATHER ON BOOT ──────────────────────────────────────────────────────
+   Dan asked for "sky/dark/weather on boot", which REVERSES the reporting
+   project's recorded decision that nothing is pre-warmed. Worth saying so
+   rather than quietly diverging: over there an org nobody opens is an org
+   never fetched, and that is still right for 29 report surfaces. Here the
+   dashboard is a page people leave open, the org set is small, and a first
+   load with no sky is the thing being complained about.
+
+   It is PACED AND NOT AWAITED. `orgWeatherFor` stays synchronous and the front
+   door still never blocks on a third party; this only means the answer is
+   usually already there when the first reader arrives. */
+const WX_PREWARM_PACE_MS = 400;
+
+async function prewarmOrgWeather() {
+  const slugs = Object.keys(ORGS).filter(s => orgWeatherEnabled(s) && weatherLib.coordsOf(ORGS[s]));
+  for (const slug of slugs) {
+    await refreshOrgWeather(slug);
+    await new Promise(r => setTimeout(r, WX_PREWARM_PACE_MS));
+  }
+  console.log(`[weather] pre-warmed ${slugs.length} org(s) on boot`);
 }
 
 /* The per-org kill switch. It DEFAULTS ON — Dan approved the treatment — so
@@ -1589,8 +1742,26 @@ app.post('/admin/api/orgs', adminAuth, async (req, res) => {
     _dynamic: true,
   };
 
+  /* COORDS AT CREATION, so a new org has weather on its first open rather
+     than after the next deploy. The table is synchronous and free; the
+     geocode is not awaited, because Add Org must not hang on Nominatim and
+     the org is perfectly usable without a sky. */
+  const known = ORG_COORDS_BY_ID[orgId];
+  if (known) org.coords = { lat: known.lat, lon: known.lon };
+
   ORGS[slug] = org;
   saveDynamicOrgs();
+
+  if (!known) {
+    const q = orgPlaceQuery(org);
+    if (q) geocodePlace(q).then(c => {
+      if (!c) return;
+      org.coords = c;
+      saveDynamicOrgs();
+      console.log(`[coords] ${slug} → ${c.lat}, ${c.lon} (${q})`);
+      refreshOrgWeather(slug);
+    }).catch(() => {});
+  }
   // Through the same store every other writer uses, so a new org's address is
   // durable by the same one path rather than by being dynamic.
   orgEmailStore[slug] = emailCheck.email;
@@ -2293,6 +2464,23 @@ app.listen(PORT, () => {
     console.log('[warm] SKIP_PREWARM=1 — startup pre-warm skipped');
   } else {
     setTimeout(warmCache, 5000);   // pre-warm cache 5s after startup
+  }
+  /* AFTER listen, never before it, and for a reason this repo's sibling has
+     been bitten by repeatedly: `backfillOrgCoords` reads `geoCache`, a `let`
+     declared some six hundred lines further down. At module scope that is a
+     temporal dead zone and the boot dies; called from here, module evaluation
+     has finished and the binding is there.
+
+     Also after listen because neither of these may hold the port open: the
+     health check has to go green while a third party is still being asked.
+     SKIP_PREWARM covers both, so a spec that boots this server neither
+     geocodes nor fans out at open-meteo. */
+  if (process.env.SKIP_PREWARM === '1') {
+    console.log('[coords] SKIP_PREWARM=1 — backfill and weather pre-warm skipped');
+  } else {
+    backfillOrgCoords()
+      .then(prewarmOrgWeather)
+      .catch(e => console.warn('[coords] backfill failed:', e.message));
   }
 });
 

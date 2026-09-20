@@ -48,6 +48,106 @@ Torrance is safe to look up because the org record carries **`state` as well as
 are Watertowns in MA, NY, CT and WI. **Every dynamic org has no coords and
 therefore no card**, and renders exactly as it does today.
 
+### EVERY ORG WITH AN ADDRESS NOW HAS A SKY (2026-09-20)
+
+Dan, on Apex's dashboard showing nothing: *"why do 21/24 get nothing?"* then
+*"backfill those coords — we need live weather data and sky/dark/weather on
+boot."*
+
+**THREE ORGS HAD COORDINATES AND EVERY OTHER ONE WAS ADDED THROUGH ADD ORG,
+WHICH HAS NEVER STORED THEM.** `watertown`, `niagarafalls` and `torrance` are
+hardcoded in `ORGS` with lat/lon typed in by hand; everything else carries
+`city` and `state` and nothing else, so `coordsOf` returned null and both gates
+correctly declined. Not broken — unfinished, and invisible because declining is
+the designed behaviour.
+
+**A CITY AND A STATE ARE NOT A NAME**, which is what makes resolving them
+consistent with the standing rule rather than a hole in it. *"Never a guess
+from the org's name"* stands and is now asserted: `displayName` is never
+consulted, because there are Watertowns in MA, NY, CT and WI. But
+`city: 'Arvada', state: 'CO'` is the org telling us where it is, in two fields
+somebody filled in. Reading that is not guessing.
+
+**AN ORG WITH NEITHER STILL GETS NOTHING**, and renders exactly as before.
+
+### TWO SOURCES, CHEAPEST FIRST, AND THE TABLE IS KEYED ON orgId
+
+| | |
+|---|---|
+| 1. `ORG_COORDS_BY_ID` | **13 orgs**, lifted from the reporting project. No network, no failure mode |
+| 2. `city` + `state` | geocoded once through Nominatim, cached, persisted |
+
+**KEYED ON orgId, NEVER ON SLUG.** The two projects spell the same organisation
+differently and have drifted before — this dashboard called Shrewsbury
+`town-of-shrewsbury` for five weeks — so a slug-keyed table would silently miss
+exactly the orgs most likely to be wrong. The uuid is the half that is stable.
+
+**THE VALUES ARE LIFTED, NOT RE-DERIVED**, so the two projects cannot disagree
+about where an org is. Cross-checked against an independent geocode: Nominatim
+puts Arvada at **39.8006, -105.0812** against the table's **39.8028, -105.0875**
+— about 300 m, the difference between a city centroid and a district office,
+and nothing at this zoom.
+
+**AND THE REPORTING PROJECT'S OWN NOTE SAYS 18. IT IS 13** — counted three
+times, because the first two parses were wrong: rental-report writes
+`coords:  {` with two spaces (so a `coords: {` grep finds nothing) and some of
+its org keys are QUOTED (`"douglas-county-nv"`), which a bare-key regex skips.
+Both mistakes produced a confident short list, and the second one silently
+attributed San Francisco's coordinates to Pawnee. *A parse that returns
+plausible rows is not a parse that is right.*
+
+### WEATHER ON BOOT — which reverses a decision recorded one repo over
+
+The reporting project's rule is that **nothing is pre-warmed**: an org nobody
+opens is an org never fetched. That is still right for 29 report surfaces. It is
+not right here, and Dan asked for the opposite: this dashboard is a page people
+leave open, the org set is small, and a first load with no sky was the
+complaint. Said out loud rather than quietly diverging.
+
+- **`orgWeatherFor` STAYS SYNCHRONOUS.** The pre-warm is not awaited and the
+  front door still never blocks on a third party — it only means the answer is
+  usually already there when the first reader arrives. Proven: apex's very
+  first `/api/config` after a cold boot returns a real reading.
+- **Both run AFTER `app.listen`**, and not only for pacing: `backfillOrgCoords`
+  reads `geoCache`, a `let` declared some six hundred lines further down. At
+  module scope that is a temporal dead zone and the boot dies — the trap this
+  repo's sibling has shipped twice.
+- **`SKIP_PREWARM` covers both**, so a spec that boots this server neither
+  geocodes nor fans out at open-meteo.
+- **Both gates are honoured by the pre-warm** — the kill switch and the coords —
+  or it fetches for orgs that will never render a card.
+
+### THE THIRD-PARTY RULES, each of which is a way to be permanently wrong
+
+- **Paced at 1.2s.** Nominatim's published limit is one call a second.
+- **A MISS IS CACHED AS A MISS.** *"We asked and there is no such place"* is a
+  real answer and must not be re-asked on every boot; what it must never do is
+  become a coordinate. Read back by **presence**, not truthiness — a truthy test
+  on `{lat: null}` re-asks it forever.
+- **A FAILURE IS NOT CACHED.** A timeout is not evidence about the place, and
+  caching it would make one bad minute permanent.
+- **`lng` VS `lon`.** Nominatim answers `lng` and the weather library wants
+  `lon`. A silent key mismatch reads as a missing field rather than an error —
+  the `Number(null)` defect in a new costume — so the conversion is explicit and
+  the result goes through `coordsOf`, which rejects nulls and anything off the
+  globe before it can be stored.
+- **A STATE ALONE IS A REGION, NOT A POINT.** Geocoding `', CO'` lands on the
+  state centroid, which is a confident wrong sky rather than no sky.
+
+Add Org resolves coordinates at creation too, so a new org has weather on its
+first open rather than after the next deploy — the table synchronously, the
+geocode not awaited.
+
+### THE SLICE RAN PAST ITS OWN FUNCTION, and the suite still passed
+
+`fnRefresh` ended at the literal `"/* The per-org kill switch"`, and the backfill
+was inserted between the two — so that slice went from **~30 lines to 141** and
+every assertion under it silently widened to cover code it was never written
+about. **All 407 assertions still passed.** It is bounded on the function's own
+closing brace now, with an assertion on the slice's LENGTH, so the next
+insertion fails by name instead of quietly weakening six tests. Nth instance in
+these two projects of a slice pinned to a neighbour's spelling.
+
 ### THE GROUND IS WHERE THE WEATHER ACTUALLY READS HERE
 
 The reports project's org landing is a sparse list of cards, so its sky shows.
@@ -177,7 +277,7 @@ much on, which is the inverted-eye bug this repo's sibling shipped once.
 
 ### Guards
 
-`scripts/org-weather.spec.js` (**407 assertions, in CI**), which LIFTS AND RUNS
+`scripts/org-weather.spec.js` (**459 assertions, in CI**), which LIFTS AND RUNS
 `lib/weather.js` and `wxcNum`, and computes the contrast of every gradient stop
 and every tinted ground in both themes.
 
@@ -355,11 +455,10 @@ because null is a real case.
   the gaps and below the fold; a widget stays opaque. 48 translucent cards over
   a gradient is a different, much riskier change — every figure on this page
   would then be sitting on a colour that moves with the weather.
-- **21 of the 24 orgs get no sky**, for the same reason they get no card: they
-  are dynamic and carry no coords. The reporting project's
-  `/api/admin/org-by-id/:orgId` could hand them across (it already returns
-  slug/token/orgId/logoUrl/displayName and this project already reconciles
-  against it on boot) — one field, and not asked for yet.
+- **An org with no city on file still gets no sky**, which is the designed
+  outcome rather than a gap: `city` and `state` are optional on Add Org, and the
+  wrong city's sky is worse than none. The fix is typing a city, and the boot
+  log names every org in that state.
 - **`POST /admin/api/orgs/:slug/toggles` still accepts any key** and writes a
   flag nothing reads — pre-existing, not touched here, and the same hole the
   reporting project closed on its own flags route.
