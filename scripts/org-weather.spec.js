@@ -557,6 +557,36 @@ ok(first({ woodmen }, poisoned).slug === "woodmen",
 ok(first({ woodmen }, poisoned).was === "Virginia",
   "...and it reports the state it landed in, so the log says what was wrong rather than that something was");
 
+/* PRODUCTION'S ACTUAL CACHE SHAPE, which is NOT the one above: the backfill
+   that shipped first wrote `{lat, lng}` and no `state` at all, so the entry on
+   the volume has no state to contradict and `geoStateMatches` reads it as
+   uncheckable. THE FIRST VERSION OF THIS PASS SAILED PAST WOODMEN HILLS IN
+   PRODUCTION WHILE PASSING ON A FIXTURE — because the fixture above carries a
+   `state` field the real file does not. Third instance in one change of "a test
+   that supplies the field under test cannot say whether anything supplies it in
+   production", and the only one that reached users. */
+const preCheck = { "Woodman Hills, CO": { lat: VA.lat, lng: VA.lng } };   // no `state` key
+ok(refused({ woodmen }, preCheck).length === 1,
+  "AN ENTRY WITH NO `state` KEY AT ALL IS REFUSED — it predates the check, so nobody can vouch for it, and "
+  + "this is the exact shape sitting on the production volume");
+ok(first({ woodmen }, preCheck).was === null,
+  "...and it is reported as unverified rather than as a state, or the log reads \"which is in undefined\"");
+
+/* A MISS IS NOT AN UNVERIFIED HIT. It HAS the key, value null.
+
+   REACHING THAT TEST NEEDS A TAGGED ORG, and the first fixture here could not:
+   a miss has null coordinates, so the value match rejects it long before the
+   `unverified` line and the mutation SURVIVED. The tag is what makes it
+   reachable — and the case is real, because a contradicted answer is cached AS
+   A MISS, so an org still carrying `coordsFrom` for that query meets exactly
+   this on the next boot. */
+const missCache = { "Nowhere, CO": { lat: null, lng: null, state: null } };
+const wasGeocoded = { city: "Nowhere", state: "CO", coordsFrom: "Nowhere, CO",
+                      coords: { lat: 39.0, lon: -105.0 } };
+ok(refused({ wasGeocoded }, missCache).length === 0,
+  "a remembered MISS is not mistaken for an unverified hit — it carries the key with a null value, which `in` "
+  + "separates and a truthiness test would not");
+
 /* A COORDINATE THAT IS NOT OURS IS NOT OURS TO DROP. */
 const fromTable = { city: "Woodman Hills", state: "CO", coords: { lat: 38.94, lon: -104.61 } };
 ok(refused({ fromTable }, poisoned).length === 0,

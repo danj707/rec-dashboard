@@ -812,8 +812,22 @@ function refusedGeocodes(orgs, cache) {
     if (!hit) continue;
     const ours = !!org.coordsFrom
       || (hit.lat === org.coords.lat && hit.lng === org.coords.lon);
-    if (!ours || geoStateMatches(hit, org.state)) continue;
-    out.push({ slug, q, was: hit.state });
+    if (!ours) continue;
+    /* AN ENTRY WITH NO `state` KEY AT ALL PREDATES THIS CHECK, and is refused
+       on those grounds rather than on its contents. The backfill that shipped
+       before it wrote `{lat, lng}` and nothing else, so `geoStateMatches` reads
+       such an entry as UNCHECKABLE and accepts it — which is right for an
+       answer Nominatim declined to label and wrong for one taken before anyone
+       was looking. That is how the first version of this pass sailed straight
+       past Woodmen Hills in production while passing on a fixture: MY FIXTURE
+       CARRIED A `state` FIELD THE REAL FILE DOES NOT.
+
+       A MISS IS NOT AN UNVERIFIED HIT. A miss is stored as `{lat: null, lng:
+       null, state: null}` — it HAS the key — so `in` separates the two where a
+       truthiness test would not, and a miss is not a coordinate anyway. */
+    const unverified = !('state' in hit);
+    if (!unverified && geoStateMatches(hit, org.state)) continue;
+    out.push({ slug, q, was: unverified ? null : hit.state });
   }
   return out;
 }
@@ -824,7 +838,9 @@ async function backfillOrgCoords() {
   for (const r of refused) {
     const org = ORGS[r.slug];
     console.warn(`[coords] ${r.slug} had ${org.coords.lat}, ${org.coords.lon} from "${r.q}" `
-                 + `which is in ${r.was} — dropping, the org says ${org.state}`);
+                 + (r.was ? `which is in ${r.was} — dropping, the org says ${org.state}`
+                          : `which was resolved before the state check existed — dropping, it will be `
+                            + `re-resolved and verified`));
     delete org.coords; delete org.coordsFrom;
     _wxCache.delete(r.slug);
     /* Gated on `_dynamic` exactly as the backfill below is, and that is not
