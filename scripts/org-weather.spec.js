@@ -426,6 +426,12 @@ for (const sky of SKIES) {
    on boot." Apex was the org that showed it: dynamic, so no coordinates, so no
    card and no sky, correctly and for ever. */
 const fnBackfill = sliceIn(SERVER, "async function backfillOrgCoords(", "\n}\n", "backfillOrgCoords");
+/* Length-pinned for the reason `refreshOrgWeather` is, one section up: this
+   slice grew by the whole undo pass and every assertion under it still passed.
+   A slice that quietly widens stops testing what it names. */
+ok(fnBackfill.split("\n").length < 80,
+  `the backfillOrgCoords slice is ${fnBackfill.split("\n").length} lines — past that it has run beyond the `
+  + "function and its assertions are covering code they do not name");
 const fnPlaceQ   = sliceIn(SERVER, "function orgPlaceQuery(", "\n}\n", "orgPlaceQuery");
 const fnGeoCoords= sliceIn(SERVER, "function coordsFromGeo(", "\n}\n", "coordsFromGeo");
 const fnGeocode  = sliceIn(SERVER, "async function geocodePlace(", "\n}\n", "geocodePlace");
@@ -465,6 +471,145 @@ ok(geoCoords(wl, { lat: 91, lng: 0 }) === null, "off the globe is refused, by co
 ok(/weatherLib\.coordsOf/.test(fnGeoCoords),
   "...and it is refused THROUGH coordsOf, so the backfill cannot store something the reader would reject");
 
+/* ── THE ANSWER IS VERIFIED AGAINST THE STATE THE ORG GAVE ────────────────
+   This shipped without it for one deploy and put a Colorado district on
+   Virginia's weather: `Woodman Hills, CO` — the org's own spelling, one letter
+   off `Woodmen` — matched a STREET in Glen Allen, VA, and Nominatim ignored
+   the CO. The continental-US bounds check waved it through, because Virginia
+   is in the continental US. A BOUNDS BOX IS NOT A VERIFICATION. */
+const fnStateMatch = sliceIn(SERVER, "function geoStateMatches(", "\n}\n", "geoStateMatches");
+const stateMatches = new Function("US_STATES", "hit", "state",
+  fnStateMatch.replace("function geoStateMatches(hit, state) {", "").replace(/\}$/, "") + "\n");
+const STATES = (() => {
+  const blk = sliceIn(SERVER, "const US_STATES = {", "\n};", "US_STATES");
+  const o = {};
+  for (const m of blk.matchAll(/([A-Z]{2}):"([^"]+)"/g)) o[m[1]] = m[2];
+  return o;
+})();
+ok(Object.keys(STATES).length >= 50, `the state table carries ${Object.keys(STATES).length} entries`);
+ok(stateMatches(STATES, { state: "Virginia" }, "CO") === false,
+  "THE REAL FAILING CASE: a hit in Virginia for an org that said CO is refused");
+ok(stateMatches(STATES, { state: "Colorado" }, "CO") === true, "...and Colorado for CO is kept");
+ok(stateMatches(STATES, { state: "Massachusetts" }, "MA") === true, "Reading, MA resolves in Massachusetts");
+ok(stateMatches(STATES, { state: "California" }, "CA") === true, "Marin County, CA resolves in California");
+ok(stateMatches(STATES, { state: "Indiana" }, "IN") === true, "...and Pawnee, IN in Indiana");
+ok(stateMatches(STATES, { state: "Virginia" }, "") === true,
+  "AN UNCHECKABLE ANSWER IS ACCEPTED — an org that gave only a city still told us something, and there is "
+  + "nothing to contradict");
+ok(stateMatches(STATES, { state: null }, "CO") === true,
+  "...and so is one Nominatim did not label: absence is not contradiction");
+ok(stateMatches(STATES, { state: "colorado" }, "co") === true, "the comparison is case-insensitive");
+ok(/addressdetails=1/.test(fnGeocode),
+  "the request ASKS for the address, or there is no state on the answer to check");
+/* Scoped to the FRESH arm. A function-wide test is satisfied by the cached
+   arm's own call, so deleting the check on the answer Nominatim just gave
+   SURVIVED it — the recurring "an assertion satisfied by different code is not
+   guarding the thing it names". */
+const freshArm = fnGeocode.slice(fnGeocode.indexOf("try {"));
+ok(freshArm.length > 200, "...and the fresh arm was found, or the two assertions below are vacuous");
+ok(/geoStateMatches\(got, state\)/.test(freshArm),
+  "the FRESH answer is checked before it is cached, not just the one already on disk");
+ok(/if \(geoStateMatches\(got, state\)\) hit = got/.test(freshArm),
+  "...and a contradicted answer never becomes the hit — it is cached as a miss, because for that query it is one");
+
+/* A CACHED HIT IS RE-VERIFIED, NOT TRUSTED. An entry written before this check
+   existed sits on the volume and would outlive the fix. */
+const cacheArm = fnGeocode.slice(0, fnGeocode.indexOf("try {"));
+ok(/geoStateMatches/.test(cacheArm),
+  "the CACHED hit is re-verified too — a bad entry written before this check would otherwise outlive it");
+ok(/delete geoCache\[q\]/.test(cacheArm), "...and discarded when it fails");
+
+/* AND THE COORDS ALREADY ON THE VOLUME ARE UNDONE. A fix that only guards new
+   lookups leaves the wrong sky serving for as long as the store survives.
+
+   LIFTED AND RUN, because every defect in that pass is a comparison and a regex
+   passes on an inverted one — and because the first version of it could not see
+   the one org it was written for. */
+const fnRefused = sliceIn(SERVER, "function refusedGeocodes(", "\n}\n", "refusedGeocodes");
+const refusedGeocodes = new Function("weatherLib", "orgPlaceQuery", "geoStateMatches", "orgs", "cache",
+  fnRefused.replace("function refusedGeocodes(orgs, cache) {", "") + "\n");
+/* Every call goes through a guard, and every read through a safe accessor. This
+   spec records failures and prints at the END, so a throw from the lifted code
+   kills the process before a single `✗` reaches the screen — five mutations
+   reported DIED-unnamed before this, and "a guard that dies instead of failing
+   has not told anyone what broke" is the recurring lesson. A throw is now a
+   named failure and the run continues. */
+function refused(orgs, cache) {
+  try {
+    return refusedGeocodes(wl, placeQuery,
+      (hit, st) => stateMatches(STATES, hit, st), orgs, cache) || [];
+  } catch (e) { thrown.push(e.message); return []; }
+}
+const thrown = [];
+const first = (orgs, cache) => refused(orgs, cache)[0] || {};
+
+/* Production's exact shape the morning after the backfill shipped: the wrong
+   coordinate stored, NO provenance tag, and the poisoned cache entry beside it. */
+const VA = { lat: 37.6572866, lng: -77.4941617, state: "Virginia" };
+const woodmen = { city: "Woodman Hills", state: "CO", coords: { lat: VA.lat, lon: VA.lng } };
+const poisoned = { "Woodman Hills, CO": VA };
+
+ok(refused({ woodmen }, poisoned).length === 1,
+  "THE ORG THIS PASS EXISTS FOR IS FOUND WITH NO PROVENANCE TAG — `coordsFrom` ships in the same change, so "
+  + "Woodmen Hills carries none, and the first version skipped it outright");
+ok(first({ woodmen }, poisoned).slug === "woodmen",
+  "...by slug, so the caller knows whose sky to forget");
+ok(first({ woodmen }, poisoned).was === "Virginia",
+  "...and it reports the state it landed in, so the log says what was wrong rather than that something was");
+
+/* A COORDINATE THAT IS NOT OURS IS NOT OURS TO DROP. */
+const fromTable = { city: "Woodman Hills", state: "CO", coords: { lat: 38.94, lon: -104.61 } };
+ok(refused({ fromTable }, poisoned).length === 0,
+  "a coordinate that is NOT the cached hit is left alone — the table's answer and the hardcoded ones are not "
+  + "guesses, and with no tag nothing else tells them apart");
+ok(refused({ x: { city: "Reading", state: "MA", coords: { lat: 42.5, lon: -71.1 } } }, poisoned).length === 0,
+  "an org whose query was never cached is left alone");
+ok(refused({ x: { city: "Woodman Hills", state: "CO" } }, poisoned).length === 0,
+  "an org with no coordinates at all has nothing to undo");
+ok(refused({ x: { city: "Boulder", state: "CO", coords: { lat: 40.01, lon: -105.27 } } },
+           { "Boulder, CO": { lat: 40.01, lng: -105.27, state: "Colorado" } }).length === 0,
+  "and a geocode that VERIFIES is kept — this drops the wrong ones, not the geocoded ones");
+
+/* The tag still earns its place: it is what makes the match exact rather than
+   reconstructed, for every coordinate written from here on. */
+const tagged = { city: "Elsewhere", state: "CO", coordsFrom: "Woodman Hills, CO",
+                 coords: { lat: 1, lon: 2 } };
+ok(refused({ tagged }, poisoned).length === 1,
+  "a TAGGED coordinate is matched by its own recorded query, whatever the org's address says today");
+ok(/ORGS\[slug\]\.coordsFrom = q/.test(fnBackfill),
+  "...and the backfill records that query, so tomorrow's undo needs no reconstruction");
+
+ok(/delete org\.coords/.test(fnBackfill),
+  "the backfill drops what the pass refused — Woodmen Hills was already persisted");
+/* `saveDynamicOrgs` writes ONLY the orgs carrying `_dynamic`, so calling it
+   because of an org that lacks one deletes every other org from the store — the
+   wrong sky fixed by losing the dashboard. Gated exactly as the backfill's own
+   `dirty` already is. */
+ok(/if \(org\._dynamic\) dropped = true/.test(fnBackfill),
+  "the undo only persists when a DYNAMIC org was dropped — saveDynamicOrgs writes only those, so saving for "
+  + "an org without the flag would wipe the rest of the store");
+ok(/if \(dropped\) saveDynamicOrgs\(\)/.test(fnBackfill),
+  "...and the save is gated on it, not on the refusal count");
+ok(/_wxCache\.delete\(r\.slug\)/.test(fnBackfill),
+  "...and forgets the reading taken at the wrong place, or the old sky keeps serving until it ages out");
+ok(fnBackfill.indexOf("delete org.coords") < fnBackfill.indexOf("const need"),
+  "the undo runs BEFORE the backfill decides who needs coordinates, or the dropped org is not re-resolved "
+  + "until the next boot");
+ok(thrown.length === 0,
+  `refusedGeocodes threw on ${thrown.length} of the cases above (${thrown[0] || ''}) — a pass that throws `
+  + "reports nothing refused, which reads exactly like a clean volume");
+
+/* ADD ORG GEOCODES TOO, and had no coverage at all — which is where the
+   Virginia bug would recur first, since a brand-new org is the one case that
+   always goes to the geocoder rather than to the table. */
+const fnAddOrg = sliceIn(SERVER, "  const known = ORG_COORDS_BY_ID[orgId];", "\n  }\n", "the Add Org geocode");
+ok(/geocodePlace\(q, org\.state\)/.test(fnAddOrg),
+  "Add Org passes the org's own state to the geocoder, so a new org cannot land in the wrong one");
+ok(/org\.coordsFrom = q/.test(fnAddOrg),
+  "...and records the query, or a geocode made today can never be undone tomorrow");
+ok(!/await geocodePlace/.test(fnAddOrg),
+  "...and does NOT await it: Add Org must not hang on Nominatim, and the org is usable without a sky");
+
 /* THE TABLE IS KEYED ON orgId, NEVER ON SLUG. The two projects have drifted
    before — this dashboard called Shrewsbury `town-of-shrewsbury` for five
    weeks — and a slug-keyed table misses exactly the orgs that have drifted. */
@@ -480,6 +625,24 @@ for (const m of tableBlock.matchAll(/lat: ([-\d.]+), lon: ([-\d.]+)/g)) {
     `every table coordinate is in the continental US (got ${lat}, ${lon}) — a transposed lat/lon lands in `
     + "the Indian Ocean and renders a perfectly plausible sky");
 }
+/* THE BOUNDS LOOP ABOVE IS THE GUARD THAT MISSED VIRGINIA — it asks whether a
+   point is plausibly in America, not whether it is where the entry says. It
+   cannot be made to ask the second question without a geocoder, so the table
+   earns its trust a different way: every entry NAMES its place, so a human can
+   check it, and the one org the bug was about is pinned outright. */
+for (const line of tableBlock.split("\n")) {
+  if (!/^\s*'[0-9a-f-]{36}':/.test(line)) continue;
+  ok(/\/\/\s*\S/.test(line),
+    `every table entry names the place it points at, or nobody can tell a wrong one: ${line.trim().slice(0, 60)}`);
+}
+const WOODMEN = "cd508a4e-8a9f-44fe-a29a-e74bb1f1938b";
+const wmLine = tableBlock.split("\n").find(l => l.includes(WOODMEN)) || "";
+ok(/lat: 38\.95\d*, lon: -104\.6\d*/.test(wmLine),
+  `Woodmen Hills points at Falcon/Peyton CO, read from their own location records rather than from the `
+  + `misspelled city that put them in Virginia — got: ${wmLine.trim().slice(0, 70)}`);
+ok(/Woodmen/.test(wmLine) && !/Woodman/.test(wmLine),
+  "...and the comment spells it the way Rec does, so nobody re-derives it from the typo");
+
 ok(/ORG_COORDS_BY_ID\[ORGS\[slug\]\.orgId\]/.test(fnBackfill), "the backfill looks the table up by orgId");
 
 /* ORDER: the table is free and exact, the geocoder is a third party. */

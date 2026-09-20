@@ -21,10 +21,16 @@ behind the dashboard and the org's sky is the page.
 
 `lib/weather.js` is rental-report's file copied across. Two deployed services
 in two repositories cannot share a module, and **no CI job on either side can
-assert the two agree** — so the note at the top of both says *change both or
-neither*, and the spec here fails if that note is ever deleted. A WMO code that
-means rain on the report and overcast on the dashboard is the
-two-surfaces-disagreeing bug, one repo over.
+assert the two agree** — so the note at the top says *change both or neither*,
+and the spec here fails if that note is ever deleted. A WMO code that means rain
+on the report and overcast on the dashboard is the two-surfaces-disagreeing bug,
+one repo over.
+
+**The EXECUTABLE code is byte-identical; the note itself lives in THIS copy
+alone** (this said "the note at the top of both", which was wrong, and a false
+statement in the record closes the question). So a `diff` of the two files is
+never empty and never should be read as drift — strip this copy's seven-line
+header and it is exact, which is the check worth running.
 
 Everything it already encodes carries over unchanged and is not re-derived
 here: an unknown code is **never CLEAR**, `strictNum` rejects `null`/`""`/
@@ -137,6 +143,77 @@ complaint. Said out loud rather than quietly diverging.
 Add Org resolves coordinates at creation too, so a new org has weather on its
 first open rather than after the next deploy — the table synchronously, the
 geocode not awaited.
+
+### IT PUT A COLORADO DISTRICT ON VIRGINIA'S WEATHER (2026-09-20, same day)
+
+Production's own boot log, minutes after the backfill merged:
+
+```
+[coords] woodmen-hills-metro-district → 37.6572866, -77.4941617 (Woodman Hills, CO)
+```
+
+That is **Glen Allen, Virginia — 1,900 km out**, and the dashboard was showing
+its sky. The org's stored city is *"Woodman Hills"*, one letter off **Woodmen**,
+and Nominatim matched a STREET called *Woodman Hills Terrace* in Henrico County
+while **ignoring the `CO` entirely**. (The real place is at 38.94, -104.61 in El
+Paso County; the correct spelling resolves there first hit.)
+
+**A BOUNDS BOX IS NOT A VERIFICATION, and that is the whole lesson.** The
+continental-US check waved it through because Virginia is in the continental US:
+it asks *"is this a plausible point in America"*, and the question is *"is this
+the place they named"*. **This is the "no coords, no weather — never a guess from
+the name" rule failing by a door I opened** — the coordinate was not guessed from
+the org's name, it was guessed from the org's own typo, which is worse because it
+looks like evidence.
+
+**THE STRUCTURED QUERY IS NOT THE FIX, and it was measured rather than assumed.**
+Nominatim's `city=` + `state=` form refuses the bad one — and it also refuses
+`Marin County, CA` and `Pawnee, IN`, both of which resolve correctly freeform.
+Tightening the query would have traded one wrong sky for several missing ones. So
+the query stays freeform and the **RESULT** is checked against the state the org
+gave: a hit in Virginia is not what an org that wrote `CO` meant.
+
+- **AN UNCHECKABLE ANSWER IS ACCEPTED; A CONTRADICTED ONE NEVER IS.** An org that
+  gave only a city has still told us something, and Nominatim declining to label
+  a result is not a contradiction. Refusing both would take the sky off every
+  city-only org to fix one — the `hasAbsent` distinction, one field over.
+- **A CONTRADICTED HIT IS CACHED AS A MISS**, because for that query it *is* one.
+- **THE CACHED HIT IS RE-VERIFIED, NOT TRUSTED.** An entry written before this
+  check existed sits on the volume and would outlive the fix for as long as the
+  disk does.
+- `addressdetails=1` is what puts a state on the answer at all. Without it there
+  is nothing to check and the whole thing is decorative — which is its own
+  mutation.
+
+### THE UNDO PASS COULD NOT SEE THE ONE ORG IT WAS WRITTEN FOR
+
+A fix that only guards NEW lookups leaves the wrong sky serving for as long as
+the store survives, so `backfillOrgCoords` opens by dropping any stored geocode
+this code would now refuse. **The first version of that pass skipped Woodmen
+Hills outright**, and the reason is the recurring one:
+
+```js
+if (!org.coordsFrom || !weatherLib.coordsOf(org)) continue;   // ← skips it
+```
+
+`coordsFrom` — the provenance tag — **ships in the same change as the undo pass**,
+so the coordinate already on the volume carries none. **My fixture supplied the
+tag**, which is verbatim *"a test that supplies the field under test cannot say
+whether anything supplies it in production"*, already recorded in the sibling
+repo for the Programs location filter.
+
+So an untagged coordinate is reconstructed from the org's own address — the same
+string the same function produced when the coordinate was written — and is only
+treated as ours when it **IS the cached hit, value for value**. A table
+coordinate and a hardcoded one are not guesses and are not ours to drop, and with
+the tag missing nothing else tells them apart. Both sides round-trip through JSON
+as the same double, so that comparison is exact rather than approximate.
+
+**`refusedGeocodes(orgs, cache)` RETURNS the list rather than applying it**, so
+the spec can RUN it: every defect in that pass is a comparison, and a regex
+passes on an inverted one. The caller does the dropping, forgets the reading
+(`_wxCache.delete`) and saves — and it runs **before** `need` is computed, or the
+org whose coordinate was just dropped is not re-resolved until the next boot.
 
 ### THE SLICE RAN PAST ITS OWN FUNCTION, and the suite still passed
 
@@ -275,11 +352,55 @@ so a truthy read (`!!t.weather`) would ship the feature dark for all of them.
 through it. A raw pass-through draws the box UNCHECKED while the card is very
 much on, which is the inverted-eye bug this repo's sibling shipped once.
 
+### AND THE PLATFORM KNEW WHERE THEY WERE ALL ALONG
+
+Dan, seeing the card still reading 65°/Clear on production: *"looks fine to me on
+prod."* **It was Virginia, and that is the whole danger** — a plausible number is
+indistinguishable from a right one. Measured against the live forecast rather
+than argued: the card's **H 88°** and **sunset 7:09 PM** are Glen Allen's
+**88.4°** and **19:09** exactly, against Woodmen Hills' 75.9° and 18:58. It was
+48.8° and sunny there while the card said 65°.
+
+Then: *"can we fix woodmen hills."* Yes — and **not by correcting the spelling.**
+`location` carries **`lat`, `lng`, `formatted_address` and `place_id`** — Google
+Places coordinates, attached to the org's real buildings. Woodmen Hills has five,
+all Falcon/Peyton CO 80831 on `America/Denver`, one of them literally *11720
+**Woodmen** Hills Dr* — **Rec spells it correctly; only the dashboard's
+hand-typed `city` has the typo.** (`organization.address` is NULL, and Rec's own
+`name` and `slug` are both right.)
+
+So the table entry is read from the org's own record rather than from any
+spelling, which is why it is **not** the class of guess this file warned against
+one section up — that note said pinning it would be seeding the table from a
+spelling WE corrected, and it has been deleted because it is wrong. The five
+locations span under 2 km, so which one is picked cannot move the sky; it is
+Community Center West, the building on the road the district is named after, and
+the entry says so. **The bounds loop is the guard that missed Virginia**, and it
+cannot be taught to ask "is this where the entry says" without a geocoder — so
+the table earns trust differently: every entry must NAME its place, and this one
+is pinned outright.
+
+**THE GEOCODER COULD BE RETIRED ENTIRELY, and that is the finding worth keeping.**
+Measured platform-wide: **165 of 183 live orgs have locations, and ALL 165 of
+those carry coordinates** — 100% where a location exists. So the hand-typed
+city, the Nominatim call, the cache, the pacing, the state verification and this
+whole section exist to approximate something the platform already holds exactly.
+A card emitting org → coordinate (no date tags, so no flip and no outage) would
+replace all of it and could not be wrong about a state, because it would not be
+matching text at all. **Not built** — it is a real change with its own card and
+its own sign-off, and it should not ride in on a bug fix.
+
+Verified end to end on production's exact stored shape: the boot drops the
+Virginia coordinate, resolves from the table without geocoding at all, and serves
+**49°F clear, hi 75 lo 48, observed 06:15** — which is what Open-Meteo returns for
+Falcon, CO, against the 65°/H 88° the card was showing.
+
 ### Guards
 
-`scripts/org-weather.spec.js` (**459 assertions, in CI**), which LIFTS AND RUNS
-`lib/weather.js` and `wxcNum`, and computes the contrast of every gradient stop
-and every tinted ground in both themes.
+`scripts/org-weather.spec.js` (**514 assertions, in CI**), which LIFTS AND RUNS
+`lib/weather.js`, `wxcNum`, `orgPlaceQuery`, `coordsFromGeo`, `geoStateMatches`
+and `refusedGeocodes`, and computes the contrast of every gradient stop and
+every tinted ground in both themes.
 
 **Mutation-tested 34 ways, all failing by an assertion that names the defect.**
 The card half: the kill switch read as truthy, the front door awaiting the
@@ -306,6 +427,50 @@ the worst tone either way measures **7.78:1** — so the per-tone contrast loop
 cannot fail on its own. It is coupled to the mix percentage, which has its own
 bounded assertion, and at 30% light theme lands at **2.10:1**. Written into the
 spec beside the loop, or the next person reads it as vetting each tone.
+
+**The state verification is mutation-tested 13 more ways, all failing by name**:
+the check gutted so every hit is accepted (the bug as it shipped), a missing
+state refusing everything, an unlabelled answer treated as a contradiction, the
+two-letter code compared raw so `CO` never matches `Colorado`, the comparison
+made case-sensitive, `addressdetails=1` dropped so there is nothing to check,
+the fresh answer cached unchecked, the cached hit trusted, the poisoned entry
+kept rather than discarded, Add Org dropping the state, Add Org dropping the
+provenance, and the state table gutted.
+
+**And the undo pass 13 more**, including the one that found the bug above: an
+untagged coordinate skipped (which misses the only org it exists for), the query
+not reconstructed, the value match dropped so any org sharing a query loses its
+coordinate, the value match reading `lng` against `lat`, the state test
+inverted, an org with no coordinates examined anyway, a tagged coordinate
+matched by today's address instead of its own query, the refused list never
+applied, `_wxCache` not cleared, the undo running after `need`, and **the save
+ungated from `_dynamic`** — which would fix the wrong sky by deleting every
+other org from the store.
+
+**FIVE OF THOSE DIED UNNAMED ON THE FIRST RUN.** This spec records failures and
+prints at the END, so a throw from the lifted code kills the process before a
+single `✗` reaches the screen — the recurring *"a guard that dies instead of
+failing has not told anyone what broke"*. Every call goes through a guard and
+every read through a safe accessor now, and **the throws are themselves an
+assertion**: a pass that throws returns nothing refused, which reads exactly
+like a clean volume.
+
+**Two of my own guards were blind, and mutation showed both.** A function-wide
+`/geoStateMatches/` on `geocodePlace` was satisfied by the **cached** arm, so
+deleting the check on the fresh answer SURVIVED — scoped to the fresh arm now.
+And `/coordsFrom/` on the backfill was satisfied by the undo pass's own
+mention, so dropping the assignment survived — it pins the assignment. Both are
+the recorded *"an assertion satisfied by different code is not guarding the
+thing it names"*. **Add Org had no coverage at all** and is the path where this
+bug would recur first, since a brand-new org is the one case that always goes to
+the geocoder rather than the table; it has three assertions now.
+
+**Verified END TO END on a fixture reproducing production's exact shape** —
+the wrong coordinate stored, **no** provenance tag, the poisoned cache entry
+beside it — rather than on one I had tagged by hand. The boot drops the
+coordinate, discards the cache entry, refuses the fresh lookup, leaves Danvers'
+verified geocode alone, resolves `Marin County, CA` (which a structured query
+would have refused), and leaves all three orgs in the store.
 
 **Twenty-five `ci-check-render.js` cases**, because none of this is visible in
 source — the CSS reads plausibly whichever sky it paints, a card in the wrong
