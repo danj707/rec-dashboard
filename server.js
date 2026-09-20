@@ -625,6 +625,17 @@ const ORG_COORDS_BY_ID = {
   '0312ebc8-40de-4fc8-a737-8afa26334e13': { lat: 38.6955986, lon: -119.5198339 },   // Gardnerville, NV
   '52efcded-a5e8-4dbf-8a45-100f70170de0': { lat: 38.82065625, lon: -94.29997011 },   // Pleasant Hill, MO
   '17380e28-7e02-4b52-82c5-fab18557fd7a': { lat: 37.7648, lon: -122.4436 },   // San Francisco Parks and Rec
+  /* THIS ONE IS NOT THE REPORTING PROJECT'S — it is the org's own. Woodmen
+     Hills is the org the Virginia bug was found on: its stored city reads
+     "Woodman Hills", one letter off, so nothing can geocode it without
+     guessing and the state check now correctly refuses to. Rec knows exactly
+     where they are, and this is read from there rather than from any spelling:
+     `location` carries Google Places coordinates, and all five of theirs sit
+     in Falcon/Peyton CO 80831 on America/Denver. This is Community Center West
+     (11720 Woodmen Hills Dr) — the building on the road the district is named
+     after; its five locations span under 2 km, so the sky is the same
+     whichever is picked. */
+  'cd508a4e-8a9f-44fe-a29a-e74bb1f1938b': { lat: 38.9558, lon: -104.6101 },   // Woodmen Hills Metro District, CO
 };
 
 const _wxCache = new Map();      // slug → { ts, data }

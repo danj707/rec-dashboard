@@ -625,6 +625,24 @@ for (const m of tableBlock.matchAll(/lat: ([-\d.]+), lon: ([-\d.]+)/g)) {
     `every table coordinate is in the continental US (got ${lat}, ${lon}) — a transposed lat/lon lands in `
     + "the Indian Ocean and renders a perfectly plausible sky");
 }
+/* THE BOUNDS LOOP ABOVE IS THE GUARD THAT MISSED VIRGINIA — it asks whether a
+   point is plausibly in America, not whether it is where the entry says. It
+   cannot be made to ask the second question without a geocoder, so the table
+   earns its trust a different way: every entry NAMES its place, so a human can
+   check it, and the one org the bug was about is pinned outright. */
+for (const line of tableBlock.split("\n")) {
+  if (!/^\s*'[0-9a-f-]{36}':/.test(line)) continue;
+  ok(/\/\/\s*\S/.test(line),
+    `every table entry names the place it points at, or nobody can tell a wrong one: ${line.trim().slice(0, 60)}`);
+}
+const WOODMEN = "cd508a4e-8a9f-44fe-a29a-e74bb1f1938b";
+const wmLine = tableBlock.split("\n").find(l => l.includes(WOODMEN)) || "";
+ok(/lat: 38\.95\d*, lon: -104\.6\d*/.test(wmLine),
+  `Woodmen Hills points at Falcon/Peyton CO, read from their own location records rather than from the `
+  + `misspelled city that put them in Virginia — got: ${wmLine.trim().slice(0, 70)}`);
+ok(/Woodmen/.test(wmLine) && !/Woodman/.test(wmLine),
+  "...and the comment spells it the way Rec does, so nobody re-derives it from the typo");
+
 ok(/ORG_COORDS_BY_ID\[ORGS\[slug\]\.orgId\]/.test(fnBackfill), "the backfill looks the table up by orgId");
 
 /* ORDER: the table is free and exact, the geocoder is a third party. */

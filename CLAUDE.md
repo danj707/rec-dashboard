@@ -352,9 +352,52 @@ so a truthy read (`!!t.weather`) would ship the feature dark for all of them.
 through it. A raw pass-through draws the box UNCHECKED while the card is very
 much on, which is the inverted-eye bug this repo's sibling shipped once.
 
+### AND THE PLATFORM KNEW WHERE THEY WERE ALL ALONG
+
+Dan, seeing the card still reading 65°/Clear on production: *"looks fine to me on
+prod."* **It was Virginia, and that is the whole danger** — a plausible number is
+indistinguishable from a right one. Measured against the live forecast rather
+than argued: the card's **H 88°** and **sunset 7:09 PM** are Glen Allen's
+**88.4°** and **19:09** exactly, against Woodmen Hills' 75.9° and 18:58. It was
+48.8° and sunny there while the card said 65°.
+
+Then: *"can we fix woodmen hills."* Yes — and **not by correcting the spelling.**
+`location` carries **`lat`, `lng`, `formatted_address` and `place_id`** — Google
+Places coordinates, attached to the org's real buildings. Woodmen Hills has five,
+all Falcon/Peyton CO 80831 on `America/Denver`, one of them literally *11720
+**Woodmen** Hills Dr* — **Rec spells it correctly; only the dashboard's
+hand-typed `city` has the typo.** (`organization.address` is NULL, and Rec's own
+`name` and `slug` are both right.)
+
+So the table entry is read from the org's own record rather than from any
+spelling, which is why it is **not** the class of guess this file warned against
+one section up — that note said pinning it would be seeding the table from a
+spelling WE corrected, and it has been deleted because it is wrong. The five
+locations span under 2 km, so which one is picked cannot move the sky; it is
+Community Center West, the building on the road the district is named after, and
+the entry says so. **The bounds loop is the guard that missed Virginia**, and it
+cannot be taught to ask "is this where the entry says" without a geocoder — so
+the table earns trust differently: every entry must NAME its place, and this one
+is pinned outright.
+
+**THE GEOCODER COULD BE RETIRED ENTIRELY, and that is the finding worth keeping.**
+Measured platform-wide: **165 of 183 live orgs have locations, and ALL 165 of
+those carry coordinates** — 100% where a location exists. So the hand-typed
+city, the Nominatim call, the cache, the pacing, the state verification and this
+whole section exist to approximate something the platform already holds exactly.
+A card emitting org → coordinate (no date tags, so no flip and no outage) would
+replace all of it and could not be wrong about a state, because it would not be
+matching text at all. **Not built** — it is a real change with its own card and
+its own sign-off, and it should not ride in on a bug fix.
+
+Verified end to end on production's exact stored shape: the boot drops the
+Virginia coordinate, resolves from the table without geocoding at all, and serves
+**49°F clear, hi 75 lo 48, observed 06:15** — which is what Open-Meteo returns for
+Falcon, CO, against the 65°/H 88° the card was showing.
+
 ### Guards
 
-`scripts/org-weather.spec.js` (**497 assertions, in CI**), which LIFTS AND RUNS
+`scripts/org-weather.spec.js` (**514 assertions, in CI**), which LIFTS AND RUNS
 `lib/weather.js`, `wxcNum`, `orgPlaceQuery`, `coordsFromGeo`, `geoStateMatches`
 and `refusedGeocodes`, and computes the contrast of every gradient stop and
 every tinted ground in both themes.
@@ -581,14 +624,6 @@ because null is a real case.
   outcome rather than a gap: `city` and `state` are optional on Add Org, and the
   wrong city's sky is worse than none. The fix is typing a city, and the boot
   log names every org in that state.
-- **WOODMEN HILLS NOW RENDERS WITH NO SKY, and that is the right answer rather
-  than a gap.** Its stored city is misspelled, so nothing can resolve it without
-  guessing — and a guess is what put it in Virginia. The fix belongs in the org's
-  record (*Woodman* → *Woodmen*, one letter, and the next boot geocodes it to El
-  Paso County). It could instead be pinned in `ORG_COORDS_BY_ID`, but that table
-  is coordinates lifted from the reporting project rather than ones we typed, and
-  quietly seeding it from a spelling WE corrected is the same class of guess in a
-  place that is meant to be above suspicion. **Dan's call, not a drive-by.**
 - **`POST /admin/api/orgs/:slug/toggles` still accepts any key** and writes a
   flag nothing reads — pre-existing, not touched here, and the same hole the
   reporting project closed on its own flags route.
