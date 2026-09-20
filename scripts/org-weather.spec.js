@@ -213,7 +213,16 @@ function sliceIn(text, from, to, label) {
 }
 const fnFor     = sliceIn(SERVER, "function orgWeatherFor(", "\n// \u2550", "orgWeatherFor");
 const fnEnabled = sliceIn(SERVER, "function orgWeatherEnabled(", "function orgWeatherFor(", "orgWeatherEnabled");
-const fnRefresh = sliceIn(SERVER, "async function refreshOrgWeather(", "/* The per-org kill switch", "refreshOrgWeather");
+/* BOUNDED ON THE FUNCTION'S OWN CLOSING BRACE, not on whatever comment happens
+   to follow it. It used to end at "/* The per-org kill switch", and the moment
+   the coords backfill was inserted between the two this slice went from ~30
+   lines to 141 — every assertion under it silently widened to cover code it
+   was never written about, and the suite still passed. Nth instance in these
+   two projects of a slice pinned to a neighbour's spelling. */
+const fnRefresh = sliceIn(SERVER, "async function refreshOrgWeather(", "\n}\n", "refreshOrgWeather");
+ok(fnRefresh.split("\n").length < 45,
+  `the refreshOrgWeather slice is ${fnRefresh.split("\n").length} lines — it has run past the function and `
+  + "every assertion under it is now about somebody else's code");
 
 /* THE FRONT DOOR MUST NOT BLOCK ON A THIRD PARTY. /:org/api/config is what the
    whole dashboard waits on, so this one is synchronous by design — an `await`
@@ -411,6 +420,105 @@ for (const sky of SKIES) {
     ok(r2 >= 4.5, `.wxc-night.wxc-${sky}: the hi/lo line on ${stop} measures ${r2.toFixed(2)}:1`);
   });
 }
+
+/* ── BACKFILLING THE COORDINATES ──────────────────────────────────────────
+   Dan: "backfill those coords — we need live weather data and sky/dark/weather
+   on boot." Apex was the org that showed it: dynamic, so no coordinates, so no
+   card and no sky, correctly and for ever. */
+const fnBackfill = sliceIn(SERVER, "async function backfillOrgCoords(", "\n}\n", "backfillOrgCoords");
+const fnPlaceQ   = sliceIn(SERVER, "function orgPlaceQuery(", "\n}\n", "orgPlaceQuery");
+const fnGeoCoords= sliceIn(SERVER, "function coordsFromGeo(", "\n}\n", "coordsFromGeo");
+const fnGeocode  = sliceIn(SERVER, "async function geocodePlace(", "\n}\n", "geocodePlace");
+const fnPrewarm  = sliceIn(SERVER, "async function prewarmOrgWeather(", "\n}\n", "prewarmOrgWeather");
+
+/* LIFTED AND RUN, because every defect this can have is a comparison: a state
+   read as a place, a miss turned into a coordinate, lng read as lon. A regex
+   passes on all three. */
+const placeQuery = new Function("org", fnPlaceQ.replace("function orgPlaceQuery(org) {", "") .replace(/\}$/, "") + "\n");
+ok(placeQuery({ city: "Arvada", state: "CO" }) === "Arvada, CO", "city + state make a place");
+ok(placeQuery({ city: "Arvada", state: "" }) === "Arvada", "a city alone is still a point");
+ok(placeQuery({ city: "", state: "CO" }) === null,
+  "A STATE ALONE IS A REGION, NOT A POINT — geocoding it lands on the state's centroid, which is a "
+  + "confident wrong sky rather than no sky");
+ok(placeQuery({ city: "  ", state: " TX " }) === null, "...and whitespace is not a city");
+ok(placeQuery({}) === null && placeQuery(null) === null, "no city, no query");
+ok(!/displayName|\bname\b/.test(fnPlaceQ),
+  "THE ORG'S NAME IS NEVER CONSULTED. There are Watertowns in MA, NY, CT and WI — city and state are the "
+  + "org telling us where it is, a name is a guess");
+
+const geoCoords = new Function("weatherLib", "hit",
+  fnGeoCoords.replace("function coordsFromGeo(hit) {", "").replace(/\}$/, "") + "\n");
+const wl = require("../lib/weather.js");
+/* Read through a safe accessor: the mutation that drops the lng fallback makes
+   this return null, and `.lon` on null THROWS — a guard that dies has not told
+   anyone what broke. Nth instance in these two projects. */
+const lonOf = (h) => { const c = geoCoords(wl, h); return c ? c.lon : null; };
+ok(geoCoords(wl, { lat: 29.79, lng: -98.73 }) !== null, "a real hit resolves");
+ok(lonOf({ lat: 29.79, lng: -98.73 }) === -98.73,
+  "NOMINATIM SAYS lng AND THE WEATHER LIBRARY WANTS lon — a silent key mismatch here reads as a missing "
+  + "field, which is the Number(null) defect in a new costume");
+ok(geoCoords(wl, { lat: null, lng: null }) === null,
+  "A MISS IS NOT A COORDINATE. `{lat:null}` is 'we asked and there is no such place', and 0,0 is the "
+  + "Gulf of Guinea");
+ok(geoCoords(wl, null) === null, "and nothing at all is not a coordinate either");
+ok(geoCoords(wl, { lat: 91, lng: 0 }) === null, "off the globe is refused, by coordsOf rather than by hand");
+ok(/weatherLib\.coordsOf/.test(fnGeoCoords),
+  "...and it is refused THROUGH coordsOf, so the backfill cannot store something the reader would reject");
+
+/* THE TABLE IS KEYED ON orgId, NEVER ON SLUG. The two projects have drifted
+   before — this dashboard called Shrewsbury `town-of-shrewsbury` for five
+   weeks — and a slug-keyed table misses exactly the orgs that have drifted. */
+const tableBlock = sliceIn(SERVER, "const ORG_COORDS_BY_ID = {", "\n};", "ORG_COORDS_BY_ID");
+const ids = [...tableBlock.matchAll(/'([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})':/g)].map(m => m[1]);
+ok(ids.length >= 12, `the shared coords table carries ${ids.length} orgs`);
+ok(new Set(ids).size === ids.length, "...with no duplicate org uuid, which would be two answers for one org");
+ok(!/^\s*'[a-z-]+':/m.test(tableBlock),
+  "no slug-keyed entry in the table — orgId is the half that is stable across the two projects");
+for (const m of tableBlock.matchAll(/lat: ([-\d.]+), lon: ([-\d.]+)/g)) {
+  const lat = +m[1], lon = +m[2];
+  ok(lat >= 24 && lat <= 50 && lon >= -125 && lon <= -66,
+    `every table coordinate is in the continental US (got ${lat}, ${lon}) — a transposed lat/lon lands in `
+    + "the Indian Ocean and renders a perfectly plausible sky");
+}
+ok(/ORG_COORDS_BY_ID\[ORGS\[slug\]\.orgId\]/.test(fnBackfill), "the backfill looks the table up by orgId");
+
+/* ORDER: the table is free and exact, the geocoder is a third party. */
+ok(fnBackfill.indexOf("ORG_COORDS_BY_ID") < fnBackfill.indexOf("geocodePlace"),
+  "the table is consulted BEFORE the geocoder — it costs nothing and cannot be wrong");
+ok(/GEOCODE_PACE_MS/.test(fnBackfill), "the geocoder is paced; Nominatim's published limit is one call a second");
+const pace = Number((/const GEOCODE_PACE_MS = (\d+)/.exec(SERVER) || [])[1]);
+ok(pace >= 1000, `and the pace is at least a second (got ${pace}ms)`);
+ok(/if \(dirty\) saveDynamicOrgs\(\)/.test(fnBackfill),
+  "a geocoded org is PERSISTED, or every boot asks a third party the same question again — and the GUARD is "
+  + "pinned with the call, because `if (false) saveDynamicOrgs()` satisfies a test for the call alone");
+ok(/dirty = true/.test(fnBackfill), "...and something actually sets that flag");
+ok(/_dynamic/.test(fnBackfill),
+  "...and only the orgs that live in the store are written back; a hardcoded org's coords come from the table");
+
+/* A MISS MUST NOT BE RE-ASKED FOREVER, AND A TIMEOUT MUST NOT BE PERMANENT. */
+ok(/geoCache\[q\] = hit/.test(fnGeocode), "a resolved answer, hit or miss, is cached");
+const catchArm = fnGeocode.slice(fnGeocode.indexOf("catch"));
+ok(!/geoCache\[/.test(catchArm),
+  "A FAILURE IS NOT CACHED — a timeout is not evidence about the place, and caching it would make one bad "
+  + "minute permanent");
+ok(/hasOwnProperty\.call\(geoCache, q\)/.test(fnGeocode),
+  "the cache is read by PRESENCE, so a remembered miss is not re-asked; a truthiness test would re-ask it "
+  + "on every boot");
+
+/* ON BOOT — which reverses the reporting project's "nothing is pre-warmed". */
+ok(/orgWeatherEnabled\(s\)/.test(fnPrewarm) && /coordsOf/.test(fnPrewarm),
+  "the boot pre-warm honours BOTH gates — the kill switch and the coords — or it fetches for orgs that will "
+  + "never render a card");
+ok(/WX_PREWARM_PACE_MS/.test(fnPrewarm), "and it is paced rather than fanned out");
+const bootBlock = sliceIn(SERVER, "app.listen(PORT", "\n});", "app.listen");
+ok(/backfillOrgCoords\(\)/.test(bootBlock), "the backfill runs at boot");
+ok(bootBlock.indexOf("backfillOrgCoords") < bootBlock.indexOf("prewarmOrgWeather"),
+  "...BEFORE the weather pre-warm, or the pre-warm runs over orgs that do not have coordinates yet");
+ok(/SKIP_PREWARM/.test(bootBlock),
+  "SKIP_PREWARM covers it, so a spec that boots this server neither geocodes nor fans out at open-meteo");
+ok(!/await backfillOrgCoords|await prewarmOrgWeather/.test(bootBlock),
+  "NEITHER IS AWAITED INSIDE listen — the health check has to go green while a third party is still being "
+  + "asked");
 
 /* ── THE SKY BEHIND THE WHOLE PAGE ────────────────────────────────────────
    Dan, on the card-only version: "doesn't the whole org page get the overcast
