@@ -207,24 +207,54 @@ body.wx-night { --wx-ground: color-mix(in srgb, var(--bg-page) 74%, #1e2f4c); }
 body.wx-clear .wx-orb, body.wx-cloudy .wx-orb { display: block; right: 15%; top: 6%; width: 44px; height: 44px;
   background: #fff6dc; box-shadow: 0 0 50px 18px rgba(255,226,160,.5); }
 
+/* ── EVERY PARTICLE CARRIES A LIGHT EDGE AND A DARK ONE ────────────────────
+   Dan, on the merged page: "if it starts snowing there or raining, I better
+   see snow and rain."
+
+   THE FIRST VERSION WAS LIFTED STRAIGHT OFF THE CARD AND WAS NEARLY INVISIBLE
+   HERE, which is the ground problem one layer up, again. The card's own
+   background is a dark saturated ramp, so a white streak or a white flake
+   reads beautifully on it. The PAGE's ground is a light tint of the theme
+   colour — so white-on-near-white vanished, and measured against its own
+   ground the snow was the worst of them.
+
+   A particle has to work on the dark sky band at the top of the viewport AND
+   on the light ground below it, in either theme. So each one is drawn TWICE:
+   a light edge and a slate one beside it. Whichever ground it lands on, one of
+   the two is visible — which is also what rain actually looks like. */
 body.wx-drizzle .wx-fx, body.wx-rain .wx-fx, body.wx-storm .wx-fx {
   animation: wx-rain .52s linear infinite;
-  background-image: repeating-linear-gradient(101deg,rgba(212,232,252,0) 0 5px,rgba(212,232,252,.55) 5px,rgba(212,232,252,.55) 6px,rgba(212,232,252,0) 6px 11px); }
+  background-image: repeating-linear-gradient(101deg,
+    rgba(212,232,252,0) 0 5px,
+    rgba(226,240,255,.78) 5px, rgba(226,240,255,.78) 6px,
+    rgba(51,65,85,.55) 6px, rgba(51,65,85,.55) 7px,
+    rgba(212,232,252,0) 7px 12px); }
 body.wx-drizzle .wx-fx2, body.wx-rain .wx-fx2, body.wx-storm .wx-fx2 {
   animation: wx-rain .86s linear infinite;
-  background-image: repeating-linear-gradient(99deg,rgba(226,240,255,0) 0 9px,rgba(226,240,255,.45) 9px,rgba(226,240,255,.45) 10px,rgba(226,240,255,0) 10px 19px); }
-body.wx-rain .wx-fx, body.wx-storm .wx-fx { opacity: .34; }
-body.wx-rain .wx-fx2, body.wx-storm .wx-fx2 { opacity: .2; }
-body.wx-drizzle .wx-fx { opacity: .13; }
-body.wx-drizzle .wx-fx2 { opacity: .08; }
+  background-image: repeating-linear-gradient(99deg,
+    rgba(226,240,255,0) 0 9px,
+    rgba(240,248,255,.6) 9px, rgba(240,248,255,.6) 10px,
+    rgba(51,65,85,.42) 10px, rgba(51,65,85,.42) 11px,
+    rgba(226,240,255,0) 11px 20px); }
+body.wx-rain .wx-fx, body.wx-storm .wx-fx { opacity: .58; }
+body.wx-rain .wx-fx2, body.wx-storm .wx-fx2 { opacity: .36; }
+/* Drizzle stays the faintest of the three — it is drizzle — but it is no
+   longer below the threshold of being seen at all. */
+body.wx-drizzle .wx-fx { opacity: .38; }
+body.wx-drizzle .wx-fx2 { opacity: .24; }
 @keyframes wx-rain { from { transform: translate3d(0,-10%,0); } to { transform: translate3d(-30px,10%,0); } }
 
+/* A FLAKE IS WHITE AND MUST STAY WHITE, so its second edge is a shadow rather
+   than a second colour: invisible against the dark sky band, and what makes it
+   a flake rather than a blank pixel against the light ground. */
+body.wx-snow .wx-fx, body.wx-snow .wx-fx2 {
+  filter: drop-shadow(0 0 1.1px rgba(30,41,59,.7)) drop-shadow(0 1px 1px rgba(30,41,59,.4)); }
 body.wx-snow .wx-fx {
   animation: wx-snow 11s linear infinite; background-size: 300px 240px;
-  background-image: radial-gradient(2.4px 2.4px at 24px 28px,#fff 55%,transparent 56%),radial-gradient(1.9px 1.9px at 132px 92px,rgba(255,255,255,.9) 55%,transparent 56%),radial-gradient(2.8px 2.8px at 214px 40px,#fff 55%,transparent 56%),radial-gradient(2px 2px at 66px 170px,rgba(255,255,255,.85) 55%,transparent 56%),radial-gradient(2.4px 2.4px at 268px 210px,#fff 55%,transparent 56%); }
+  background-image: radial-gradient(3px 3px at 24px 28px,#fff 55%,transparent 56%),radial-gradient(2.4px 2.4px at 132px 92px,rgba(255,255,255,.95) 55%,transparent 56%),radial-gradient(3.4px 3.4px at 214px 40px,#fff 55%,transparent 56%),radial-gradient(2.6px 2.6px at 66px 170px,rgba(255,255,255,.9) 55%,transparent 56%),radial-gradient(3px 3px at 268px 210px,#fff 55%,transparent 56%); }
 body.wx-snow .wx-fx2 {
-  opacity: .55; animation: wx-snow 19s linear infinite; background-size: 200px 160px;
-  background-image: radial-gradient(1.6px 1.6px at 32px 22px,rgba(255,255,255,.8) 55%,transparent 56%),radial-gradient(1.4px 1.4px at 118px 70px,rgba(255,255,255,.7) 55%,transparent 56%),radial-gradient(1.7px 1.7px at 172px 126px,rgba(255,255,255,.8) 55%,transparent 56%); }
+  opacity: .72; animation: wx-snow 19s linear infinite; background-size: 200px 160px;
+  background-image: radial-gradient(2.1px 2.1px at 32px 22px,rgba(255,255,255,.88) 55%,transparent 56%),radial-gradient(1.9px 1.9px at 118px 70px,rgba(255,255,255,.8) 55%,transparent 56%),radial-gradient(2.2px 2.2px at 172px 126px,rgba(255,255,255,.88) 55%,transparent 56%); }
 @keyframes wx-snow { from { background-position: 0 -30px; } to { background-position: -80px 260px; } }
 
 /* NIGHT OVERRIDES THE SKY AND KEEPS THE CONDITION'S OWN PARTICLES, so a wet
