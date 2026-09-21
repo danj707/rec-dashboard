@@ -1,5 +1,158 @@
 # Project notes for Claude
 
+## THE POSTGRES MIGRATION IS PARKED, AND THE VOLUME IS THE ONLY COPY (2026-09-21)
+
+Dan: *"scope out the dashboard postgres migration--is it really worth doing or
+are we only gaining a bit of stability when we push an update"*, then, on the
+answer: *"ok let's just do the backups and healthcheck--but not until tonight."*
+
+**HE WAS RIGHT AND THE SCOPE SAYS SO. The deploy gain is ~15 seconds; the real
+finding is that nothing backs this service up at all.** Measured here rather
+than reasoned from the sibling project's notes:
+
+| | |
+|---|---|
+| boot to listening | **4,355 ms**, timed on a real cold boot |
+| so the deploy gap | stop + start + 4.4s ≈ **10-20s** |
+| memory | **0.93 GB**, flat, max 0.96 over 7 days |
+| CPU | **0.3% of a core** |
+| disk | **0.88 GB on a 50 GB volume** |
+| replicas / volume | 1 replica, `rec-dashboard-volume` at `/data` |
+| backup code in this repo | **ZERO** (21 backup references in rental-report) |
+
+**A RAILWAY VOLUME ATTACHES TO ONE INSTANCE**, so 1 replica + a volume makes
+every deploy stop-then-start by construction and no healthcheck can hide the
+gap. That is the whole of the "stability when we push an update" — and **this
+dashboard POLLS**: production logs show two orgs hitting it every 40-80s while
+this was measured, so a 15-second gap costs one stale tile cycle, not a lost
+session. There is no capacity case for a second replica either, at 0.3% CPU.
+
+### THE DURABILITY GAP IS THE REAL ONE, and it has a cheaper fix than a migration
+
+0.88 GB on that volume is the **only** copy of: the 21 dynamic orgs
+(`dashboard-orgs.json`), every org's widget layout (`dashboards.json`), the
+authored Project Updates and their images, the SMS allowances
+(`sms-thresholds.json`), the fired-threshold markers, the per-org default
+emails, the email subscriptions, the share links and the whole `events.jsonl`.
+
+**TWO OF THOSE FAIL SILENTLY.** Lose `sms-thresholds.json` and the allowance
+alert switches itself off — which is exactly what #74's own write-up calls
+worse than a field that refuses to save. Lose `org-emails.json` and the alert
+that does fire goes to the fallback address or to nobody.
+
+**Railway volume backups are a SCHEDULE YOU TURN ON** — not on by default.
+Daily keeps 6 days, weekly 27, monthly 89. That closes most of the gap for a
+checkbox and no code, which is why it is the thing that shipped instead of the
+migration. Two caveats from Railway's own docs, worth knowing before relying on
+it: **wiping a volume deletes its backups**, and a backup can only be restored
+into the same project and environment — so it is not an off-platform copy the
+way rental-report's daily gist is.
+
+### WHAT THE MIGRATION WOULD COST, so it is not re-scoped from scratch
+
+Smaller than the sibling project's, in one specific way, and riskier in another.
+
+- **The seam is 9 JSON stores + `events.jsonl`**: 10 `writeFileSync` (one is the
+  binary image write), 2 `appendFileSync`, 12 `readFileSync`, 14 `existsSync`.
+  **Every one already sits behind a named `saveX()` / `loadX()`**, so wrapping
+  them is mechanical rather than archaeological. `lib/store.js` copies over.
+- **The feed-cache half does not exist here.** `cache.js` is an in-memory Map
+  with stale-while-revalidate and no disk hydrate at all, so the single biggest
+  piece of rental-report's migration — and the one that later caused its 10.45
+  GB memory peak — is simply absent. It also means the migration gains nothing
+  on memory here.
+- **`announce-images/` is binary and does not migrate.** Images uploaded before
+  the volume is detached would 404 afterwards. Same accepted loss as over there.
+- **TWO REPLICAS IS A HAZARD THIS SERVICE IS NOT BUILT FOR, AND THE MIGRATION IS
+  WHAT INTRODUCES IT.** There is **no leader lock anywhere in `server.js`** (the
+  only two matches for "leader" are prose about a leaderboard). Three boot tasks
+  write:
+  - `runSmsAlertCheck` marks every due threshold to disk **and then emails the
+    org**. Two replicas keep two markers, so the customer gets the email twice —
+    the exact failure that marker was written to prevent.
+  - `reconcileWithReporting()` at 4s and every 6h writes `dashboard-orgs.json`
+    and `REPORTING_IDENTITY`.
+  - `backfillOrgCoords` writes `geocache.json`.
+- So it is ~2-3 days including porting `withLeaderLock` and auditing every boot
+  writer, to buy back 15 seconds a deploy. **Revisit when something actually
+  needs a second replica** — real traffic, or a crash long enough to notice.
+  Neither is close.
+
+### `/health` IS THE HEALTHCHECK NOW, which makes it load-bearing for every deploy
+
+Before this there was **no `healthcheckPath` configured**, so Railway declared a
+deploy live the moment the container started: a container that booted into a
+broken state still took over from the working one **and the deploy still
+reported SUCCESS**. It is `/health` now.
+
+**It does not shorten the gap, and claiming it would be wrong** — with a volume
+the old container is already gone, so there is nothing to keep serving. What it
+buys is that a deploy which cannot boot is *visible* rather than reported green.
+rental-report learned this the hard way: its healthcheck never went green while
+an import blocked `app.listen`, Railway killed the container, and the old one
+was already gone.
+
+**THE COST IS THAT BREAKING `/health` NOW BREAKS DEPLOYS**, and the symptom is
+*"deploys stopped working"* with nothing connecting it to whoever moved a route.
+Three ways it goes wrong, all guarded:
+
+- **SHADOWED BY `/:org`.** Express matches in registration order, and
+  `app.get('/:org')` with `org="health"` swallows it — `ORGS['health']` is
+  undefined, `authMiddleware` 404s, and every deploy fails from then on.
+  `/health` sits at ~1274 and that route at ~2181, and the only thing keeping
+  the margin is nobody adding a single-segment `/:param` route in between. Fifth
+  instance of the registration-order trap in this repo.
+- **GATED BEHIND AUTH.** Railway's healthcheck sends no credentials.
+- **ANSWERING NON-200**, or doing I/O — a healthcheck that reads the volume
+  fails exactly when the volume is the problem.
+
+### Guards
+
+`scripts/healthcheck-route.spec.js` (**13 assertions, in CI**), with a live half
+that boots a real server and drives the route. **It boots WITH
+`ADMIN_PASSWORD` SET, and that is the whole reason it discriminates**:
+`adminAuth` opens with `if (!ADMIN_PASSWORD) return next()`, so on a boot with
+no password it falls **open** and a 200 on `/health` is satisfied by a build
+that has the gate wrapped around it. Every local boot and PR preview is that
+case. It also asserts `/admin/api/orgs` 401s on the *same* boot, which is what
+proves the 200 is not a fall-open. `SKIP_SOURCE=1` drops the source half.
+
+Mutation-tested **seven ways, all seven caught by an assertion that names the
+defect**: `/health` re-registered below `/:org` (the every-deploy-fails case),
+gated behind `adminAuth`, gated behind `authMiddleware`, a blanket `adminAuth`
+mounted above it, made to read the volume, answering 503, and — against the
+spec's own scan — the one-segment `/:org` route made multi-segment.
+
+**MY OWN ORDERING ASSERTION WAS DEFECTIVE, AND MUTATION IS WHAT SHOWED IT.** It
+compared `/health` against the FIRST `/:param` route of any shape — but
+`app.get('/:org/api/geocode')` needs three segments and can never match a
+one-segment path, so the comparison was against a route that is not a threat.
+Only a **single-segment** `app.get('/:x')`, or any `app.use('/:x')` (which
+matches on prefix), can swallow it. The scan tests that now, with a preceding
+assertion that it found something — or the ordering check passes on nothing.
+
+**AND TWO DRAFTS OF THAT MUTATION DID NOT REPRODUCE THE BUG.** Both inserted
+`/health` immediately *before* a `/:org` route, which is still above it, i.e.
+correct code — so it reported SURVIVED against a guard that was never
+exercised, and I nearly read that as a hole in the spec rather than in the
+mutation. It is re-registered past `app.listen` now. Nth instance in these two
+repos: *a mutation that does not reproduce the bug has not tested the guard*,
+and "the line above the thing" is not below it.
+
+### NOT DONE
+
+- **The Postgres migration**, per the decision above. Not deferred pending
+  information — decided against on the measurements, with the trigger for
+  revisiting named (something that needs a second replica).
+- **No off-platform copy.** Volume backups live in this project and environment
+  and are deleted by wiping the volume. rental-report's daily gist is the shape
+  that survives an account-level incident; there is no equivalent here.
+- **`events.jsonl` is read whole.** Both admin readers do
+  `readFileSync(...).split('\n')` and parse every line — no byte-offset tail,
+  which rental-report needed at 82k events. Admin-only, so it is a slow page
+  rather than a user-facing problem, and it is not a migration argument.
+
+
 ## AN ORG CREATED OVER THERE NOW GETS CREATED HERE (2026-09-21)
 
 Dan: *"lets do the 'create on one project adds it to both' issue."*
