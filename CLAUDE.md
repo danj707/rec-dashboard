@@ -1,5 +1,128 @@
 # Project notes for Claude
 
+## AN ORG CREATED OVER THERE NOW GETS CREATED HERE (2026-09-21)
+
+Dan: *"lets do the 'create on one project adds it to both' issue."*
+
+**HALF OF IT ALREADY EXISTED, AND IT WAS THIS HALF THAT DID NOT.** Add Org here
+has pushed its new orgs to rental-report since it was built — it adopts their
+token if they already have the org, posts to their `/api/admin/add-org`, and a
+6-hourly `reconcileWithReporting()` repairs drift afterwards. Nothing ever came
+back the other way, so an org created from **their** admin dashboard existed in
+one place and was added here by hand.
+
+Two routes close it, and they are deliberately the mirror of theirs — same
+paths, same shape, same identity rule:
+
+| | |
+|---|---|
+| `GET /api/admin/org-by-id/:orgId` | what do you call this organisation, and what is its token |
+| `POST /api/admin/add-org` | create it here |
+
+### THE FIRST THING BUILDING IT FOUND WAS A LIVE CREDENTIAL LEAK
+
+Their copy of these lookups was **completely open and answered with the org's
+ACCESS TOKEN** — confirmed against production, a real 16-character token to an
+unauthenticated `curl`. That token is the only thing in front of every report an
+org has, and slugs are city names. Written up in full in rental-report's
+CLAUDE.md; what matters here is the rule these routes copy:
+
+**TOKENS ARE GATED; EXISTENCE IS NOT.** The lookup still answers `exists`,
+`slug` and `orgId` to anyone, because that is what slug-drift repair reads and
+none of it is a credential. Only the token is withheld, as `tokenWithheld: true`
+rather than a missing key — *"this org has no token"* and *"you were not allowed
+to see it"* are different facts, and a caller reading the second as the first
+adopts an empty token and 404s every link it builds.
+
+**`orgSyncAuthOk` FAILS CLOSED, which is the opposite of `adminAuth` beside it.**
+`adminAuth` returns `next()` when no password is set — right for a dev root page,
+and very wrong for a route that mints an org with a token of the caller's own
+choosing. An unset `ORG_SYNC_SECRET` authorises nothing. The admin password is
+accepted too, so a by-hand repair stays possible when the secret is unset, wrong
+or being rotated. And the length test before `timingSafeEqual` is not an
+optimisation — that function THROWS on a length mismatch, so without it a
+wrong-length secret is a 500 rather than a 401.
+
+### RECONCILE ON THE orgId, NEVER THE SLUG — enforced on the receiving side too
+
+The reconcile above already follows this rule; `add-org` has to as well, because
+the caller can be wrong. An org already here under **another** slug is the drift
+case, not a create, so it is **refused with a 409 naming what we DO call it**
+rather than added again. Adding it is exactly how `town-of-shrewsbury` was made.
+Symmetrically, a slug we already hold is never repointed at a different
+organisation — that would serve their data under this name.
+
+**A synced org records its reporting identity immediately.** They told us their
+slug and token, so `REPORTING_IDENTITY[slug]` is set on the spot; without it
+every report link for that org is wrong until the next 6h reconcile.
+
+**THEIR TOKEN, NOT A NEW ONE.** For their own URLs they are the authority — the
+same line the reconcile takes on token drift. Generating one here means every
+report link this dashboard renders is refused.
+
+**Coords come from the table only.** The geocode path needs a city and state and
+the reporting project carries neither, so a synced org gets weather if its UUID
+is known and otherwise renders as any other org with no coords does. Never a
+guess from the name: there are Watertowns in MA, NY, CT and WI.
+
+### THE OUTBOUND CALLS NOW CARRY THE SECRET, and forgetting one is silent
+
+rental-report withholds the token from an unauthenticated caller, so every
+`fetch` at it needs the header or **token-drift repair quietly stops working**
+and Add Org mints a second token for an org that already has one over there.
+Three call sites, all through one `orgSyncHeaders()`. Slug-drift repair is
+unaffected either way, because those fields stay open — which is also why this
+degrades rather than breaks while the secret is unset.
+
+**`ORG_SYNC_SECRET` is declared at the top with `REPORTING_BASE_URL`**, not
+beside the routes that use it: `reconcileOrgWithReporting` at line ~250 reads it,
+and a const read from above its own declaration is the temporal-dead-zone trap
+this pair of repos has shipped before.
+
+### Guards
+
+`scripts/org-sync.spec.js` (**27 assertions, in CI**), which boots a REAL server
+and drives the real routes — a regex over our own patch is not evidence the
+server behaves. Mutation-tested **eleven ways, all eleven caught by an assertion
+that names the defect**: the token handed to anyone, the write gate removed,
+`orgSyncAuthOk` falling open on an unset secret, the length test dropped, an org
+under another slug duplicated (Shrewsbury), a held slug repointed, the reporting
+identity not recorded, a created org not persisted, the synced org given a new
+token, and each outbound call site losing the header.
+
+**TWO OF MY OWN ASSERTIONS WERE SATISFIED BY DIFFERENT CODE, and mutation is
+what showed both.** `REPORTING_IDENTITY[slug] = …` and `saveDynamicOrgs()` appear
+in the UPDATE branch as well as the CREATE branch, so deleting the create
+branch's copy left a regex over the sliced route passing. Both are behavioural
+now — one reads `/admin/api/reporting-identity`, the other reads
+`dashboard-orgs.json` off disk — and the source assertions were **deleted rather
+than tightened**, with a comment saying why. A third gap: the live fixture always
+sets the secret, so the fall-open branch was unreachable from it and that
+mutation SURVIVED; the spec boots a SECOND server with no secret now, because an
+unconfigured deploy is **every PR preview**.
+
+**AND I BROKE `reporting-identity.spec.js` DOING THIS.** It lifts the reconcile
+block out of server.js and evaluates it, injecting the names it reaches for —
+and `orgSyncHeaders` is declared above that block, so it was not carried. `get()`
+threw a ReferenceError that `reconcileWithReporting`'s own catch swallowed, and
+the spec failed reading *"must adopt the slug rental-report actually serves"* —
+naming the wrong thing entirely. **Nth instance of a slice reaching past its own
+inputs.** The lift carries it now, with an assertion that the lift is complete,
+or every case below it runs on a function whose every call throws.
+
+**A sandbox note:** this repo had no `node_modules`, and the failure is
+`Cannot find module '@opentelemetry/sdk-node'` at `server.js:4` — which reads as
+a broken server rather than an uninstalled repo. `npm install` first.
+
+### NOT DONE
+
+- **`ORG_SYNC_SECRET` IS NOT SET IN EITHER PROJECT.** Until Dan sets the same
+  value in both, the leak is closed and the token stays withheld, but nothing
+  syncs and token-drift repair is quiet. Both refusals name the variable.
+- **No backfill.** rental-report has ~29 orgs to this dashboard's 24, so a
+  "give me everything you have that I lack" pull would create five orgs nobody
+  asked for. The ask is *created in one → created in both*, which is a push.
+
 ## THE ORG DASHBOARD TAKES THE LOCAL SKY (2026-09-19)
 
 Dan, with Watertown's dashboard open: *"can we do the same weather treatment to

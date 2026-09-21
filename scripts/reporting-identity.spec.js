@@ -103,12 +103,25 @@ function slice(from, to) {
 }
 const block = slice("const REPORTING_IDENTITY = {};", "// Boot check runs slightly late");
 
+// EVERY NAME THE SLICE REACHES FOR HAS TO BE SUPPLIED. `orgSyncHeaders` is
+// declared above this block (with the other cross-project env constants, so it
+// sits above its own readers rather than in the temporal dead zone), so the
+// lift does not carry it — and without it `get()` threw a ReferenceError that
+// reconcileWithReporting's own catch swallowed, turning "the header is missing"
+// into "must adopt the slug rental-report actually serves". A slice reaching
+// past its own inputs, Nth instance, and the failure named the wrong thing.
+const headersFn = slice("function orgSyncHeaders(extra) {", "\n}") + "\n}";
 function build(base, orgs) {
-  return new Function("REPORTING_BASE_URL", "ORGS", "fetch", "console", `
+  return new Function("REPORTING_BASE_URL", "ORGS", "fetch", "console", "ORG_SYNC_SECRET", `
+    ${headersFn}
     ${block}
-    return { reconcileWithReporting, reportingIdentity, REPORTING_IDENTITY };
-  `)(base, orgs, fetch, { log(){}, warn(){}, error(){} });
+    return { reconcileWithReporting, reportingIdentity, REPORTING_IDENTITY, orgSyncHeaders };
+  `)(base, orgs, fetch, { log(){}, warn(){}, error(){} }, "");
 }
+// ...and prove the lift is complete, or the assertions below run on a function
+// whose every call throws into a catch and reports something else.
+assert.strictEqual(typeof build("http://127.0.0.1:1", {}).orgSyncHeaders, "function",
+  "the lift must carry orgSyncHeaders, or every reconcile silently throws");
 
 (async () => {
   await new Promise(r => stub.listen(0, "127.0.0.1", r));
