@@ -2952,8 +2952,27 @@ process.on('exit', () => {
      fits about eight characters, which is a stub rather than a place; but
      widening every tall card would halve the faces per row at the eight orgs
      where the place is hoisted and there is nothing under the name. */
-  ok(/\.ci-tall\.ci-where \.ci-person \{ width: 92px; \}/.test(src),
-     'the tile widens only when the per-face place actually renders');
+  /* THE TILE WIDENS ON `.ci-tall`, NOT ON `.ci-where`, and that is the
+     correction Dan's Torrance screenshot forced. The PRODUCT line renders on
+     every tall card; only the PLACE is gated on there being two or more. Tying
+     the width to the place left a 46px tile under a full-width product name at
+     every org with no desks recorded, and the text ran across the face beside
+     it. Any tall card needs the room. */
+  ok(/\.ci-tall \.ci-person \{ --ci-tile: 104px; \}/.test(src),
+     'the tile widens on any tall card, not only where a place renders');
+  ok(!/\.ci-tall\.ci-where \.ci-person \{ width:/.test(src),
+     '...and the width is no longer tied to the place');
+  /* AND EVERY LINE IS BOUNDED BY THE TILE rather than by a number that has to
+     be kept equal to it — `max-width: 92px` inside a 46px tile is exactly the
+     overflow, and it reads perfectly in source. */
+  ok(/\.ci-person \{ display: flex; flex-direction: column; align-items: center;\s*\n\s*width: var\(--ci-tile\); text-align: center; \}/.test(src),
+     'the tile takes its width from one variable');
+  for (const el of ['b', 'em', 'u']) {
+    const m = new RegExp('\\.ci-person ' + el + ' \\{[^}]*max-width: 100%');
+    ok(m.test(src), 'the <' + el + '> line is bounded by the tile, not by a pinned pixel width');
+  }
+  ok(!/\.ci-person (b|em|u) \{[^}]*max-width: (46|92)px/.test(src),
+     'no line carries a hardcoded width that can disagree with the tile');
 
   /* ── A TALL CARD CARRIES ITS OWN FLOOR ──────────────────────────────
      `grid-row: span 2` only produces a double card while some OTHER card in

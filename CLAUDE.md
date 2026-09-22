@@ -53,6 +53,68 @@ dropped rather than rendered empty.
 **MATCHED AS EXACT LITERALS, never as "anything in brackets."** A desk an org
 genuinely called `(Annex)` is a real place, and the spec drives that case.
 
+### THE TILE WIDENED ON THE WRONG CONDITION, AND THE TEXT RAN ACROSS THE FACES
+
+Dan, on Torrance with the 2x card on: *"height good but the location/site is a
+mess"* — the product line spilling out of each 46px tile and across the face
+beside it.
+
+**THE PRODUCT LINE RENDERS ON EVERY TALL CARD; ONLY THE PLACE IS GATED ON THERE
+BEING TWO OR MORE.** The width was tied to `.ci-where` — the place gate — so a
+tall card at an org with **no desks recorded** kept a 46px tile while
+`.ci-person em` carried `max-width: 92px`. Ninety-two pixels of text in a
+forty-six pixel box, overflowing into the neighbour.
+
+Torrance is exactly that org: its two scans that day carried no desk at all, so
+the card was tall, the product printed, and nothing had widened the tile.
+
+**TWO NUMBERS THAT HAD TO BE KEPT EQUAL AND WERE NOT.** The fix is not a bigger
+number — it is that the tile width is now ONE variable (`--ci-tile`, 46px
+normally and 104px on `.ci-tall`) and every line inside is `max-width: 100%`.
+A line cannot disagree with its tile because it no longer has its own opinion.
+
+**AND EVERY FIXTURE HAD DESKS ON EVERY ROW**, so `.ci-where` was always on, the
+tile was always widened, and the collision was unreachable — the same shape as
+the five-card grid hiding the height collapse one section up, in the same
+change. **Twice in one feature**: a fixture where a wrong implementation cannot
+look wrong is not a guard.
+
+The case that covers it is a MEASUREMENT, not a class check — for each face,
+every line's rendered width against its own tile's — because
+`max-width: 92px` inside a 46px tile reads perfectly in source. It carries a
+`n > 0` clause too, or "no line overflows" passes on a card that rendered no
+lines at all.
+
+**AND THAT CASE ALONE IS NOT ENOUGH, which mutation is what showed.** Reverting
+the width to `.ci-where` SURVIVED it — because once every line is
+`max-width: 100%` the text can no longer spill *whatever* the tile width is. It
+stops overflowing and starts truncating at 46px, which is a stub rather than a
+product name. **"Nothing overflows" and "the tile is wide enough" are two
+claims and the fix satisfies the first by construction**, so the width is
+measured on its own (`>= 90px` on a tall card, and still 46px on an ordinary
+one, or "wide enough" was bought by widening every card on the platform).
+
+**A THIRD MUTATION WAS CAUGHT BY THE WRONG ASSERTION** — a flaky sound case
+timed out in the same run — which is not evidence about this guard at all.
+*A mutation caught by an assertion that does not name it has not shown that
+assertion works.*
+
+### AND TWO OF MY OWN CASES DEPENDED ON A NEIGHBOUR
+
+Cases are not independent in this harness — a reload sticks for everything
+after it, which its own comments record twice. Both bit here in one sitting:
+
+- **`...with the faces bounded` sat directly under the 470-scan case and reused
+  its page.** Inserting cases between them left it measuring a different config
+  (16 rows, no `.ci-tall`) and it failed on correct code. It reloads for itself
+  now; *a case that depends on its neighbour is one insertion away from testing
+  nothing.*
+- **`loadCi` waited for `[data-live-checkins]`, which matches the LOADING
+  branch too**, so the measuring cases could be handed a card with no face list
+  in it. It passed by luck until widening the tile made the 470-row render slow
+  enough to lose the race, and the case then reported `MEASURED undefined`. It
+  waits for a card that is not the loading one.
+
 ### ONE PLACE IS SAID ONCE, NOT FORTY-FIVE TIMES
 
 **Eight orgs run exactly one desk** — Piedmont 7,254 scans in 30 days, Buffalo

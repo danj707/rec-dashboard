@@ -587,12 +587,18 @@ body.has-wx .section-header::before { content: ""; position: absolute; inset: 2p
 
 /* A ROW OF FACES, WRAPPING. Not a table: the ask was to SEE who came in, and a
    name-and-time table is what the check-ins report already is. */
-.live-ci-people { display: flex; flex-wrap: wrap; gap: 10px 12px; margin: 2px 0 6px; }
-.ci-person { display: flex; flex-direction: column; align-items: center; width: 46px;
-             text-align: center; }
+.live-ci-people { display: flex; flex-wrap: wrap; gap: 10px 12px; margin: 2px 0 6px;
+                  --ci-tile: 46px; }
+.ci-person { display: flex; flex-direction: column; align-items: center;
+             width: var(--ci-tile); text-align: center; }
 .ci-person a { text-decoration: none; }
+/* EVERY LINE IS BOUNDED BY THE TILE, not by a number that has to be kept equal
+   to it. The first version pinned `max-width: 92px` on the detail lines and
+   the tile width on a DIFFERENT selector, so on a card where the tile stayed
+   46px the lines were 92px wide and spilled into the neighbour — which is
+   exactly what Torrance rendered. `100%` cannot disagree with the tile. */
 .ci-person b { font-size: 10px; font-weight: 600; color: var(--text-primary);
-               max-width: 46px; overflow: hidden; text-overflow: ellipsis;
+               max-width: 100%; overflow: hidden; text-overflow: ellipsis;
                white-space: nowrap; margin-top: 3px; }
 .ci-person i { font-size: 9px; font-style: normal; color: var(--text-muted); }
 
@@ -618,17 +624,23 @@ body.has-wx .section-header::before { content: ""; position: absolute; inset: 2p
    orgs measured with a single desk, where the location is hoisted into the
    header and there is nothing under the name at all. So the width rides on
    `.ci-where`, which is on only when the per-face line actually renders. */
-.ci-tall.ci-where .ci-person { width: 92px; }
-.ci-tall.ci-where .ci-person b { max-width: 92px; }
+/* THE TILE WIDENS ON `.ci-tall`, NOT ON `.ci-where` — and that distinction is
+   the bug Dan hit. The PRODUCT line renders on every tall card; only the PLACE
+   is gated on there being two or more of them. Tying the width to the place
+   meant a tall card at an org with no desks recorded kept a 46px tile under a
+   full-width product name. Torrance is that org: its two scans today carry no
+   desk at all, so the card was tall, the product printed, and the text ran
+   straight across the face beside it. Any tall card needs the room. */
+.ci-tall .ci-person { --ci-tile: 104px; }
 /* THE HOVER'S OWN TWO LINES. Muted and a size below the time, so the face and
    the first name stay the thing the eye lands on — this is the detail you
    would have had to mouse over, not a second headline. Truncated with the full
    value still on the tile's `title`. */
 .ci-person em { display: block; font-style: normal; font-size: 8.5px; line-height: 1.25;
-                color: var(--text-secondary); margin-top: 2px; max-width: 92px;
+                color: var(--text-secondary); margin-top: 2px; max-width: 100%;
                 overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ci-person u { display: block; text-decoration: none; font-size: 8.5px; line-height: 1.25;
-               color: var(--text-muted); max-width: 92px;
+               color: var(--text-muted); max-width: 100%;
                overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* THE PHOTO SITS ON TOP OF THE INITIALS, in the same box, so a member with an

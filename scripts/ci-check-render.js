@@ -927,7 +927,13 @@ async function loadLight(page) {
    selector, so "the place is in the header" has to become an attribute. */
 async function loadCi(page) {
   await page.reload({ waitUntil: 'networkidle2', timeout: 60000 });
-  await page.waitForSelector('[data-live-checkins]', { timeout: 25000 });
+  /* WAIT FOR THE LOADED CARD, NOT MERELY A CARD. `[data-live-checkins]` matches
+     the LOADING branch too, so this used to hand the measuring cases a card
+     with no face list in it — and it passed by luck, because the render was
+     quick enough. Widening the tile to 104px made the 470-row dense render slow
+     enough to lose that race, and the case reported `MEASURED undefined`. */
+  await page.waitForSelector('[data-live-checkins]:not([data-live-checkins="loading"])',
+                             { timeout: 30000 });
   await page.evaluate(() => {
     const el = document.querySelector('[data-live-checkins] .widget-sub, [data-live-checkins] .live-sub');
     document.body.dataset.ciSub = el ? el.textContent : '';
@@ -2682,9 +2688,90 @@ const CASES = [
     needs: '[data-live-happening][data-live-ht-tall="0"]',
     absent: '[data-live-happening].widget-tall' },
 
+  /* NO DETAIL LINE MAY BE WIDER THAN ITS OWN TILE. This is the one that would
+     have caught the overflow, and it is a MEASUREMENT rather than a class
+     check: the text spilling across the neighbouring face is `max-width: 92px`
+     inside a 46px tile, which reads perfectly in source. */
+  { name: 'live · a long product on a no-desk org stays inside its tile',
+    ciTall: true, ciLongProduct: true, needs: 'body[data-ci-fits="1"]',
+    act: async page => {
+      await loadCi(page);
+      await page.evaluate(() => {
+        const people = [...document.querySelectorAll('.ci-tall .ci-person')];
+        let worst = 0, n = 0;
+        for (const p of people) {
+          const pw = p.getBoundingClientRect().width;
+          for (const el of p.querySelectorAll('b, em, u')) {
+            n++;
+            worst = Math.max(worst, Math.round(el.getBoundingClientRect().width - pw));
+          }
+        }
+        document.body.dataset.ciOverflowPx = String(worst);
+        document.body.dataset.ciLines = String(n);
+        /* n > 0 or the assertion is vacuous — "no line overflows" passes on a
+           card that rendered no lines at all. */
+        document.body.dataset.ciFits = (n > 0 && worst <= 1) ? '1' : '0';
+      });
+    } },
+  /* THE TILE IS ACTUALLY WIDE ENOUGH, which is a SEPARATE claim from "nothing
+     overflows" — and finding that out is what mutation testing was for. Once
+     every line is `max-width: 100%` the text can never spill whatever the tile
+     width is, so the overflow case above SURVIVES a revert of the widening: it
+     stops overflowing and starts truncating at 46px instead, which is a stub
+     rather than a product name. So the width is measured on its own. */
+  { name: 'live · the 2x tile is wide enough for the lines it prints',
+    ciTall: true, ciLongProduct: true, needs: 'body[data-ci-tilew-ok="1"]',
+    act: async page => {
+      /* ITS OWN RELOAD. A MEASURING case that reuses a neighbour's render can
+         silently measure a different config and still pass — which is exactly
+         how `...with the faces bounded` broke. The two selector-only cases
+         below deliberately share this render instead: a selector cannot pass
+         against the wrong config, it fails by name. */
+      await loadCi(page);
+      await page.evaluate(() => {
+        const p = document.querySelector('.ci-tall .ci-person');
+        const w = p ? Math.round(p.getBoundingClientRect().width) : 0;
+        document.body.dataset.ciTilew = String(w);
+        document.body.dataset.ciTilewOk = w >= 90 ? '1' : '0';
+      });
+    } },
+  /* AND THE PRODUCT IS STILL THERE — a tile that fits because the line was
+     dropped is not a fix. */
+  { name: 'live · ...and the product line is still printed',
+    ciTall: true, ciLongProduct: true,
+    needs: '[data-live-ci-product="Seaside Golf Weekday Resident Annual Pass"]',
+    absent: '[data-live-ci-where]' },
+  /* THE WIDTH RIDES ON `.ci-tall`, NOT ON THE PLACE. A no-desk org gets no
+     `.ci-where` at all, so this is the shape that proves the two were untied. */
+  { name: 'live · ...on a card that never got the .ci-where class',
+    ciTall: true, ciLongProduct: true, needs: '[data-live-checkins].ci-tall',
+    absent: '[data-live-checkins].ci-where' },
+
+  /* ...AND THE SHORT CARD IS UNCHANGED, or "wide enough" was bought by
+     widening every card on the platform. */
+  { name: 'live · ...while the ordinary card keeps its narrow tile',
+    ciShort: true, needs: 'body[data-ci-tilew-short="46"]',
+    act: async page => {
+      await loadCi(page);
+      await page.evaluate(() => {
+        const p = document.querySelector('[data-live-checkins] .ci-person');
+        document.body.dataset.ciTilewShort =
+          String(p ? Math.round(p.getBoundingClientRect().width) : 0);
+      });
+    } },
+
+
   { name: 'live · ...with the faces bounded by the card rather than pushing it',
     ciTall: true, denseLane: true, needs: 'body[data-ci-bounded="1"]',
     act: async page => {
+      /* ITS OWN RELOAD, not the previous case's. This case used to sit
+         directly under the 470-scan one and reuse its page — and the moment
+         cases were inserted between them it silently measured a DIFFERENT
+         config (16 rows, no `.ci-tall`) and failed. Cases are not independent
+         in this harness, which is recorded twice in this file already; a case
+         that depends on its neighbour is one insertion away from testing
+         nothing. */
+      await loadCi2(page);
       await page.evaluate(() => {
         const el = document.querySelector('.ci-tall .live-ci-people');
         const card = document.querySelector('[data-live-checkins]');
@@ -2864,6 +2951,15 @@ const CASES = [
            northern-door 141, all 0%. The card COALESCEs that to a literal, and
            printing it renders "(No Desk Location)" as though it were a place. */
         if (currentCase.ciNoDesk) rows = rows.map(r => ({ ...r, 'Desk Location': '(No Desk Location)' }));
+        /* TORRANCE, EXACTLY. Its two scans today carry NO desk and a product
+           name far longer than a tile — "Seaside Golf Weekday ...". That pair
+           is what overflowed: the card was tall so the product printed, but
+           the tile only widened on `.ci-where`, which no-desk orgs never get.
+           Every other fixture here has desks on every row, so the collision
+           was unreachable. */
+        if (currentCase.ciLongProduct) rows = rows.map(r => ({ ...r,
+          'Desk Location': '(No Desk Location)',
+          Product: 'Seaside Golf Weekday Resident Annual Pass' }));
         return json({ rows });
       }
       if (rt === 'messaging') msgCalls++;
