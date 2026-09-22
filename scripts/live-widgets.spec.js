@@ -95,6 +95,19 @@ const ok = (c, m) => { c ? pass++ : failures.push(m); };
 const eq = (g, w, m) => ok(g === w, m + ' — got ' + JSON.stringify(g) + ', want ' + JSON.stringify(w));
 
 // ── lift and RUN the date helpers ───────────────────────────────────────────
+/* THE SAVE PAYLOAD, SLICED RATHER THAN PINNED. This object has broken an
+   assertion twice now — once when `liveCards` was added beside `liveWidgets`,
+   again when `liveTall` joined them — each time failing a test with nothing to
+   do with the key that moved. Pinning the whole literal queues the same
+   failure up for the fourth key, so it is SLICED and each key tested for
+   MEMBERSHIP: dropping any one still fails by name, adding a fifth does not.
+   Same remedy as the SLACK_NOTIFY lists one repo over — when scoping forces
+   you to pin a neighbour, slice instead. */
+function saveArgKeys(text) {
+  const m = /onSave\(draft, \{([^}]*)\}\)/.exec(text);
+  return m ? m[1].split(',').map(x => x.split(':')[0].trim()).filter(Boolean) : [];
+}
+
 function liftFn(text, name) {
   const start = text.indexOf('function ' + name + '(');
   if (start < 0) throw new Error(name + ' not found at module scope — a spec cannot run what it cannot reach');
@@ -123,6 +136,13 @@ try {
     liftFn(src, 'liveTodayFor') + '\n' +
     liftFn(src, 'livePriceCell') + '\n' + liftFn(src, 'liveParticipant') + '\n' +
     liftFn(src, 'liveCheckinKey') + '\n' + liftFn(src, 'liveCheckinState') + '\n' +
+    /* THE HOVER'S TWO LINES. LIFTED AND RUN because each is a comparison
+       against a placeholder literal, and a regex passes on an inverted one
+       — which would print "(No Desk Location)" under every face at the six
+       orgs measured with no desks configured at all. */
+    "const LIVE_CI_NO_DESK = " + JSON.stringify('(No Desk Location)') + ';\n' +
+    'const LIVE_CI_NO_PRODUCT = ' + (src.match(/const LIVE_CI_NO_PRODUCT = (\[[^\]]*\])/) || [0,'[]'])[1] + ';\n' +
+    liftFn(src, 'liveCheckinWhere') + '\n' + liftFn(src, 'liveCheckinProduct') + '\n' +
     liftFn(src, 'liveInitials') + '\n' + liftFn(src, 'liveDayAxis') + '\n' +
     liftFn(src, 'liveAt') + '\n' + liftFn(src, 'liveCheckinTimeline') + '\n' +
     liftFn(src, 'liveDayShift') + '\n' + liftFn(src, 'liveProgramTrend') + '\n' +
@@ -159,7 +179,7 @@ try {
     ' liveChimeWorthy, livePriceCell, liveParticipant, liveDayShift, liveProgramTrend, liveChimeBurst,' +
     ' livePlanOn, livePlanProgress, liveMoneyZ, livePayPhrase,' +
     ' liveFeedChoice, liveHasEnrollments, liveHasCheckins,' +
-    ' liveCheckinKey, liveCheckinState, liveInitials, liveDayAxis, liveCheckinTimeline,' +
+    ' liveCheckinWhere, liveCheckinProduct, liveCheckinKey, liveCheckinState, liveInitials, liveDayAxis, liveCheckinTimeline,' +
     ' liveLaneForm, liveBuckets, liveBucketLabel, LIVE_LANE_MAX_DOTS, LIVE_LANE_BUCKETS,' +
     ' liveShortDay, liveHasFacility, liveFacilityKey, liveFacilityState, liveFacilityWho,' +
     ' liveFacilityWhen, liveFacilityTimeline,' +
@@ -345,12 +365,15 @@ if (H.liveWindow) {
      '...which opens on the stored choice, not always ticked');
   ok(/liveOn=\{config\.liveWidgets\}/.test(code),
      '...and the stored choice is what the editor is handed');
-  /* Save still carries the section switch; it now carries the per-card map
-     beside it. Asserting the old exact object would fail on the correct build,
-     and asserting only `liveWidgets: live` would pass on one that dropped the
-     card map — so both keys are named. */
-  ok(/onSave\(draft, \{ liveWidgets: live, liveCards \}\)/.test(code),
-     '...and Save Layout carries the choice');
+  /* Save carries the section switch, the per-card map and the per-card
+     height. Each named on its own — see saveArgKeys. */
+  {
+    const keys = saveArgKeys(code);
+    ok(keys.length > 0, 'the Save Layout call was found at all');
+    ok(keys.indexOf('liveWidgets') >= 0, '...and Save Layout carries the choice');
+    ok(keys.indexOf('liveCards') >= 0, '...and the per-card map beside it');
+    ok(keys.indexOf('liveTall') >= 0, '...and the per-card height beside that');
+  }
   ok(/const cfg = \{ \.\.\.config, sections, \.\.\.\(extra \|\| \{\}\) \}/.test(code),
      '...which is persisted with the layout rather than dropped on the floor');
   /* ANY card is enough to render the section: an org with a check-ins link and
@@ -2111,12 +2134,18 @@ process.on('exit', () => {
      the order of the five cards in the grid is what places them. */
   ok(/<div className="widget-grid live-grid">[\s\S]{0,200}?HappeningToday[\s\S]{0,200}?MembershipCheckins[\s\S]{0,200}?LiveRegistrations[\s\S]{0,200}?ProgramsLive[\s\S]{0,300}?FacilityBookings/.test(code),
      'the five live cards render in the order that produces Dan\'s layout: Happening, Check-Ins, Live Enrollments, then Programs and Facility underneath');
-  ok(/widget-card widget-md widget-tall live-card/.test(code),
-     'Happening Today is the tall card');
-  ok((code.match(/widget-tall/g) || []).length >= 2,
-     '...on both its loading and its loaded render, or it changes size when the feed lands');
+  /* HAPPENING TODAY IS STILL THE TALL CARD — but it is now tall because its
+     own default says so rather than because the class is hardcoded, so the
+     claim is tested through the resolver (see the height block below) and the
+     class is asserted as something the card CAN apply on both branches. */
+  ok((code.match(/\(tall \? ' widget-tall' : ''\)/g) || []).length >= 2,
+     'Happening Today applies the tall class on both its loading and its loaded render, or it changes size when the feed lands');
   ok(/\.widget-tall \{ grid-row: span 2; \}/.test(src),
      '...and "tall" means two grid rows');
+  /* ...AND A FLOOR OF ITS OWN, because the span alone collapses when every
+     card in the grid spans two rows. Pinned properly in the height block. */
+  ok(/\.widget-card\.widget-tall \{ min-height: calc\(/.test(src),
+     '...plus a height floor, since the span alone is not enough with two tall cards');
   ok(/\.live-grid \{ grid-auto-rows: 1fr; \}/.test(src),
      'the live grid sizes its rows equally, which is what makes the two on the right the same height');
   /* AND ONLY THE LIVE GRID. `.widget-grid` is every report section on the
@@ -2125,7 +2154,7 @@ process.on('exit', () => {
      '...and only the live grid — the report sections below keep sizing their rows independently');
   /* BELOW FOUR COLUMNS THE SPAN MEANS NOTHING, because there is no column
      beside it for the two half-height cards to stack in. */
-  ok(/@media \(max-width: 1100px\) \{\s*\n\s*\.live-grid \{ grid-auto-rows: auto; \}\s*\n\s*\.widget-tall \{ grid-row: span 1; \}/.test(src),
+  ok(/@media \(max-width: 1100px\) \{[\s\S]{0,400}?\.live-grid \{ grid-auto-rows: auto; \}[\s\S]{0,400}?\.widget-tall \{ grid-row: span 1; \}/.test(src),
      'the tall card becomes an ordinary one once the grid is narrower than four columns');
 
   /* THE LIST SCROLLS INSIDE THE CARD. `overflow-y: auto` ALONE IS NOT THE FIX
@@ -2636,9 +2665,15 @@ process.on('exit', () => {
   ok(/if \(!showEnroll && !showProg && !showCi && !showFac && !showHt\) return null;/.test(src),
      'the section hides when every card is switched off, not only when the feeds die');
 
-  /* THE EDITOR MUST PERSIST THE MAP, or every tick is forgotten on Save. */
-  ok(/onSave\(draft, \{ liveWidgets: live, liveCards \}\)/.test(src),
-     'Save Layout writes the per-card map alongside the section switch');
+  /* THE EDITOR MUST PERSIST THE MAPS, or every tick is forgotten on Save. */
+  {
+    const keys = saveArgKeys(src);
+    ok(keys.length > 0, 'the Save Layout call was found at all (editor half)');
+    ok(keys.indexOf('liveCards') >= 0,
+       'Save Layout writes the per-card map alongside the section switch');
+    ok(keys.indexOf('liveTall') >= 0,
+       'Save Layout writes the per-card HEIGHT map too');
+  }
   ok(/liveCardsOn=\{config\.liveCards\}/.test(src),
      'the modal is handed the saved per-card map');
   /* SEEDED THROUGH THE RESOLVER, not from the raw map — or a first-time org
@@ -2648,4 +2683,331 @@ process.on('exit', () => {
   /* Only offerable cards are listed. */
   ok(/LIVE_CARDS\.filter\(c => !!c\.has\(availableReports\)\)/.test(src),
      'the editor offers only cards this org can actually render');
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   THE 2x HEIGHT OPTION, AND THE HOVER PRINTED UNDER THE FACE
+
+   Dan, on a screenshot of the Live section with a red arrow pointing at the
+   empty half of the check-ins card: "can we add a '2x height' option for the
+   membership check in widget, basically doubling the height of the widget so
+   it takes up the same height as the happening today widget." Then, on what
+   the taller card should carry: "there's mouse hover data there now, would
+   like to show that under their profile photo in the '2x height' view."
+
+   WHAT THE DATA CAN AND CANNOT SAY, measured before any of it was built.
+   Dan's first wording was "the location/site where the user checked in at",
+   and there is no location and no site on a membership check-in anywhere in
+   the schema — over 81,416 scans across 35 orgs in 30 days, `target_type` is
+   'organization' on 100% of them, `scan_event_id` is NULL on every one, and
+   `desk_location` carries no location_id to join up to a real location record.
+   What rescues the ask is that orgs name their desks after the facility, so
+   the desk name IS the location in practice:
+
+     el-segundo   El Segundo Wiseburn Aquatic Center / Plunge / Hilltop
+     clarkstown   Congers Community Center / Pascack Community Center
+     west-sac     Recreation Center / Community Center / Childcare
+     apex (23)    Apex Center Admissions 3 / Lake Arbor Pool / FRC Guest Services 1
+
+   So it prints the org's own word for the place, VERBATIM — apex's till
+   numbers included, because stripping them needs a suffix regex and that is
+   the `/ball ?field/` trap rather than a tidy-up.
+   ════════════════════════════════════════════════════════════════════ */
+{
+  let T = {};
+  try {
+    const arr = src.match(/const LIVE_CARDS = (\[[\s\S]*?\n\];)/);
+    if (!arr) throw new Error('LIVE_CARDS not found at module scope');
+    T = new Function(
+      liftFn(src, 'liveHasEnrollments') + '\n' +
+      liftFn(src, 'liveHasCheckins') + '\n' +
+      liftFn(src, 'liveHasFacility') + '\n' +
+      liftFn(src, 'liveHasHappening') + '\n' +
+      'const LIVE_CARDS = ' + arr[1] + '\n' +
+      liftFn(src, 'liveCardTall') + '\n' +
+      liftFn(src, 'liveTallResolved') + '\n' +
+      'return { LIVE_CARDS, liveCardTall, liveTallResolved };')();
+  } catch (e) {
+    ok(false, 'the height resolver could not be lifted and run: ' + e.message);
+  }
+
+  if (T.liveCardTall) {
+    const { liveCardTall, liveTallResolved, LIVE_CARDS } = T;
+
+    /* OFF UNLESS EXPLICITLY SWITCHED ON. This is the one that matters: a
+       `!== false` test — which is what every other toggle in the file reads,
+       and therefore what somebody will "fix" this into — would double the
+       height of the check-ins card on every dashboard on the platform the
+       moment it shipped. Nothing saved means the height it has today. */
+    /* THE TWO CARDS DISAGREE ON THEIR DEFAULT, and that is the whole design.
+       Happening Today is double TODAY and must stay double for every org that
+       has never opened this panel; Check-Ins must stay the height it has. A
+       single hardcoded default either halves one or doubles the other on
+       deploy. */
+    eq(liveCardTall('checkins', undefined), false,
+       'nothing saved: the check-ins card is its normal height');
+    eq(liveCardTall('checkins', {}), false,
+       'an empty saved map is still normal height');
+    eq(liveCardTall('happening', undefined), true,
+       'nothing saved: Happening Today stays the double card it is today');
+    eq(liveCardTall('happening', {}), true,
+       '...and an empty saved map does not halve it either');
+    eq(liveCardTall('checkins', { checkins: false }), false,
+       'an explicit false is normal height');
+    eq(liveCardTall('checkins', { checkins: true }), true,
+       'an explicit true is the 2x card');
+    /* THE HALF-HEIGHT OPTION Dan asked to keep, on the card he asked for it
+       on: "Honestly I like that option also, don't remove it, but move that
+       'half height' option to the happening today card." */
+    eq(liveCardTall('happening', { happening: false }), false,
+       'unticking Happening Today gives the half-height card');
+    eq(liveCardTall('happening', { checkins: true }), true,
+       '...and a map that speaks only about check-ins leaves it alone');
+    /* A SAVED VALUE THAT IS NEITHER true NOR false IS THE CARD'S DEFAULT, not
+       a coin flip: a stale '1' or 'on' from a future editor must not
+       re-lay-out the section in either direction. */
+    eq(liveCardTall('checkins', { checkins: 1 }), false,
+       'a truthy non-true value falls back to the check-ins default');
+    eq(liveCardTall('happening', { happening: 0 }), true,
+       '...and a falsy non-false value falls back to the Happening default');
+
+    /* A CARD WITHOUT `canTall` IS NEVER TALL, whatever is saved — so a stale
+       entry for a card that does not offer the option cannot move it. */
+    for (const c of LIVE_CARDS) {
+      if (c.canTall) continue;
+      eq(liveCardTall(c.id, { [c.id]: true }), false,
+         c.id + ' does not offer a height and stays normal even when saved true');
+    }
+    eq(liveCardTall('nosuchcard', { nosuchcard: true }), false,
+       'an unknown card id is never tall');
+
+    /* EXACTLY TWO CARDS OFFER IT. Dan asked for a 2x on Check-Ins and a half
+       on Happening Today — so this fails if a third quietly gains `canTall`
+       without that being a decision. */
+    eq(LIVE_CARDS.filter(c => c.canTall).map(c => c.id).sort().join(','),
+       'checkins,happening',
+       'Check-Ins and Happening Today are the two cards offering a height');
+    /* AND THEY DEFAULT OPPOSITE WAYS — the assertion that fails if somebody
+       "tidies" the two defaults into one. */
+    eq(LIVE_CARDS.filter(c => c.tallByDefault).map(c => c.id).join(','), 'happening',
+       'Happening Today is the only card that ships double');
+    /* EVERY HEIGHT-CAPABLE CARD EXPLAINS ITSELF, or the panel renders a tick
+       with no sentence under it. */
+    for (const c of LIVE_CARDS.filter(x => x.canTall)) {
+      ok(typeof c.tallDesc === 'string' && c.tallDesc.length > 10,
+         c.id + ' says what its height tick does');
+    }
+
+    /* THE RESOLVER COVERS EVERY CARD, so the section can read it as a plain
+       map without knowing which ids support the option. */
+    const res = liveTallResolved({ checkins: true });
+    eq(res.checkins, true, 'the resolved map carries the check-ins height');
+    eq(res.happening, true, '...and Happening Today keeps its own default');
+    eq(res.facility, false, '...and refuses one for a card that cannot be tall');
+    eq(Object.keys(res).length, LIVE_CARDS.length,
+       'the resolved map has an entry per card');
+  }
+
+  /* ── THE HOVER'S TWO LINES ──────────────────────────────────────────
+     Both are comparisons against a placeholder the CARD itself writes, so
+     they are RUN rather than regexed. */
+  if (H.liveCheckinWhere) {
+    const { liveCheckinWhere, liveCheckinProduct } = H;
+
+    eq(liveCheckinWhere({ 'Desk Location': 'Plunge' }), 'Plunge',
+       'a real desk name is the place');
+    eq(liveCheckinWhere({ 'Desk Location': 'El Segundo Wiseburn Aquatic Center' }),
+       'El Segundo Wiseburn Aquatic Center',
+       '...and a long one is not truncated in the data, only in the CSS');
+    /* THE PLACEHOLDER IS NOT A PLACE. `(No Desk Location)` is what the card
+       COALESCEs a missing desk to, and six orgs measured over 30 days have
+       NO desk on any scan — taylor 809, madison 586, malibu 350, the-ranch
+       251, yerba-buena 205, northern-door 141, all 0%. Printing it verbatim
+       is forty-five identical non-answers down the card. */
+    eq(liveCheckinWhere({ 'Desk Location': '(No Desk Location)' }), '',
+       'the card\'s own no-desk placeholder is not a place');
+    eq(liveCheckinWhere({ 'Desk Location': '' }), '', 'blank is not a place');
+    eq(liveCheckinWhere({}), '', 'an absent column is not a place');
+    /* MATCHED AS AN EXACT LITERAL, never as "anything in brackets" — a desk an
+       org genuinely called "(Annex)" is a real place. */
+    eq(liveCheckinWhere({ 'Desk Location': '(Annex)' }), '(Annex)',
+       'a real desk that happens to be bracketed survives');
+
+    eq(liveCheckinProduct({ Product: 'Adult Annual' }), 'Adult Annual',
+       'a real product is printed');
+    for (const ph of ['(Unknown Membership)', '(Unknown Pass)', '(Other)']) {
+      eq(liveCheckinProduct({ Product: ph }), '',
+         'the ' + ph + ' placeholder is not a product');
+    }
+    eq(liveCheckinProduct({}), '', 'an absent product column prints nothing');
+  }
+
+  /* ── THE CARD ──────────────────────────────────────────────────────── */
+  const ciCard = src.slice(src.indexOf('function MembershipCheckins('),
+                           src.indexOf('const LIVE_FACILITY_ROWS'));
+  ok(ciCard.length > 500, 'the check-ins card was found to slice');
+
+  /* THE HEIGHT IS THE GRID SPAN THE HAPPENING CARD ALREADY USES. Dan asked for
+     "the same height as the happening today widget", and `widget-tall` is what
+     makes that literally true rather than approximately — a hand-rolled
+     min-height would be a second answer to a question `.live-grid` already
+     answers with `grid-auto-rows: 1fr`. */
+  ok(/widget-tall ci-tall/.test(ciCard),
+     'the 2x card takes the same grid span as Happening Today');
+  ok((ciCard.match(/widget-tall ci-tall/g) || []).length >= 2,
+     '...on the loading branch too, or the grid reflows when the feed lands');
+
+  /* THE CAP RISES WITH THE HEIGHT, or the option doubles the empty space
+     rather than filling it — twice the card, the same twelve faces and a
+     "+25 more today" underneath, which is the complaint it exists to answer. */
+  ok(/const cap = tall \? LIVE_CHECKIN_ROWS_TALL : LIVE_CHECKIN_ROWS;/.test(ciCard),
+     'the taller card shows more faces');
+  ok(/todayRows\.slice\(0, cap\)/.test(ciCard),
+     '...and the list is actually sliced at it');
+  ok(/todayRows\.length > cap/.test(ciCard) && /todayRows\.length - cap/.test(ciCard),
+     '...and the "+N more" counts against the same cap, so it cannot disagree');
+  {
+    const tallCap = Number((src.match(/const LIVE_CHECKIN_ROWS_TALL = (\d+);/) || [])[1]);
+    const cap = Number((src.match(/const LIVE_CHECKIN_ROWS = (\d+);/) || [])[1]);
+    ok(tallCap > cap, 'the tall cap is larger than the short one — got ' + tallCap + ' vs ' + cap);
+  }
+
+  /* THE SCOPE IS TODAY'S WHOLE SET, NOT THE CAPPED SLICE. Computing it off the
+     slice would change the answer as the day fills up and pushes rows past the
+     cap — the card would start repeating a place per face at lunchtime and
+     stop at closing. */
+  ok(/const wheres\s+= Array\.from\(new Set\(todayRows\.map\(liveCheckinWhere\)/.test(ciCard),
+     'the places are counted over all of today, not the capped slice');
+
+  /* ONE PLACE IS SAID ONCE. Eight orgs run exactly one desk — Piedmont 7,254
+     scans in 30 days, Buffalo 2,126, Jurupa 1,526 — so a per-face line there
+     is the same string repeated down the whole card. It is hoisted into the
+     header's sub-line instead, and the per-face line needs TWO or more. */
+  ok(/const showWhere = tall && wheres\.length > 1;/.test(ciCard),
+     'the per-face place needs two or more places to be worth printing');
+  ok(/const oneWhere\s+= tall && wheres\.length === 1 \? wheres\[0\] : '';/.test(ciCard),
+     '...and a single place is hoisted rather than repeated');
+  ok(/sub=\{sub\}/.test(ciCard) && /oneWhere \? ' \\u00b7 ' \+ oneWhere : ''/.test(ciCard),
+     '...into the header sub-line, where it reads as a scope note');
+
+  /* THE SHORT CARD IS UNCHANGED. Dan: "current size would show what's there
+     now" — so both extra lines are gated on `tall`, and the place carries the
+     two-or-more gate on top of that. */
+  ok(/\{tall && prod \? <em data-live-ci-product=/.test(ciCard),
+     'the product line renders only on the 2x card');
+  ok(/\{showWhere && where \? <u data-live-ci-where=/.test(ciCard),
+     'the place line renders only on the 2x card, and only with two or more');
+
+  /* EACH LINE IS DROPPED RATHER THAN RENDERED EMPTY, or a row with no product
+     on file leaves a gap that reads as a missing value. */
+  ok(/tall && prod \?/.test(ciCard) && /showWhere && where \?/.test(ciCard),
+     'an absent value renders no line at all');
+
+  /* THE TITLE STAYS. The tile still carries the full hover, so a name or a
+     place too long for the tile is readable rather than lost — printing it
+     under the face is an addition, not a replacement. */
+  ok(/title=\{liveClock\(r\['Checked In At'\]\)/.test(ciCard),
+     'the tile keeps its full tooltip');
+
+  /* ── THE SECTION AND THE EDITOR ─────────────────────────────────────── */
+  ok(/tall=\{!!tall\.checkins\}/.test(src),
+     'the section hands the card its height');
+  ok(/tall=\{liveTallResolved\(config\.liveTall\)\}/.test(src),
+     '...resolved once upstream, never re-derived in the component');
+  ok(/liveTallOn=\{config\.liveTall\}/.test(src),
+     'the modal is handed the saved height map');
+  ok(/out\[c\.id\] = liveCardTall\(c\.id, liveTallOn\)/.test(src),
+     'the modal seeds its height tick through the resolver');
+
+  /* THE TICK IS A SIBLING OF THE CARD'S LABEL, NEVER A CHILD. A second
+     <input> inside that <label> is associated with the label too, so clicking
+     "2x height" would ALSO switch the card off — a control that undoes the
+     thing it is nested under. */
+  {
+    const row = src.slice(src.indexOf('{liveOffer.map(c => ('),
+                          src.indexOf('</React.Fragment>\n                  ))}'));
+    ok(row.length > 200, 'the editor row was found to slice');
+    const labelOpen = row.indexOf('<label className="widget-list-item"');
+    const labelEnd  = row.indexOf('</label>', labelOpen);
+    const inner     = row.slice(labelOpen, labelEnd);
+    eq((inner.match(/<input/g) || []).length, 1,
+       'the card row holds exactly one input — the height tick is outside it');
+    ok(/data-edit-live-tall-toggle=\{c\.id\}/.test(row.slice(labelEnd)),
+       '...and the height tick sits after that label closes');
+  }
+  /* OFFERED ONLY WHERE IT CAN DO SOMETHING. A height control under a card that
+     is switched off is the dead end this codebase keeps writing down. */
+  ok(/\{c\.canTall && liveCards\[c\.id\] \? \(/.test(src),
+     'the height tick is offered only on a card that supports it AND is on');
+
+  /* ── THE CSS THAT MAKES THE HEIGHT SAFE ─────────────────────────────── */
+  /* `.live-grid` sizes its rows `1fr`, so a list that kept its intrinsic
+     height would grow the row this card sits in and push Happening Today's
+     height with it. Apex scans 468 members before three in the afternoon. */
+  ok(/\.ci-tall \.live-ci-people \{ flex: 1 1 0; min-height: 0; overflow-y: auto;/.test(src),
+     'the 2x list scrolls inside the card rather than growing the grid row');
+  ok(/align-content: flex-start;/.test(src),
+     '...and a half-full card packs its faces at the top rather than in bands');
+  /* THE TILE WIDENS ONLY WHERE THERE IS SOMETHING EXTRA IN IT — a 46px tile
+     fits about eight characters, which is a stub rather than a place; but
+     widening every tall card would halve the faces per row at the eight orgs
+     where the place is hoisted and there is nothing under the name. */
+  /* THE TILE WIDENS ON `.ci-tall`, NOT ON `.ci-where`, and that is the
+     correction Dan's Torrance screenshot forced. The PRODUCT line renders on
+     every tall card; only the PLACE is gated on there being two or more. Tying
+     the width to the place left a 46px tile under a full-width product name at
+     every org with no desks recorded, and the text ran across the face beside
+     it. Any tall card needs the room. */
+  ok(/\.ci-tall \.ci-person \{ --ci-tile: 104px; \}/.test(src),
+     'the tile widens on any tall card, not only where a place renders');
+  ok(!/\.ci-tall\.ci-where \.ci-person \{ width:/.test(src),
+     '...and the width is no longer tied to the place');
+  /* AND EVERY LINE IS BOUNDED BY THE TILE rather than by a number that has to
+     be kept equal to it — `max-width: 92px` inside a 46px tile is exactly the
+     overflow, and it reads perfectly in source. */
+  ok(/\.ci-person \{ display: flex; flex-direction: column; align-items: center;\s*\n\s*width: var\(--ci-tile\); text-align: center; \}/.test(src),
+     'the tile takes its width from one variable');
+  for (const el of ['b', 'em', 'u']) {
+    const m = new RegExp('\\.ci-person ' + el + ' \\{[^}]*max-width: 100%');
+    ok(m.test(src), 'the <' + el + '> line is bounded by the tile, not by a pinned pixel width');
+  }
+  ok(!/\.ci-person (b|em|u) \{[^}]*max-width: (46|92)px/.test(src),
+     'no line carries a hardcoded width that can disagree with the tile');
+
+  /* ── A TALL CARD CARRIES ITS OWN FLOOR ──────────────────────────────
+     `grid-row: span 2` only produces a double card while some OTHER card in
+     the grid occupies a SINGLE row and therefore sizes it. Torrance runs two
+     live cards; once both spanned two rows nothing sized a row and BOTH
+     collapsed to 300px — measured `cards=2 ht=300 ci=300` where the intent was
+     614 — so ticking 2x height made Happening Today HALF what it had been.
+
+     AND THE SELECTOR HAS TO BE (0,2,0). `.widget-md` sets its own min-height
+     and is declared AFTER the tall rule, so a bare `.widget-tall` loses on
+     equal specificity and the floor silently does nothing — which is how the
+     first version of this fix still measured 300px in the case it was written
+     for. */
+  ok(/\.widget-card\.widget-tall \{ min-height: calc\(var\(--widget-row-min\) \* 2 \+ var\(--widget-grid-gap\)\); \}/.test(src),
+     'a tall card is two ordinary rows plus the gap, on a selector that wins');
+  ok(/:root \{ --widget-row-min: 300px; --widget-grid-gap: 14px; \}/.test(src),
+     '...from one definition of the row floor and the gap');
+  ok(/\.widget-md \{ grid-column: span 2; min-height: var\(--widget-row-min\); \}/.test(src),
+     '...which the ordinary card reads too, so the two cannot drift');
+  ok(/\.widget-grid \{ display: grid; grid-template-columns: repeat\(4, 1fr\); gap: var\(--widget-grid-gap\); \}/.test(src),
+     '...and so does the grid gap');
+  /* THE FLOOR GOES WITH THE SPAN below four columns, or a laptop gets a tall
+     empty card instead of a double-height one beside its neighbours. */
+  ok(/\.widget-tall \{ grid-row: span 1; \}\s*\n\s*\.widget-card\.widget-tall \{ min-height: var\(--widget-row-min\); \}/.test(src),
+     'below four columns the floor drops with the span');
+
+  /* HAPPENING TODAY READS THE FLAG rather than hardcoding the class, or the
+     half-height option cannot reach it. */
+  const htCard = src.slice(src.indexOf('function HappeningToday('),
+                           src.indexOf('/* `cards` is the RESOLVED map'));
+  ok(htCard.length > 500, 'the Happening Today card was found to slice');
+  ok(!/widget-md widget-tall live-card/.test(htCard),
+     'Happening Today no longer hardcodes the tall class');
+  ok((htCard.match(/\(tall \? ' widget-tall' : ''\)/g) || []).length >= 2,
+     '...on both branches, or the card jumps height when the feed lands');
+  ok(/tall=\{!!tall\.happening\}/.test(src),
+     'the section hands Happening Today its height');
 }
