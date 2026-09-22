@@ -592,6 +592,41 @@ body.has-wx .section-header::before { content: ""; position: absolute; inset: 2p
                white-space: nowrap; margin-top: 3px; }
 .ci-person i { font-size: 9px; font-style: normal; color: var(--text-muted); }
 
+/* ── THE 2x CARD ──────────────────────────────────────────────────────
+   THE LIST SCROLLS INSIDE THE CARD, and `flex: 1 1 0` with `min-height: 0` is
+   what makes that true rather than aspirational — exactly as `.ht-list` does
+   next door, and for the same reason: `.live-grid` sizes its rows `1fr`, so a
+   list that kept its intrinsic height would grow the row this card is supposed
+   to fit inside and push Happening Today's own height with it. Apex scans 468
+   members before three in the afternoon; without this, a busy afternoon
+   silently re-lays-out the whole section.
+
+   `align-content: flex-start` is not decoration either: a wrapping flex
+   container given a flex basis of zero spreads its rows down the free space,
+   so without it a half-full card renders its faces in bands with gaps between
+   them rather than as a block at the top. */
+.ci-tall .live-ci-people { flex: 1 1 0; min-height: 0; overflow-y: auto;
+                           align-content: flex-start; }
+/* THE TILE WIDENS ONLY WHERE THERE IS SOMETHING EXTRA TO PUT IN IT. A 46px
+   tile fits about eight characters, which is a stub rather than a place —
+   "El Segund…" and "El Segund…" are two different desks reading the same. But
+   widening every tall card would halve how many faces fit per row at the eight
+   orgs measured with a single desk, where the location is hoisted into the
+   header and there is nothing under the name at all. So the width rides on
+   `.ci-where`, which is on only when the per-face line actually renders. */
+.ci-tall.ci-where .ci-person { width: 92px; }
+.ci-tall.ci-where .ci-person b { max-width: 92px; }
+/* THE HOVER'S OWN TWO LINES. Muted and a size below the time, so the face and
+   the first name stay the thing the eye lands on — this is the detail you
+   would have had to mouse over, not a second headline. Truncated with the full
+   value still on the tile's `title`. */
+.ci-person em { display: block; font-style: normal; font-size: 8.5px; line-height: 1.25;
+                color: var(--text-secondary); margin-top: 2px; max-width: 92px;
+                overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ci-person u { display: block; text-decoration: none; font-size: 8.5px; line-height: 1.25;
+               color: var(--text-muted); max-width: 92px;
+               overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 /* THE PHOTO SITS ON TOP OF THE INITIALS, in the same box, so a member with an
    image and one without are the same shape and the row does not go ragged at
    the 92.5% of orgs where most people have neither. An image that fails to
@@ -978,6 +1013,15 @@ body.has-wx .section-header::before { content: ""; position: absolute; inset: 2p
 .widget-list-info { flex: 1; min-width: 0; }
 .widget-list-name { font-size: 13px; font-weight: 500; }
 .widget-list-desc { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
+/* THE 2x HEIGHT TICK. Indented under its card and visibly a sub-option rather
+   than a sixth card — it sits below the row it belongs to, so a reader scanning
+   the ticked cards is not offered it as one of them. */
+.live-tall-opt { display: flex; align-items: baseline; gap: 8px; cursor: pointer;
+  margin: -2px 0 6px 34px; padding: 5px 10px; border-radius: 8px;
+  border: 1px dashed var(--border-subtle); background: transparent; }
+.live-tall-opt:hover { border-color: var(--border); }
+.live-tall-opt span { font-size: 12px; font-weight: 500; flex-shrink: 0; }
+.live-tall-opt em { font-style: normal; font-size: 10.5px; color: var(--text-muted); }
 .add-section-btn { display: flex; align-items: center; gap: 10px; padding: 14px; border: 2px dashed var(--border);
   border-radius: 10px; cursor: pointer; width: 100%; background: transparent; color: var(--text-secondary);
   font-size: 13px; font-family: var(--font-body); transition: all 0.15s; }
@@ -3586,6 +3630,51 @@ function liveCheckinState(r) {
   return String(r && r['Status']) === 'Failed' ? 'failed' : 'ok';
 }
 
+/* ── WHAT THE HOVER SAYS, ON THE CARD ─────────────────────────────────
+   Dan, on the 2x view: "there's mouse hover data there now, would like to show
+   that under their profile photo in the '2x height' view." The tooltip has
+   always carried the product and the place; these two lift them out of it so
+   the taller card can print them instead of hiding them behind a mouse — which
+   a wall screen has no way to use at all.
+
+   A PLACEHOLDER IS NOT A VALUE. The card COALESCEs a missing desk to the
+   literal '(No Desk Location)' and a missed product join to '(Unknown
+   Membership)' / '(Unknown Pass)' / '(Other)', so printing the column verbatim
+   would put "(No Desk Location)" under forty-five faces at the six orgs
+   measured with no desks configured at all (taylor 809 scans, madison 586,
+   malibu 350, the-ranch 251, yerba-buena 205, northern-door 141, all 0%).
+   Absent renders nothing.
+
+   MATCHED AS EXACT LITERALS, never as "anything in brackets". A desk an org
+   genuinely called "(Annex)" is a real place, and a regex over parentheses
+   would silently swallow it — the same shape as the `/ball ?field/` rule that
+   filed every Football Field as a baseball diamond one repo over.
+
+   THE DESK NAME *IS* THE LOCATION, which is why this is answerable at all.
+   There is no location or site on a membership check-in anywhere in the
+   schema: measured over 81,416 scans across 35 orgs in 30 days, target_type is
+   'organization' on 100% of them, scan_event_id is NULL on every one, and
+   `desk_location` carries no location_id to join up to a real location record.
+   What saves it is that orgs name their desks after the facility — El Segundo
+   'Plunge' / 'Hilltop' / 'El Segundo Wiseburn Aquatic Center', Clarkstown
+   'Congers Community Center', West Sacramento 'Recreation Center'. So this
+   prints the org's own word for the place, VERBATIM: apex's 23 desks carry a
+   till number ('Apex Center Admissions 3') and stripping it would need a
+   suffix regex, which is the trap named above rather than a tidy-up.
+
+   Module scope so a spec can RUN them — every defect here is a comparison. */
+const LIVE_CI_NO_DESK   = '(No Desk Location)';
+const LIVE_CI_NO_PRODUCT = ['(Unknown Membership)', '(Unknown Pass)', '(Other)'];
+
+function liveCheckinWhere(r) {
+  const v = String((r && r['Desk Location']) || '').trim();
+  return v && v !== LIVE_CI_NO_DESK ? v : '';
+}
+function liveCheckinProduct(r) {
+  const v = String((r && r['Product']) || '').trim();
+  return v && LIVE_CI_NO_PRODUCT.indexOf(v) < 0 ? v : '';
+}
+
 /* INITIALS ARE THE DESIGN AND THE PHOTO SLOTS INTO THEM. Measured over the
    33,239 members who checked in with a membership or pass in 90 days, only
    7.5% have an image — and it is bimodal rather than thin: Clarkstown 94.7%,
@@ -4052,7 +4141,12 @@ const LIVE_CARDS = [
     desc: 'Registrations as they happen, today', has: liveHasEnrollments },
   { id: 'programs', label: 'Programs Live', icon: '\uD83C\uDFAF', defaultOn: false,
     desc: 'Top sections by money received', has: liveHasEnrollments },
+  /* `canTall` IS THE ONLY CARD THAT OFFERS IT, and deliberately so. Dan asked
+     for a 2x height on THIS card — the one sitting beside Happening Today with
+     dead space under it — not for a height control on all five. A second card
+     opts in by adding this flag; nothing else has to change. */
   { id: 'checkins', label: 'Membership Check-Ins', icon: '\uD83D\uDD04', defaultOn: true,
+    canTall: true,
     desc: 'Members and passes as they scan in, today', has: liveHasCheckins },
   { id: 'facility', label: 'Facility Bookings', icon: '\uD83C\uDFDF', defaultOn: false,
     desc: 'Courts, fields and rooms as they book, today', has: liveHasFacility },
@@ -4082,6 +4176,41 @@ function liveCardOn(id, saved) {
 function liveCardsResolved(saved, available) {
   const out = {};
   for (const c of LIVE_CARDS) out[c.id] = liveCardOn(c.id, saved) && !!c.has(available);
+  return out;
+}
+
+/* ── THE 2x HEIGHT SWITCH ──────────────────────────────────────────────
+   Dan, on a screenshot of the Live section with a red arrow pointing at the
+   empty half of the check-ins card: "can we add a '2x height' option for the
+   membership check in widget, basically doubling the height of the widget so
+   it takes up the same height as the happening today widget."
+
+   OFF UNLESS EXPLICITLY SWITCHED ON — `=== true`, and this is the one line to
+   get right. `liveCardOn` beside it reads `!== false` for two of its cards
+   because absent there means an org that has never opened Edit Dashboard and
+   the answer is yes. Here absent means exactly that too, and the answer is NO:
+   a `!== false` test would double the height of this card on every dashboard
+   on the platform the moment this shipped, which is a layout change nobody
+   asked for. The card ships at the height it has today.
+
+   A CARD WITHOUT `canTall` IS NEVER TALL, whatever is saved. A stale entry for
+   a card that no longer offers the option — or one saved by a future editor
+   bug — must not silently re-lay-out the section.
+
+   Module scope so a spec can RUN it rather than regex it: every defect here is
+   a comparison, and a regex passes on an inverted one. */
+function liveCardTall(id, saved) {
+  const def = LIVE_CARDS.find(c => c.id === id);
+  if (!def || !def.canTall) return false;
+  if (!saved || typeof saved !== 'object') return false;
+  return saved[id] === true;
+}
+
+/* Resolved once and handed down, the same shape as liveCardsResolved — so the
+   section and the card cannot end up on different opinions about the height. */
+function liveTallResolved(saved) {
+  const out = {};
+  for (const c of LIVE_CARDS) out[c.id] = liveCardTall(c.id, saved);
   return out;
 }
 
@@ -5192,6 +5321,13 @@ function ProgramsLive({ feed, recOrgId }) {
 }
 
 const LIVE_CHECKIN_ROWS = 12;
+/* AND THE 2x CARD'S OWN CAP. Doubling the height without raising this would
+   have moved the dead space rather than filled it — the card would be twice as
+   tall with the same twelve faces and a "+25 more today" under them, which is
+   the exact complaint the option exists to answer. Forty-eight roughly fills
+   the taller card's list at the wider tile the detail lines need, and the
+   remainder scrolls inside the card rather than growing the grid row. */
+const LIVE_CHECKIN_ROWS_TALL = 48;
 
 /* ITS OWN FEED AND ITS OWN POLL. Same cadence and the same two rules the
    registrations feed just had fixed — pause stops the clock, and coming back
@@ -5306,7 +5442,7 @@ function useLiveCheckins(onAvailable, enabled, feed) {
   return { rows, err, at, paused, setPaused, flash, freshRows, loading, refresh: load };
 }
 
-function MembershipCheckins({ feed, recOrgId }) {
+function MembershipCheckins({ feed, recOrgId, tall }) {
   /* AN ACCEPTED SCAN RINGS; A REFUSAL DOES NOT. A denial is not attendance, and
      a card that chimed when the desk turned somebody away would be announcing
      the opposite of what happened. */
@@ -5320,7 +5456,10 @@ function MembershipCheckins({ feed, recOrgId }) {
   if (err) return null;
   if (!rows) {
     return (
-      <div className="widget-card widget-md live-card" data-live-checkins="loading">
+      /* THE LOADING CARD CARRIES THE HEIGHT TOO, or the grid reflows the
+         moment the first fetch lands and every card on the row jumps. */
+      <div className={'widget-card widget-md live-card' + (tall ? ' widget-tall ci-tall' : '')}
+           data-live-checkins="loading" data-live-ci-tall={tall ? '1' : '0'}>
         <LiveCardHeader icon={'\u{1F6C2}'} title="Membership Check-Ins" feed={feed} card="checkins" sound={sound}
                         sub={'Members and passes as they scan in \u00b7 today'} />
         <div className="live-empty">{'Loading\u2026'}</div>
@@ -5338,10 +5477,34 @@ function MembershipCheckins({ feed, recOrgId }) {
   const people   = new Set(okRows.map(r => r['User ID'] || r['Member'])).size;
   const tl = liveCheckinTimeline(rows, today);
 
+  /* HOW MANY FACES. The taller card gets a bigger cap or the extra height is
+     empty — see LIVE_CHECKIN_ROWS_TALL. */
+  const cap = tall ? LIVE_CHECKIN_ROWS_TALL : LIVE_CHECKIN_ROWS;
+
+  /* WHERE TODAY'S SCANS HAPPENED. Computed over ALL of today's rows rather
+     than the capped slice, so the answer does not change as the day fills up
+     and pushes rows past the cap.
+
+     ONE PLACE IS SAID ONCE, NOT FORTY-FIVE TIMES. Measured over 30 days: eight
+     orgs run exactly one desk — Piedmont 7,254 scans, Buffalo 2,126, Jurupa
+     1,526 among them — so a per-face line there is the same string repeated
+     down the whole card. It is hoisted into the header's own sub-line instead,
+     where it is a scope note rather than a column of noise. Two or more and it
+     goes per face, which is what apex's 23 desks and Clarkstown's six actually
+     need. Same shape as the status pill row that only appears with two live
+     statuses, one repo over. */
+  const wheres    = Array.from(new Set(todayRows.map(liveCheckinWhere).filter(Boolean)));
+  const showWhere = tall && wheres.length > 1;
+  const oneWhere  = tall && wheres.length === 1 ? wheres[0] : '';
+  const sub = 'Members and passes as they scan in \u00b7 today' + (oneWhere ? ' \u00b7 ' + oneWhere : '');
+
   return (
-    <div className="widget-card widget-md live-card" data-live-checkins={String(rows.length)}>
+    <div className={'widget-card widget-md live-card' + (tall ? ' widget-tall ci-tall' : '') +
+                    (showWhere ? ' ci-where' : '')}
+         data-live-checkins={String(rows.length)} data-live-ci-tall={tall ? '1' : '0'}
+         data-live-ci-wheres={String(wheres.length)}>
       <LiveCardHeader icon={'\u{1F6C2}'} title="Membership Check-Ins" feed={feed} card="checkins" sound={sound}
-                      sub={'Members and passes as they scan in \u00b7 today'} />
+                      sub={sub} />
 
       <div className="live-count">
         <span className="live-n" data-live-ci-today={String(okRows.length)}>{okRows.length}</span>
@@ -5382,11 +5545,13 @@ function MembershipCheckins({ feed, recOrgId }) {
           {/* TODAY'S ROWS, the same set the headline counts. Reading `rows`
               here would put a scan from another day among the faces under a
               number that excluded it — one card disagreeing with itself. */}
-          <div className="live-ci-people" data-live-ci-people={String(Math.min(todayRows.length, LIVE_CHECKIN_ROWS))}>
-            {todayRows.slice(0, LIVE_CHECKIN_ROWS).map(r => {
+          <div className="live-ci-people" data-live-ci-people={String(Math.min(todayRows.length, cap))}>
+            {todayRows.slice(0, cap).map(r => {
               const st = liveCheckinState(r);
               const u  = liveUserUrl(recOrgId, r['User ID']);
               const nm = r['Member'] || '(no name)';
+              const prod  = liveCheckinProduct(r);
+              const where = liveCheckinWhere(r);
               const face = (
                 <span className={'ci-face ci-' + st} data-live-ci-face={r['Photo'] ? 'photo' : 'initials'}>
                   {/* THE PHOTO IS A BONUS, NOT THE LAYOUT. Initials sit
@@ -5416,13 +5581,24 @@ function MembershipCheckins({ feed, recOrgId }) {
                           data-live-ci-link={r['User ID']}>{face}</a> : face}
                   <b>{nm.split(/\s+/)[0]}</b>
                   <i>{liveClock(r['Checked In At'])}</i>
+                  {/* THE HOVER, PRINTED. Dan: "there's mouse hover data there
+                      now, would like to show that under their profile photo in
+                      the '2x height' view." Tall only — the short card has no
+                      room and keeps exactly what it has today, which is what
+                      he asked for. The title stays on the tile either way, so
+                      a name or a place too long for 92px is still readable by
+                      hovering rather than lost. Each line is dropped rather
+                      than rendered empty, or a row with no product on file
+                      would leave a gap that reads as a missing value. */}
+                  {tall && prod ? <em data-live-ci-product={prod}>{prod}</em> : null}
+                  {showWhere && where ? <u data-live-ci-where={where}>{where}</u> : null}
                 </span>
               );
             })}
           </div>
-          {todayRows.length > LIVE_CHECKIN_ROWS
-            ? <div className="live-more" data-live-ci-more={String(todayRows.length - LIVE_CHECKIN_ROWS)}>
-                {'+' + (todayRows.length - LIVE_CHECKIN_ROWS) + ' more today'}
+          {todayRows.length > cap
+            ? <div className="live-more" data-live-ci-more={String(todayRows.length - cap)}>
+                {'+' + (todayRows.length - cap) + ' more today'}
               </div>
             : null}
         </React.Fragment>
@@ -5823,8 +5999,11 @@ function HappeningToday({ feed, recOrgId }) {
    this component never re-derives the decision. It gates the fetches as well
    as the render, because a card switched off must stop costing a query rather
    than merely stop being drawn. */
-function LiveSection({ reportingBaseUrl, recOrgId, hasCheckins, hasFacility, hasHappening, availableReports, cards }) {
+function LiveSection({ reportingBaseUrl, recOrgId, hasCheckins, hasFacility, hasHappening, availableReports, cards, tall }) {
   cards = cards || {};
+  /* RESOLVED UPSTREAM AND HANDED DOWN, like `cards` — this component never
+     re-derives the decision. */
+  tall = tall || {};
   const sec = SECTIONS.live;
   /* THE SECTION HIDES WITH ITS WIDGETS. The counter renders nothing when the
      feed cannot answer — that is the absence rule — but a header and an empty
@@ -5886,7 +6065,7 @@ function LiveSection({ reportingBaseUrl, recOrgId, hasCheckins, hasFacility, has
           this order. */}
       <div className="widget-grid live-grid">
         {showHt ? <HappeningToday feed={htFeed} recOrgId={recOrgId} /> : null}
-        {showCi ? <MembershipCheckins feed={ciFeed} recOrgId={recOrgId} /> : null}
+        {showCi ? <MembershipCheckins feed={ciFeed} recOrgId={recOrgId} tall={!!tall.checkins} /> : null}
         {showEnroll ? <LiveRegistrations feed={feed} recOrgId={recOrgId} /> : null}
         {showProg ? <ProgramsLive feed={feed} recOrgId={recOrgId} /> : null}
         {showFac ? <FacilityBookings feed={facFeed} recOrgId={recOrgId} /> : null}
@@ -6228,7 +6407,7 @@ function SectionBlock({ sectionId, widgetIds, reportData, loading, freshRts, tar
 const MAX_PER_SECTION = 999;
 const MAX_TOTAL = 999;
 
-function EditModal({ sections, onSave, onClose, availableReports, toggles, focusSection, liveOn, liveCardsOn }) {
+function EditModal({ sections, onSave, onClose, availableReports, toggles, focusSection, liveOn, liveCardsOn, liveTallOn }) {
   const [draft, setDraft] = useState(sections.map(s => ({ ...s, widgets: [...s.widgets] })));
   /* THE LIVE SECTION IS A CHOICE NOW, not a fact. Dan: "need a way to toggle
      off these live widgets in the UI/edit dashboard section, as cool as they
@@ -6249,6 +6428,15 @@ function EditModal({ sections, onSave, onClose, availableReports, toggles, focus
   const [liveCards, setLiveCards] = useState(() => {
     const out = {};
     for (const c of LIVE_CARDS) out[c.id] = liveCardOn(c.id, liveCardsOn);
+    return out;
+  });
+  /* THE HEIGHT DRAFT, seeded through its own resolver for the same reason —
+     and note the resolver, unlike liveCardOn, answers NO for anything unsaved,
+     so a first-time org sees this unticked rather than having its layout
+     changed by a Save it did not think it was making. */
+  const [liveTall, setLiveTall] = useState(() => {
+    const out = {};
+    for (const c of LIVE_CARDS) out[c.id] = liveCardTall(c.id, liveTallOn);
     return out;
   });
   /* Only cards this org's Metabase can actually answer are offerable. A ticked
@@ -6347,18 +6535,39 @@ function EditModal({ sections, onSave, onClose, availableReports, toggles, focus
               {live && liveOffer.length > 0 && (
                 <div className="widget-list" data-edit-live-cards={liveOffer.filter(c => liveCards[c.id]).length}>
                   {liveOffer.map(c => (
-                    <label key={c.id} className="widget-list-item" data-edit-live-card={c.id}
-                           data-edit-live-card-on={liveCards[c.id] ? '1' : '0'}
-                           style={{cursor:'pointer'}}>
-                      <input type="checkbox" checked={!!liveCards[c.id]}
-                             data-edit-live-card-toggle={c.id}
-                             onChange={e => setLiveCards(prev => ({ ...prev, [c.id]: e.target.checked }))} />
-                      <span className="widget-list-icon">{c.icon}</span>
-                      <div className="widget-list-info">
-                        <div className="widget-list-name">{c.label}</div>
-                        <div className="widget-list-desc">{c.desc}</div>
-                      </div>
-                    </label>
+                    /* THE HEIGHT TICK IS A SIBLING OF THE CARD'S LABEL, NEVER A
+                       CHILD OF IT. A second <input> inside that <label> is
+                       associated with the label too, so clicking "2x height"
+                       would ALSO switch the card off — a control that undoes
+                       the thing it is nested under. Two labels, one row. */
+                    <React.Fragment key={c.id}>
+                      <label className="widget-list-item" data-edit-live-card={c.id}
+                             data-edit-live-card-on={liveCards[c.id] ? '1' : '0'}
+                             style={{cursor:'pointer'}}>
+                        <input type="checkbox" checked={!!liveCards[c.id]}
+                               data-edit-live-card-toggle={c.id}
+                               onChange={e => setLiveCards(prev => ({ ...prev, [c.id]: e.target.checked }))} />
+                        <span className="widget-list-icon">{c.icon}</span>
+                        <div className="widget-list-info">
+                          <div className="widget-list-name">{c.label}</div>
+                          <div className="widget-list-desc">{c.desc}</div>
+                        </div>
+                      </label>
+                      {/* OFFERED ONLY WHERE IT CAN DO SOMETHING: on a card that
+                          supports it AND is switched on. A height control under
+                          a card that is not being drawn is the dead end this
+                          codebase keeps writing down. */}
+                      {c.canTall && liveCards[c.id] ? (
+                        <label className="live-tall-opt" data-edit-live-tall={c.id}
+                               data-edit-live-tall-on={liveTall[c.id] ? '1' : '0'}>
+                          <input type="checkbox" checked={!!liveTall[c.id]}
+                                 data-edit-live-tall-toggle={c.id}
+                                 onChange={e => setLiveTall(prev => ({ ...prev, [c.id]: e.target.checked }))} />
+                          <span>{'2\u00d7 height'}</span>
+                          <em>{'matches Happening Today, and prints the product and check-in location under each face'}</em>
+                        </label>
+                      ) : null}
+                    </React.Fragment>
                   ))}
                 </div>
               )}
@@ -6428,7 +6637,7 @@ function EditModal({ sections, onSave, onClose, availableReports, toggles, focus
         <div className="modal-footer">
           <span style={{fontSize:11,color:atLimit?'var(--red)':'var(--text-muted)',flex:1}}>{totalWidgets} widgets{MAX_TOTAL < 100 ? ' / '+MAX_TOTAL+(atLimit?' (limit reached)':'') : ''}</span>
           <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn btn-amber" onClick={() => onSave(draft, { liveWidgets: live, liveCards })}>Save Layout</button>
+          <button className="btn btn-amber" onClick={() => onSave(draft, { liveWidgets: live, liveCards, liveTall })}>Save Layout</button>
         </div>
       </div>
     </div>
@@ -7575,7 +7784,8 @@ function DashboardApp() {
                        hasFacility={liveHasFacility(availableReports)}
                        hasHappening={liveHasHappening(availableReports)}
                        availableReports={availableReports}
-                       cards={liveCardsResolved(config.liveCards, availableReports)} />
+                       cards={liveCardsResolved(config.liveCards, availableReports)}
+                       tall={liveTallResolved(config.liveTall)} />
         )}
         {displaySections.map((sec, i) => (
           <SectionBlock key={sec.id+i+theme} sectionId={sec.id} widgetIds={sec.widgets} reportData={reportData} loading={loading} freshRts={freshRts} priorReportData={priorReportData}
@@ -7594,7 +7804,7 @@ function DashboardApp() {
           return !vis || vis.visible;
         })} availableReports={availableReports} toggles={orgMeta.toggles || {}} focusSection={editFocus}
         onSave={handleSaveSections} onClose={()=>{setEditOpen(false);setEditFocus(null);}}
-        liveOn={config.liveWidgets} liveCardsOn={config.liveCards} />}
+        liveOn={config.liveWidgets} liveCardsOn={config.liveCards} liveTallOn={config.liveTall} />}
     </div>
   );
 }

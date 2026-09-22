@@ -922,6 +922,19 @@ async function loadLight(page) {
   await page.waitForSelector('[data-live-section="1"]', { timeout: 20000 });
 }
 
+/* THE 2x CASES EACH RELOAD onto their own config, and stamp the header's own
+   sub-line where a selector has to read it — `:has-text` is not a CSS
+   selector, so "the place is in the header" has to become an attribute. */
+async function loadCi(page) {
+  await page.reload({ waitUntil: 'networkidle2', timeout: 60000 });
+  await page.waitForSelector('[data-live-checkins]', { timeout: 25000 });
+  await page.evaluate(() => {
+    const el = document.querySelector('[data-live-checkins] .widget-sub, [data-live-checkins] .live-sub');
+    document.body.dataset.ciSub = el ? el.textContent : '';
+  });
+}
+async function loadCi2(page) { await loadCi(page); }
+
 const CASES = [
   { name: 'dashboard renders', needs: '.widget-card' },
   /* A LAYOUT SAVED BEFORE CUSTOMER SUPPORT WAS REMOVED. Org layouts live on the
@@ -2483,6 +2496,155 @@ const CASES = [
   { name: 'weather · even drizzle is above the threshold of being seen', act: loadWet,
     wx: { ...WX_CLEAR_DAY, sky: 'drizzle', label: 'Light drizzle', night: false },
     needs: 'body.wx-drizzle[data-wet-visible="1"]', absent: 'body[data-wet-visible="0"]' },
+
+  /* ── THE CHECK-INS CARD'S 2x HEIGHT ───────────────────────────────────
+     Dan, on a screenshot with a red arrow pointing at the empty half of the
+     card: "can we add a '2x height' option ... so it takes up the same height
+     as the happening today widget", and then "there's mouse hover data there
+     now, would like to show that under their profile photo in the '2x height'
+     view."
+
+     NONE OF THIS IS VISIBLE IN SOURCE. A grid span reads plausibly whether or
+     not the two cards end up the same height; a list that grows its own row
+     and one that scrolls inside it are the same markup; and a detail line
+     under a face renders identically whether it was gated on `tall` or not.
+     So these measure the rendered box and stamp the verdict.
+
+     LAST IN THE LIST, AND EACH RELOADS. Cases are not independent in this
+     harness — a reload sticks for everything after it — which is recorded
+     twice already in this file and has caught someone both times. */
+  { name: 'live · the check-ins card is its normal height by default',
+    ciShort: true, needs: '[data-live-checkins][data-live-ci-tall="0"]',
+    absent: '.ci-tall', act: loadCi },
+  /* THE SHORT CARD IS UNCHANGED — Dan: "current size would show what's there
+     now." Asserted on the same feeds the 2x cases use, so a build where the
+     card failed to render entirely cannot pass these by absence. */
+  { name: 'live · ...and prints no product under the face at that size',
+    ciShort: true, needs: '[data-live-checkins]', absent: '[data-live-ci-product]' },
+  { name: 'live · ...nor a check-in location',
+    ciShort: true, needs: '[data-live-checkins]', absent: '[data-live-ci-where]' },
+  /* TWELVE OF SIXTEEN, with the rest behind a "+4 more today" — which is the
+     dead space the option exists to fill, measured rather than described. */
+  { name: 'live · ...and caps the faces at twelve, with four held back',
+    ciShort: true, needs: '[data-live-ci-people="12"]', absent: '[data-live-ci-more="0"]' },
+
+  { name: 'live · the saved layout switches the 2x card on',
+    ciTall: true, needs: '.ci-tall[data-live-checkins][data-live-ci-tall="1"]',
+    act: loadCi },
+  /* THE ASK, LITERALLY. "the same height as the happening today widget" — so
+     the two boxes are measured and compared, which is the only assertion that
+     can tell a card that spans two grid rows from one that merely says it
+     does. `data-ci-heights` is stamped beside the verdict so a failure can be
+     read off the DOM rather than guessed at. */
+  { name: 'live · the 2x card is the same height as Happening Today',
+    ciTall: true, needs: 'body[data-ci-sameheight="1"]',
+    act: async page => {
+      await page.waitForSelector('.ci-tall', { timeout: 20000 });
+      await page.evaluate(() => {
+        const ht = document.querySelector('[data-live-happening]');
+        const ci = document.querySelector('[data-live-checkins]');
+        if (!ht || !ci) { document.body.dataset.ciSameheight = 'missing'; return; }
+        const a = ht.getBoundingClientRect().height;
+        const b = ci.getBoundingClientRect().height;
+        document.body.dataset.ciHeights = Math.round(a) + '/' + Math.round(b);
+        document.body.dataset.ciSameheight = Math.abs(a - b) <= 2 ? '1' : '0';
+      });
+    } },
+  /* AND IT IS ACTUALLY TALLER, not merely equal to a Happening card that
+     collapsed with it. Equality alone passes on a build where both are short. */
+  { name: 'live · ...and that height is genuinely double, not two short cards',
+    ciTall: true, needs: 'body[data-ci-tallenough="1"]',
+    act: async page => {
+      await page.evaluate(() => {
+        const ci = document.querySelector('[data-live-checkins]');
+        const reg = document.querySelector('[data-live-regs]');
+        if (!ci || !reg) { document.body.dataset.ciTallenough = 'missing'; return; }
+        const b = ci.getBoundingClientRect().height;
+        const r = reg.getBoundingClientRect().height;
+        document.body.dataset.ciVsreg = Math.round(b) + '/' + Math.round(r);
+        document.body.dataset.ciTallenough = b > r * 1.5 ? '1' : '0';
+      });
+    } },
+  /* THE CAP RISES WITH THE HEIGHT. Sixteen of sixteen and no "+N more" — so a
+     build that doubled the card and kept twelve faces fails here rather than
+     shipping twice the empty space it was meant to remove. */
+  { name: 'live · the 2x card shows every face rather than capping at twelve',
+    ciTall: true, needs: '[data-live-ci-people="16"]', absent: '[data-live-ci-more]' },
+  /* THE HOVER, PRINTED. Keyed on the VALUE, not on the element: a line wired
+     to the wrong field renders a perfectly plausible second line. */
+  { name: 'live · the 2x card prints the product under the face',
+    ciTall: true, needs: '[data-live-ci-person="Ada Lovelace"] [data-live-ci-product="Adult Annual"]' },
+  { name: 'live · ...and where they checked in',
+    ciTall: true, needs: '[data-live-ci-person="Grace Hopper"] [data-live-ci-where="North Desk"]' },
+  /* TWO PLACES IN THE FIXTURE, so the per-face line is the right call here —
+     and the card says so on itself. */
+  { name: 'live · ...because this org runs more than one',
+    ciTall: true, needs: '[data-live-checkins][data-live-ci-wheres="2"].ci-where' },
+
+  /* ONE DESK IS SAID ONCE. Eight orgs really run one, and a per-face line
+     there is the same string repeated down the whole card. */
+  { name: 'live · one place is hoisted into the header, not repeated per face',
+    ciTall: true, ciOneDesk: true, needs: 'body[data-ci-sub~="Front"]',
+    absent: '[data-live-ci-where]', act: loadCi2 },
+  { name: 'live · ...and the card says it found only one',
+    ciTall: true, ciOneDesk: true, needs: '[data-live-ci-wheres="1"]',
+    absent: '[data-live-checkins].ci-where' },
+
+  /* NO DESK AT ALL: the card's own placeholder is not a place, and must reach
+     neither the faces nor the header. */
+  { name: 'live · an org with no desks prints no place under any face',
+    ciTall: true, ciNoDesk: true, needs: '[data-live-checkins][data-live-ci-wheres="0"]',
+    absent: '[data-live-ci-where]', act: loadCi2 },
+  { name: 'live · ...and never says "(No Desk Location)" in the header either',
+    ciTall: true, ciNoDesk: true, needs: '[data-live-checkins]',
+    text: /Members and passes as they scan in/, absent: 'body[data-ci-sub~="(No"]' },
+
+  /* A BUSY AFTERNOON MUST NOT GROW THE GRID ROW. Apex scans 468 members before
+     three; `.live-grid` sizes its rows `1fr`, so a list that kept its intrinsic
+     height would push Happening Today's height with it and the section would
+     re-lay-out as the day fills. The dense feed is that day, and the card has
+     to still match Happening Today. */
+  { name: 'live · a 470-scan afternoon still fits the same box',
+    ciTall: true, denseLane: true, needs: 'body[data-ci-sameheight="1"]',
+    act: async page => {
+      await loadCi2(page);
+      await page.evaluate(() => {
+        const ht = document.querySelector('[data-live-happening]');
+        const ci = document.querySelector('[data-live-checkins]');
+        if (!ht || !ci) { document.body.dataset.ciSameheight = 'missing'; return; }
+        const a = ht.getBoundingClientRect().height;
+        const b = ci.getBoundingClientRect().height;
+        document.body.dataset.ciHeights = Math.round(a) + '/' + Math.round(b);
+        document.body.dataset.ciSameheight = Math.abs(a - b) <= 2 ? '1' : '0';
+      });
+    } },
+  /* ...and the faces stay INSIDE it. Measured on that same 470-scan feed:
+     the list is 696px of faces in an 864px card, so on this fixture they fit
+     and nothing scrolls — the row is driven by Happening Today's own list,
+     which really does scroll (1130px of sessions in a 776px box).
+
+     SAID PLAINLY SO NOBODY READS THIS AS PROVING A SCROLL IT DOES NOT. An
+     earlier draft asserted `scrollHeight > clientHeight` and failed on correct
+     code for exactly that reason. What keeps a busy day bounded is the CAP —
+     forty-eight faces however many scanned — and the overflow is the backstop
+     for the day the cap is raised or the tiles widen. So this asserts the two
+     things that are actually true and load-bearing: the list is bounded by the
+     card it sits in, and it is set up to scroll rather than to push. */
+  { name: 'live · ...with the faces bounded by the card rather than pushing it',
+    ciTall: true, denseLane: true, needs: 'body[data-ci-bounded="1"]',
+    act: async page => {
+      await page.evaluate(() => {
+        const el = document.querySelector('.ci-tall .live-ci-people');
+        const card = document.querySelector('[data-live-checkins]');
+        if (!el || !card) { document.body.dataset.ciBounded = 'missing'; return; }
+        const cs = getComputedStyle(el);
+        const inside = el.getBoundingClientRect().bottom <= card.getBoundingClientRect().bottom + 1;
+        document.body.dataset.ciOverflow = cs.overflowY;
+        document.body.dataset.ciBounded =
+          inside && (cs.overflowY === 'auto' || cs.overflowY === 'scroll') &&
+          cs.flexBasis === '0px' ? '1' : '0';
+      });
+    } },
 ];
 
 (async () => {
@@ -2538,6 +2700,25 @@ const CASES = [
           return json({ ...CONFIG, config: cfg, availableReports: { memberships: true,
             'enrollments-today': true, 'enrollments-rollup': true, 'checkins-today': true,
             'facility-today': true, 'happening-today': true } });
+        }
+        /* THE SAVED 2x HEIGHT. Every feed present, because the claim under
+           test is that the check-ins card ends up the SAME HEIGHT as Happening
+           Today — which needs Happening Today on the page, and the default
+           availability map does not carry it. */
+        if (currentCase.ciTall) {
+          return json({ ...CONFIG,
+            config: { ...CONFIG.config, liveTall: { checkins: true } },
+            availableReports: { memberships: true,
+              'enrollments-today': true, 'enrollments-rollup': true, 'checkins-today': true,
+              'facility-today': true, 'happening-today': true } });
+        }
+        /* THE SAME PAGE WITHOUT THE HEIGHT, so the short card can be asserted
+           against the identical feeds — otherwise "no product line" would pass
+           on a build where the whole card failed to render. */
+        if (currentCase.ciShort) {
+          return json({ ...CONFIG, availableReports: { memberships: true,
+              'enrollments-today': true, 'enrollments-rollup': true, 'checkins-today': true,
+              'facility-today': true, 'happening-today': true } });
         }
         if (currentCase.retiredSupport) {
           /* TWO different guards have to hold, and an earlier version of this
@@ -2601,9 +2782,20 @@ const CASES = [
       if (rt === 'checkins-today') {
         if (currentCase.denseLane) return json({ rows: denseCheckins() });
         const today = liveIso(0, '00:00:00').slice(0, 10);
-        return json({ rows: (FIXTURES['checkins-live'] || [])
+        let rows = (FIXTURES['checkins-live'] || [])
           .filter(r => String(r['Checked In At']).slice(0, 10) === today)
-          .map(r => ({ ...r, 'Org Today': today })) });
+          .map(r => ({ ...r, 'Org Today': today }));
+        /* ONE DESK, which eight orgs really run — Piedmont 7,254 scans in 30
+           days, Buffalo 2,126, Jurupa 1,526. The place must be said ONCE in the
+           header rather than repeated under every face, and no source assertion
+           can tell the two renders apart. */
+        if (currentCase.ciOneDesk) rows = rows.map(r => ({ ...r, 'Desk Location': 'Front Desk' }));
+        /* NO DESK AT ALL, which six orgs really have — taylor 809 scans,
+           madison 586, malibu 350, the-ranch 251, yerba-buena 205,
+           northern-door 141, all 0%. The card COALESCEs that to a literal, and
+           printing it renders "(No Desk Location)" as though it were a place. */
+        if (currentCase.ciNoDesk) rows = rows.map(r => ({ ...r, 'Desk Location': '(No Desk Location)' }));
+        return json({ rows });
       }
       if (rt === 'messaging') msgCalls++;
       return json({ rows: (rt && FIXTURES[rt]) || [] });
