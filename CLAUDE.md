@@ -1,5 +1,192 @@
 # Project notes for Claude
 
+## THE CHECK-INS CARD CAN BE TWICE AS TALL, AND THE HOVER IS PRINTED (2026-09-22)
+
+Dan, with a screenshot of the Live section and a red arrow pointing at the
+empty half of the check-ins card: *"can we add a '2x height' option for the
+membership check in widget, basically doubling the height of the widget so it
+takes up the same height as the happening today widget."* Then, on what the
+taller card should carry: *"there's mouse hover data there now, would like to
+show that under their profile photo in the '2x height' view."*
+
+### THERE IS NO LOCATION AND NO SITE ON A MEMBERSHIP CHECK-IN
+
+His first wording was *"the location/site where the user checked in at"*, and
+that is not answerable. Measured over 81,416 membership and pass scans across
+35 orgs in 30 days, before anything was built:
+
+| | |
+|---|---|
+| `attendance_event.target_type` | **`organization` on 100%** — never a session, court or location |
+| `attendance_event.scan_event_id` | **NULL on every one** |
+| `desk_location.location_id` | **does not exist** — id / created_at / updated_at / organization_id / name / description / archived_at / enforce_access_control |
+
+So a desk cannot even be joined up to a real location record, which is the same
+measurement the sibling repo already records for the facility side.
+
+**WHAT RESCUES IT IS THAT ORGS NAME THEIR DESKS AFTER THE FACILITY**, so the
+desk name IS the location in practice:
+
+| org | desk names |
+|---|---|
+| el-segundo | `El Segundo Wiseburn Aquatic Center` · `Plunge` · `Hilltop` |
+| clarkstown | `Congers Community Center` · `Pascack Community Center` · `Central Nyack Community Center` |
+| west-sacramento | `Recreation Center` · `Community Center` · `Childcare` |
+| apex (23 desks) | `Apex Center Admissions 3` · `Lake Arbor Pool` · `FRC Guest Services 1` |
+
+**IT IS PRINTED VERBATIM, TILL NUMBER AND ALL.** Apex's 23 desks resolve to
+about eight buildings, and collapsing them needs a suffix regex over
+"Workstation 2" / "Front Desk 01" / "- Desk 1" — which is the `/ball ?field/`
+→ *"Football Field"* trap one repo over, not a tidy-up. The org's own word for
+the place is the honest answer.
+
+### A PLACEHOLDER IS NOT A VALUE, and six orgs are the reason
+
+The card COALESCEs a missing desk to the literal `(No Desk Location)` and a
+missed product join to `(Unknown Membership)` / `(Unknown Pass)` / `(Other)`.
+Printing the column verbatim renders *"(No Desk Location)"* under forty-five
+faces at the six orgs that have **no desk on any scan** — taylor 809, madison
+586, malibu 350, the-ranch 251, yerba-buena 205, northern-door 141, all 0%.
+`liveCheckinWhere` / `liveCheckinProduct` return `''` there and the line is
+dropped rather than rendered empty.
+
+**MATCHED AS EXACT LITERALS, never as "anything in brackets."** A desk an org
+genuinely called `(Annex)` is a real place, and the spec drives that case.
+
+### ONE PLACE IS SAID ONCE, NOT FORTY-FIVE TIMES
+
+**Eight orgs run exactly one desk** — Piedmont 7,254 scans in 30 days, Buffalo
+2,126, Jurupa 1,526 among them — so a per-face line there is the same string
+repeated down the whole card. It is hoisted into the header's own sub-line
+instead, where it reads as a scope note; the per-face line needs **two or
+more**. Same shape as the status pill row that only appears with two live
+statuses, and *"no picker where there is one shape"*.
+
+The scope is computed over **all of today's rows, not the capped slice**, or
+the card would start repeating a place per face at lunchtime and stop at
+closing as rows are pushed past the cap.
+
+**AND THE TILE ONLY WIDENS WHERE THERE IS SOMETHING EXTRA IN IT.** 46px fits
+about eight characters, which is a stub rather than a place — *"El Segund…"*
+and *"El Segund…"* are two different desks reading the same. But widening
+every tall card would halve the faces per row at those eight one-desk orgs,
+where the place is hoisted and there is nothing under the name at all. So
+`92px` rides on `.ci-where`, which is on only when the per-face line renders.
+
+### OFF UNLESS EXPLICITLY SWITCHED ON — the one line to get right
+
+`liveCardTall` reads **`=== true`**. Every other toggle in this file reads
+`!== false`, because absent there means an org that has never opened Edit
+Dashboard and the answer is yes. Here absent means the same thing and the
+answer is **no**: a `!== false` test would double this card on every dashboard
+on the platform the moment it shipped, which is a layout change nobody asked
+for. A truthy `1` or `'on'` is not a yes either.
+
+**A CARD WITHOUT `canTall` IS NEVER TALL, whatever is saved**, so a stale entry
+cannot re-lay-out the section. Only `checkins` carries the flag — Dan asked for
+a height on the card with dead space under it, not a height control on all
+five. A second card opts in by adding one flag.
+
+### THE CAP RISES WITH THE HEIGHT, 12 → 48
+
+Doubling the card without this moves the dead space rather than filling it:
+twice the card, the same twelve faces, and a *"+25 more today"* underneath —
+the exact complaint the option exists to answer.
+
+**AND THE CAP IS WHAT KEEPS A BUSY DAY BOUNDED**, not the overflow. Measured in
+a browser on the 470-scan apex-shaped feed: the face list is **696px inside an
+864px card**, so the faces fit and nothing scrolls — the grid row is driven by
+Happening Today's own list, which really does scroll (**1130px of sessions in a
+776px box**). The `flex: 1 1 0; min-height: 0; overflow-y: auto` on
+`.ci-tall .live-ci-people` is the backstop for the day the cap is raised or the
+tiles widen; `.live-grid` sizes its rows `1fr`, so a list that kept its
+intrinsic height would push Happening Today's height with it.
+
+**MY OWN RENDER CASE ASSERTED THE SCROLL AND FAILED ON CORRECT CODE**, which is
+how those numbers were measured at all. It asserts what is actually true and
+load-bearing now — the faces are bounded by the card, and set up to scroll
+rather than to push — with the measurement written into the case so nobody
+reads it as proving a scroll that is not happening.
+
+### THE EDITOR TICK IS A SIBLING OF THE CARD'S LABEL, NEVER A CHILD
+
+A second `<input>` inside that `<label>` is associated with the label too, so
+clicking *"2× height"* would **also switch the card off** — a control that
+undoes the thing it is nested under. Two labels, one row, and the spec counts
+the inputs inside the card's own label to pin it. It is offered only on a card
+that supports it **and is switched on**, or it is a control under a card that
+is not being drawn.
+
+### NO CARD CHANGE
+
+Both check-ins feeds have emitted `Desk Location` and `Product` since they
+shipped — the tooltip has been carrying them all along. So this is page-side
+only: no push, no tag flip, no downtime.
+
+### Guards
+
+`scripts/live-widgets.spec.js` 639 → **690 assertions, in CI**, which LIFTS AND
+RUNS `liveCardTall`, `liveTallResolved`, `liveCheckinWhere` and
+`liveCheckinProduct` — every defect here is a comparison and a regex passes on
+an inverted one.
+
+**Mutation-tested 21 ways, all failing by an assertion that names the defect**:
+the `!== false` slip (every dashboard doubles on deploy), the `canTall` gate
+dropped, the cap not raised, the list not sliced at it, one place repeated
+instead of hoisted, the hoist dropped, the places counted off the capped slice,
+each placeholder printed verbatim, the place test widened to swallow anything
+bracketed, either line rendering on the short card, the loading branch losing
+the height, the section / app / modal each losing the height map, Save dropping
+it, the list keeping its intrinsic height, the tile widening on every tall
+card, the tick nested inside the label, and the tick offered on a switched-off
+card.
+
+**ONE SURVIVED AND IT WAS MY MUTATION THAT WAS WRONG** — it removed the loading
+branch's `data-live-ci-tall` attribute rather than the `widget-tall` class it
+named, so it never reproduced the bug. *A mutation that does not reproduce the
+bug has not tested the guard*, Nth instance. Corrected, then caught.
+
+**TWO PRE-EXISTING ASSERTIONS PINNED THE SAVE PAYLOAD LITERAL**, which this
+moved for the SECOND time — `liveCards` did it the first, and that assertion's
+own comment already records the first repair. Pinning the whole literal queues
+the same failure up for the fourth key, so `saveArgKeys` **slices** the object
+and each key is tested for MEMBERSHIP: dropping any one still fails by name,
+adding a fifth does not. *When scoping forces you to pin a neighbour, slice
+instead.*
+
+**13 `ci-check-render.js` cases, because none of this is visible in source** — a
+grid span reads plausibly whether or not the two cards end up the same height,
+a list that grows its own row and one that scrolls inside it are the same
+markup, and a detail line renders identically whether or not it was gated on
+`tall`. The load-bearing one **measures both boxes and requires them equal**,
+which is Dan's ask literally, and stamps `data-ci-heights` beside the verdict
+so a failure can be read off the DOM. A second requires the card to be
+genuinely taller than the registrations card beside it, because equality alone
+passes on a build where both collapsed.
+
+Two new stub flags carry the measurements into the browser: `ciOneDesk` (the
+eight one-desk orgs — the place must reach the header and NOT the faces) and
+`ciNoDesk` (the six with none — `(No Desk Location)` must reach neither).
+**196 render cases pass, exit 0.**
+
+**A SWEEP THAT READS THE OUTPUT IS NOT A SWEEP.** Installing puppeteer
+`--no-save` REMOVED `@babel/standalone`, so `ci-check-html.js` was failing with
+`MODULE_NOT_FOUND` while its text output looked like any other failure. Only
+the exit-code sweep caught it. Judge every check by its exit code.
+
+### NOT DONE
+
+- **The height is per card, not per section.** Nothing lets an org make
+  Happening Today shorter, or the registrations card taller; `canTall` is one
+  flag away for any of them if that is ever asked for.
+- **The name stays the FIRST name** on the tall card. The full name is in the
+  tooltip, and at 92px most full names would truncate anyway — the change asked
+  for was the hover data, not the name.
+- **No grouping by place.** A tall card has room for *"Congers Community
+  Center — 22"* headings, and that would answer "where" better than a per-face
+  line — but it destroys the newest-first chronology, which is the whole point
+  of a live card.
+
 ## THE POSTGRES MIGRATION IS PARKED, AND THE VOLUME IS THE ONLY COPY (2026-09-21)
 
 Dan: *"scope out the dashboard postgres migration--is it really worth doing or
