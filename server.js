@@ -62,6 +62,14 @@ const PORT = process.env.PORT || 3200;
 const DATA_DIR = process.env.DATA_DIR || './data';
 const METABASE_URL = process.env.METABASE_URL || 'https://rec.metabaseapp.com';
 const REPORTING_BASE_URL = process.env.REPORTING_BASE_URL || 'https://rental-report-production-a046.up.railway.app';
+/* The shared cross-project credential. Set to the SAME value in both Railway
+   projects; unset, this dashboard still reconciles slugs (those lookups stay
+   open over there) but cannot read a token, so token drift goes unrepaired and
+   an org created here is not created there. */
+const ORG_SYNC_SECRET = process.env.ORG_SYNC_SECRET || '';
+function orgSyncHeaders(extra) {
+  return Object.assign({}, extra || {}, ORG_SYNC_SECRET ? { 'x-org-sync-secret': ORG_SYNC_SECRET } : {});
+}
 
 // ── Metabase public-card parameter-id stamping ──────────────────────────────
 // 2026-08-10: Metabase's public /query/json endpoint rejects parameters that
@@ -249,7 +257,7 @@ async function reconcileOrgWithReporting(slug) {
   const org = ORGS[slug];
   if (!org || !REPORTING_BASE_URL) return null;
   const get = async (u) => {
-    const r = await fetch(`${REPORTING_BASE_URL}${u}`);
+    const r = await fetch(`${REPORTING_BASE_URL}${u}`, { headers: orgSyncHeaders() });
     return r.ok ? r.json() : null;
   };
   // 1. Does the reporting project know this slug?
@@ -1837,7 +1845,7 @@ app.post('/admin/api/orgs', adminAuth, async (req, res) => {
   if (REPORTING_BASE_URL) {
     try {
       const get = async (u) => {
-        const r = await fetch(`${REPORTING_BASE_URL}${u}`);
+        const r = await fetch(`${REPORTING_BASE_URL}${u}`, { headers: orgSyncHeaders() });
         return r.ok ? r.json() : null;
       };
       let existing = await get(`/api/admin/org/${encodeURIComponent(slug)}`);
@@ -1920,7 +1928,7 @@ app.post('/admin/api/orgs', adminAuth, async (req, res) => {
   if (REPORTING_BASE_URL && !adoptedFromReporting) {
     fetch(`${REPORTING_BASE_URL}/api/admin/add-org`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: orgSyncHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ slug, token, orgId, logoUrl: org.logoUrl, displayName: name || slug }),
     }).then(r => r.json()).then(j => {
       console.log(`[orgs] Synced ${slug} to rental-report: ${j.action || j.error || 'ok'}`);
@@ -1930,6 +1938,129 @@ app.post('/admin/api/orgs', adminAuth, async (req, res) => {
   }
 
   res.json({ ok: true, slug, token, adoptedFromReporting, org: { ...org, _dynamic: undefined } });
+});
+
+// ═══════════════════════════════════════════
+//  CROSS-PROJECT ORG SYNC — the inbound half
+// ═══════════════════════════════════════════
+// Add Org here has pushed new orgs to rental-report since it was built. Nothing
+// came back the other way, so an org created over THERE existed in one place and
+// had to be added here by hand. These two routes are that missing half, and they
+// are deliberately the mirror of rental-report's own: same paths, same shape,
+// same identity rule.
+//
+// RECONCILE ON THE orgId, NEVER THE SLUG — the rule the reconcile above already
+// follows, for the reason Shrewsbury paid for. A by-slug check answers "not
+// there" for an org that is very much there under another name, and the caller
+// then creates a DUPLICATE. That is how `town-of-shrewsbury` was made.
+// Two credentials, two callers: rental-report holds the shared secret, Dan holds
+// the admin password. FAILS CLOSED — an unset secret authorises nothing. What
+// this guards is the ability to mint an org with a token of the caller's own
+// choosing, and `adminAuth` above deliberately falls OPEN when no password is
+// set, which is right for a dev root page and wrong for this.
+function orgSyncAuthOk(req) {
+  if (ADMIN_PASSWORD) {
+    const auth = req.headers.authorization || '';
+    if (auth.startsWith('Basic ')) {
+      const decoded = Buffer.from(auth.slice(6), 'base64').toString();
+      const pw = decoded.includes(':') ? decoded.split(':').slice(1).join(':') : decoded;
+      if (pw === ADMIN_PASSWORD) return true;
+    }
+  }
+  if (!ORG_SYNC_SECRET) return false;
+  const crypto = require('crypto');
+  const got = Buffer.from(String(req.headers['x-org-sync-secret'] || ''));
+  const want = Buffer.from(ORG_SYNC_SECRET);
+  // timingSafeEqual THROWS on a length mismatch, so the length test is not an
+  // optimisation: without it a wrong-length secret is a 500 rather than a 401.
+  return got.length === want.length && crypto.timingSafeEqual(got, want);
+}
+
+// `tokenWithheld` rather than a missing key: "this org has no token" and "you
+// were not allowed to see it" are different facts, and a caller that read the
+// second as the first would adopt an empty token and 404 every link it built.
+app.get('/api/admin/org-by-id/:orgId', (req, res) => {
+  const orgId = String(req.params.orgId || '');
+  const hit = Object.entries(ORGS).find(([, o]) => o && o.orgId === orgId);
+  if (!hit) return res.json({ exists: false });
+  const [slug, org] = hit;
+  const out = { exists: true, slug, orgId: org.orgId,
+                logoUrl: org.logoUrl, displayName: org.name || slug };
+  if (orgSyncAuthOk(req)) out.token = org.token; else out.tokenWithheld = true;
+  res.json(out);
+});
+
+app.post('/api/admin/add-org', express.json(), (req, res) => {
+  if (!orgSyncAuthOk(req)) {
+    // Worded apart on purpose: "not configured" is a task and "bad secret" is an
+    // incident, and one message for both is how a sync that quietly stopped gets
+    // read as one that was never set up.
+    return res.status(401).json({
+      error: ORG_SYNC_SECRET
+        ? 'Bad x-org-sync-secret'
+        : 'Cross-project org sync is not configured here: set ORG_SYNC_SECRET to the same value in both Railway projects',
+    });
+  }
+  const { slug, token, orgId, logoUrl, displayName } = req.body || {};
+  if (!slug || !token || !orgId) return res.status(400).json({ error: 'slug, token, and orgId are required' });
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) return res.status(400).json({ error: 'Slug must be lowercase alphanumeric with hyphens' });
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(orgId)) return res.status(400).json({ error: 'Invalid org UUID format' });
+
+  // Already here under ANOTHER name? Then this is the drift case, not a create.
+  // Adding it again under the caller's slug is precisely the duplicate this
+  // whole mechanism exists to prevent, so it is refused and the caller is told
+  // what we actually call it.
+  const byId = Object.entries(ORGS).find(([s, o]) => o && o.orgId === orgId && s !== slug);
+  if (byId) {
+    return res.status(409).json({ error: `This dashboard already serves ${orgId} as "${byId[0]}"`, slug: byId[0] });
+  }
+
+  const existing = ORGS[slug];
+  if (existing) {
+    // The orgId is the identity and the one field this route may not quietly
+    // change: repointing it would serve another organisation's data under this
+    // name. Adopt it only when we hold none.
+    if (existing.orgId && existing.orgId !== orgId) {
+      return res.status(409).json({ error: `"${slug}" is a different organisation here (${existing.orgId}) — refusing to repoint it at ${orgId}` });
+    }
+    existing.orgId = orgId;
+    // FOR THEIR OWN URLS THEY ARE THE AUTHORITY — the same line the reconcile
+    // above takes on token drift. Every report link this dashboard renders is
+    // built from this token and refused if it is stale.
+    existing.token = token;
+    if (logoUrl) existing.logoUrl = logoUrl;
+    if (displayName) existing.name = existing.name || displayName;
+    if (existing._dynamic) saveDynamicOrgs();
+    REPORTING_IDENTITY[slug] = { slug, token, state: 'ok', checkedAt: Date.now() };
+    console.log(`[orgs] Sync from reporting updated: ${slug} (${orgId})`);
+    return res.json({ ok: true, action: 'updated', slug });
+  }
+
+  const org = {
+    name: displayName || slug,
+    orgId,
+    token,
+    city: '', state: '',
+    logoUrl: logoUrl || `https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/organization-${orgId}/fullLogo.png`,
+    defaultEmail: '',
+    reports: {},
+    _dynamic: true,
+  };
+  // Coords from the table only. The geocode path needs a city and state, and the
+  // reporting project carries neither — so a synced org gets weather if its UUID
+  // is known and otherwise renders exactly as every other org with no coords
+  // does. Never a guess from the name: there are Watertowns in MA, NY, CT and WI.
+  const known = ORG_COORDS_BY_ID[orgId];
+  if (known) org.coords = { lat: known.lat, lon: known.lon };
+
+  ORGS[slug] = org;
+  saveDynamicOrgs();
+  // We know exactly what they call it, because they are the ones who told us.
+  // Recording it here means the org's report links are right on its first page
+  // load rather than after the next 6h reconcile.
+  REPORTING_IDENTITY[slug] = { slug, token, state: 'ok', checkedAt: Date.now() };
+  console.log(`[orgs] Created from reporting sync: ${slug} (${orgId})`);
+  res.json({ ok: true, action: 'created', slug });
 });
 
 // ═══════════════════════════════════════════

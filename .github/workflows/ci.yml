@@ -98,6 +98,29 @@ jobs:
       - name: Weather card
         run: node scripts/org-weather.spec.js
 
+      # The inbound half of the cross-project org sync, and the credential leak
+      # found building it: the mirror of this route on rental-report was handing
+      # an org's ACCESS TOKEN to anyone who asked. The live half boots a real
+      # server, because a regex over our own patch is not evidence it behaves —
+      # and two source assertions were dropped after mutation showed them
+      # satisfied by the update branch's identical lines.
+      - name: Org sync (no token unauthenticated; no duplicate under another slug)
+        run: node scripts/org-sync.spec.js
+
+      # /health IS RAILWAY'S HEALTHCHECK as of 2026-09-21, so it is load-bearing
+      # for every deploy: break it and the symptom is "deploys stopped working",
+      # with nothing connecting that to whoever moved a route. It sits ~270 lines
+      # above the first route that could swallow it, and the only thing keeping
+      # that margin is nobody having added one in between — the
+      # registration-order trap this file already records four times.
+      #
+      # The live half boots WITH ADMIN_PASSWORD SET, which is what makes it
+      # discriminate: adminAuth opens with `if (!ADMIN_PASSWORD) return next()`,
+      # so on a boot with no password it falls open and a 200 on /health is
+      # satisfied by a build that has the gate.
+      - name: Healthcheck route (Railway gates every deploy on this)
+        run: node scripts/healthcheck-route.spec.js
+
       # THE PAGE MUST ACTUALLY RENDER. This repo had no render check at all, for
       # a 3,500-line React page compiled by in-browser Babel — and its sibling
       # shipped two blank pages to production before adding one. Every other
