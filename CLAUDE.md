@@ -43,10 +43,31 @@ that does fire goes to the fallback address or to nobody.
 **Railway volume backups are a SCHEDULE YOU TURN ON** — not on by default.
 Daily keeps 6 days, weekly 27, monthly 89. That closes most of the gap for a
 checkbox and no code, which is why it is the thing that shipped instead of the
-migration. Two caveats from Railway's own docs, worth knowing before relying on
-it: **wiping a volume deletes its backups**, and a backup can only be restored
-into the same project and environment — so it is not an off-platform copy the
-way rental-report's daily gist is.
+migration.
+
+**DAILY AND MONTHLY ARE ON (Dan, 2026-09-21). Weekly is deliberately not, and
+that leaves a window worth knowing about.** Daily's retention is **6 days**, so
+on its own it only covers a loss somebody notices inside a week — and the two
+losses named above are precisely the ones nobody notices that fast: an allowance
+alert that has switched itself off, and an alert going to the fallback address,
+both of which look like a quiet week. Monthly is what covers those, at 89 days.
+
+The cost of skipping Weekly is the gap between them: a loss found on day 20
+restores from a monthly snapshot that may be most of a month old, so the data
+comes back and everything since it does not. Weekly would narrow that to seven
+days, and it is another checkbox if that ever matters.
+
+**RESTORING IS A STAGED CHANGE, NOT A CLICK**, which is the half to know before
+needing it. Per Railway's own docs a restore **creates a NEW volume** named for
+the backup's datestamp, **unmounts the current one**, and stages that swap for
+review and a deploy — so it costs a deploy (see the stop-then-start gap above),
+and the old volume survives unmounted rather than being destroyed, which makes
+the restore itself reversible.
+
+Two caveats from the same docs, worth knowing before relying on any of it:
+**wiping a volume deletes its backups**, and a backup can only be restored into
+the **same project and environment** — so it is not an off-platform copy the way
+rental-report's daily gist is.
 
 ### WHAT THE MIGRATION WOULD COST, so it is not re-scoped from scratch
 
@@ -83,7 +104,24 @@ Smaller than the sibling project's, in one specific way, and riskier in another.
 Before this there was **no `healthcheckPath` configured**, so Railway declared a
 deploy live the moment the container started: a container that booted into a
 broken state still took over from the working one **and the deploy still
-reported SUCCESS**. It is `/health` now.
+reported SUCCESS**.
+
+**SET AND VERIFIED 2026-09-22**, after #83 merged and its own deploy went green
+— the guard had to be live before the route it guards became load-bearing.
+`healthcheckPath: "/health"`, read back off the service, `staged: null`,
+`state: live`. The redeploy that applied it reached **SUCCESS in 26s** and
+`/health` answered **200 `{"status":"ok","orgs":24}`** on three reads
+(0.24–0.47s). No `healthcheckTimeout` is set, which mirrors rental-report rather
+than guessing a number.
+
+**`update-service` WITH `healthcheckPath` DOES NOT ITSELF REDEPLOY** — Railway
+applies it on the service's next deployment, so a `redeploy` is what makes it
+take effect and what proves it works. Verify it the same turn you set it: this
+service is 1 replica + a volume, so if the healthcheck cannot pass the old
+container is already gone and the dashboard is down until someone looks. Note
+the API has no `null` for that field the way it does for `healthcheckTimeout`,
+so backing the change out is not a clean unset — another reason to prove it
+immediately rather than leave it unverified.
 
 **It does not shorten the gap, and claiming it would be wrong** — with a volume
 the old container is already gone, so there is nothing to keep serving. What it
