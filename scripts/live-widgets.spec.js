@@ -2134,12 +2134,18 @@ process.on('exit', () => {
      the order of the five cards in the grid is what places them. */
   ok(/<div className="widget-grid live-grid">[\s\S]{0,200}?HappeningToday[\s\S]{0,200}?MembershipCheckins[\s\S]{0,200}?LiveRegistrations[\s\S]{0,200}?ProgramsLive[\s\S]{0,300}?FacilityBookings/.test(code),
      'the five live cards render in the order that produces Dan\'s layout: Happening, Check-Ins, Live Enrollments, then Programs and Facility underneath');
-  ok(/widget-card widget-md widget-tall live-card/.test(code),
-     'Happening Today is the tall card');
-  ok((code.match(/widget-tall/g) || []).length >= 2,
-     '...on both its loading and its loaded render, or it changes size when the feed lands');
+  /* HAPPENING TODAY IS STILL THE TALL CARD — but it is now tall because its
+     own default says so rather than because the class is hardcoded, so the
+     claim is tested through the resolver (see the height block below) and the
+     class is asserted as something the card CAN apply on both branches. */
+  ok((code.match(/\(tall \? ' widget-tall' : ''\)/g) || []).length >= 2,
+     'Happening Today applies the tall class on both its loading and its loaded render, or it changes size when the feed lands');
   ok(/\.widget-tall \{ grid-row: span 2; \}/.test(src),
      '...and "tall" means two grid rows');
+  /* ...AND A FLOOR OF ITS OWN, because the span alone collapses when every
+     card in the grid spans two rows. Pinned properly in the height block. */
+  ok(/\.widget-card\.widget-tall \{ min-height: calc\(/.test(src),
+     '...plus a height floor, since the span alone is not enough with two tall cards');
   ok(/\.live-grid \{ grid-auto-rows: 1fr; \}/.test(src),
      'the live grid sizes its rows equally, which is what makes the two on the right the same height');
   /* AND ONLY THE LIVE GRID. `.widget-grid` is every report section on the
@@ -2148,7 +2154,7 @@ process.on('exit', () => {
      '...and only the live grid — the report sections below keep sizing their rows independently');
   /* BELOW FOUR COLUMNS THE SPAN MEANS NOTHING, because there is no column
      beside it for the two half-height cards to stack in. */
-  ok(/@media \(max-width: 1100px\) \{\s*\n\s*\.live-grid \{ grid-auto-rows: auto; \}\s*\n\s*\.widget-tall \{ grid-row: span 1; \}/.test(src),
+  ok(/@media \(max-width: 1100px\) \{[\s\S]{0,400}?\.live-grid \{ grid-auto-rows: auto; \}[\s\S]{0,400}?\.widget-tall \{ grid-row: span 1; \}/.test(src),
      'the tall card becomes an ordinary one once the grid is narrower than four columns');
 
   /* THE LIST SCROLLS INSIDE THE CARD. `overflow-y: auto` ALONE IS NOT THE FIX
@@ -2733,41 +2739,71 @@ process.on('exit', () => {
        and therefore what somebody will "fix" this into — would double the
        height of the check-ins card on every dashboard on the platform the
        moment it shipped. Nothing saved means the height it has today. */
+    /* THE TWO CARDS DISAGREE ON THEIR DEFAULT, and that is the whole design.
+       Happening Today is double TODAY and must stay double for every org that
+       has never opened this panel; Check-Ins must stay the height it has. A
+       single hardcoded default either halves one or doubles the other on
+       deploy. */
     eq(liveCardTall('checkins', undefined), false,
        'nothing saved: the check-ins card is its normal height');
     eq(liveCardTall('checkins', {}), false,
        'an empty saved map is still normal height');
+    eq(liveCardTall('happening', undefined), true,
+       'nothing saved: Happening Today stays the double card it is today');
+    eq(liveCardTall('happening', {}), true,
+       '...and an empty saved map does not halve it either');
     eq(liveCardTall('checkins', { checkins: false }), false,
        'an explicit false is normal height');
     eq(liveCardTall('checkins', { checkins: true }), true,
        'an explicit true is the 2x card');
-    /* A SAVED VALUE THAT IS NOT `true` IS NOT TALL. `=== true`, not
-       truthiness: a stale '1' or 'on' from a future editor must not silently
-       re-lay-out the section. */
+    /* THE HALF-HEIGHT OPTION Dan asked to keep, on the card he asked for it
+       on: "Honestly I like that option also, don't remove it, but move that
+       'half height' option to the happening today card." */
+    eq(liveCardTall('happening', { happening: false }), false,
+       'unticking Happening Today gives the half-height card');
+    eq(liveCardTall('happening', { checkins: true }), true,
+       '...and a map that speaks only about check-ins leaves it alone');
+    /* A SAVED VALUE THAT IS NEITHER true NOR false IS THE CARD'S DEFAULT, not
+       a coin flip: a stale '1' or 'on' from a future editor must not
+       re-lay-out the section in either direction. */
     eq(liveCardTall('checkins', { checkins: 1 }), false,
-       'a truthy non-true value is not a yes');
+       'a truthy non-true value falls back to the check-ins default');
+    eq(liveCardTall('happening', { happening: 0 }), true,
+       '...and a falsy non-false value falls back to the Happening default');
 
     /* A CARD WITHOUT `canTall` IS NEVER TALL, whatever is saved — so a stale
        entry for a card that does not offer the option cannot move it. */
     for (const c of LIVE_CARDS) {
-      if (c.id === 'checkins') continue;
+      if (c.canTall) continue;
       eq(liveCardTall(c.id, { [c.id]: true }), false,
          c.id + ' does not offer a height and stays normal even when saved true');
     }
     eq(liveCardTall('nosuchcard', { nosuchcard: true }), false,
        'an unknown card id is never tall');
 
-    /* EXACTLY ONE CARD OFFERS IT TODAY. Dan asked for a height on the
-       check-ins card, not a height control on all five — so this fails if a
-       second one quietly gains `canTall` without that being a decision. */
-    eq(LIVE_CARDS.filter(c => c.canTall).map(c => c.id).join(','), 'checkins',
-       'Membership Check-Ins is the only card offering a 2x height');
+    /* EXACTLY TWO CARDS OFFER IT. Dan asked for a 2x on Check-Ins and a half
+       on Happening Today — so this fails if a third quietly gains `canTall`
+       without that being a decision. */
+    eq(LIVE_CARDS.filter(c => c.canTall).map(c => c.id).sort().join(','),
+       'checkins,happening',
+       'Check-Ins and Happening Today are the two cards offering a height');
+    /* AND THEY DEFAULT OPPOSITE WAYS — the assertion that fails if somebody
+       "tidies" the two defaults into one. */
+    eq(LIVE_CARDS.filter(c => c.tallByDefault).map(c => c.id).join(','), 'happening',
+       'Happening Today is the only card that ships double');
+    /* EVERY HEIGHT-CAPABLE CARD EXPLAINS ITSELF, or the panel renders a tick
+       with no sentence under it. */
+    for (const c of LIVE_CARDS.filter(x => x.canTall)) {
+      ok(typeof c.tallDesc === 'string' && c.tallDesc.length > 10,
+         c.id + ' says what its height tick does');
+    }
 
     /* THE RESOLVER COVERS EVERY CARD, so the section can read it as a plain
        map without knowing which ids support the option. */
-    const res = liveTallResolved({ checkins: true, happening: true });
+    const res = liveTallResolved({ checkins: true });
     eq(res.checkins, true, 'the resolved map carries the check-ins height');
-    eq(res.happening, false, '...and refuses one for a card that cannot be tall');
+    eq(res.happening, true, '...and Happening Today keeps its own default');
+    eq(res.facility, false, '...and refuses one for a card that cannot be tall');
     eq(Object.keys(res).length, LIVE_CARDS.length,
        'the resolved map has an entry per card');
   }
@@ -2918,4 +2954,41 @@ process.on('exit', () => {
      where the place is hoisted and there is nothing under the name. */
   ok(/\.ci-tall\.ci-where \.ci-person \{ width: 92px; \}/.test(src),
      'the tile widens only when the per-face place actually renders');
+
+  /* ── A TALL CARD CARRIES ITS OWN FLOOR ──────────────────────────────
+     `grid-row: span 2` only produces a double card while some OTHER card in
+     the grid occupies a SINGLE row and therefore sizes it. Torrance runs two
+     live cards; once both spanned two rows nothing sized a row and BOTH
+     collapsed to 300px — measured `cards=2 ht=300 ci=300` where the intent was
+     614 — so ticking 2x height made Happening Today HALF what it had been.
+
+     AND THE SELECTOR HAS TO BE (0,2,0). `.widget-md` sets its own min-height
+     and is declared AFTER the tall rule, so a bare `.widget-tall` loses on
+     equal specificity and the floor silently does nothing — which is how the
+     first version of this fix still measured 300px in the case it was written
+     for. */
+  ok(/\.widget-card\.widget-tall \{ min-height: calc\(var\(--widget-row-min\) \* 2 \+ var\(--widget-grid-gap\)\); \}/.test(src),
+     'a tall card is two ordinary rows plus the gap, on a selector that wins');
+  ok(/:root \{ --widget-row-min: 300px; --widget-grid-gap: 14px; \}/.test(src),
+     '...from one definition of the row floor and the gap');
+  ok(/\.widget-md \{ grid-column: span 2; min-height: var\(--widget-row-min\); \}/.test(src),
+     '...which the ordinary card reads too, so the two cannot drift');
+  ok(/\.widget-grid \{ display: grid; grid-template-columns: repeat\(4, 1fr\); gap: var\(--widget-grid-gap\); \}/.test(src),
+     '...and so does the grid gap');
+  /* THE FLOOR GOES WITH THE SPAN below four columns, or a laptop gets a tall
+     empty card instead of a double-height one beside its neighbours. */
+  ok(/\.widget-tall \{ grid-row: span 1; \}\s*\n\s*\.widget-card\.widget-tall \{ min-height: var\(--widget-row-min\); \}/.test(src),
+     'below four columns the floor drops with the span');
+
+  /* HAPPENING TODAY READS THE FLAG rather than hardcoding the class, or the
+     half-height option cannot reach it. */
+  const htCard = src.slice(src.indexOf('function HappeningToday('),
+                           src.indexOf('/* `cards` is the RESOLVED map'));
+  ok(htCard.length > 500, 'the Happening Today card was found to slice');
+  ok(!/widget-md widget-tall live-card/.test(htCard),
+     'Happening Today no longer hardcodes the tall class');
+  ok((htCard.match(/\(tall \? ' widget-tall' : ''\)/g) || []).length >= 2,
+     '...on both branches, or the card jumps height when the feed lands');
+  ok(/tall=\{!!tall\.happening\}/.test(src),
+     'the section hands Happening Today its height');
 }

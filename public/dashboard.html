@@ -357,7 +357,11 @@ body.has-wx .section-header::before { content: ""; position: absolute; inset: 2p
 .kpi-strip-note { display: block; font-size: 10px; color: var(--text-muted); margin-top: 2px; }
 @media (max-width: 600px) { .kpi-strip { flex-wrap: wrap; } .kpi-strip-item { flex: 1 1 45%; } .kpi-strip-value { font-size: 20px; } }
 @media print { .kpi-strip { break-inside: avoid; } }
-.widget-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+/* ONE DEFINITION FOR THE ROW FLOOR AND THE GAP, because `.widget-tall` now has
+   to be exactly two of one plus one of the other. Two copies is how a tall card
+   ends up a hair short of two rows and the grid re-flows. */
+:root { --widget-row-min: 300px; --widget-grid-gap: 14px; }
+.widget-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--widget-grid-gap); }
 /* ── Live Widgets ────────────────────────────────────────────────────────
    Everything here is themed through the same tokens as the rest of the
    dashboard, so the card reads the same in light and dark. The one literal
@@ -836,7 +840,26 @@ body.has-wx .section-header::before { content: ""; position: absolute; inset: 2p
    each sizing to whatever it happens to contain. Scoped to `.live-grid` so
    the report sections below keep sizing their rows independently. */
 .live-grid { grid-auto-rows: 1fr; }
+/* AND THE SPAN IS NOT ENOUGH ON ITS OWN — this is the bug Dan hit.
+   `grid-row: span 2` only produces a double-height card while some OTHER card
+   in the same grid occupies a SINGLE row and therefore sizes it. Torrance runs
+   two live cards, Happening Today and Check-Ins; the moment both spanned two
+   rows nothing was left to size a row, the rows collapsed to the cards' own
+   `min-height` split between them, and BOTH came out at 300px. Measured in a
+   browser: `cards=2 ht=300 ci=300` where the intent was ~614 each — so ticking
+   2x height made Happening Today HALF the height it had been, which is exactly
+   what Dan reported.
+
+   So a tall card carries its own floor: two ordinary rows plus the gap between
+   them. Both numbers come from the variables the grid itself uses, or this
+   drifts the first time either changes. */
 .widget-tall { grid-row: span 2; }
+/* (0,2,0) DELIBERATELY. `.widget-md` sets its own `min-height` and is declared
+   AFTER this rule, so a bare `.widget-tall` (0,1,0) loses the cascade on equal
+   specificity and the floor silently does nothing — which is how the first
+   version of this fix measured 300px in exactly the two-card case it was
+   written for. Same shape as `.widget-card.live-card` further up this file. */
+.widget-card.widget-tall { min-height: calc(var(--widget-row-min) * 2 + var(--widget-grid-gap)); }
 /* THE LIST SCROLLS INSIDE THE CARD, and `flex: 1 1 0` with `min-height: 0` is
    what makes that true rather than aspirational: a flex basis of zero drops
    the list out of the card's own intrinsic height, so a day with a hundred
@@ -877,7 +900,12 @@ body.has-wx .section-header::before { content: ""; position: absolute; inset: 2p
    min-height for it to fill. */
 @media (max-width: 1100px) {
   .live-grid { grid-auto-rows: auto; }
+  /* THE FLOOR GOES WITH THE SPAN. Below four columns there is no longer a
+     column beside the tall card for anything to stack in, so a 614px floor
+     would leave a tall empty card on a laptop rather than a double-height one
+     beside its neighbours. */
   .widget-tall { grid-row: span 1; }
+  .widget-card.widget-tall { min-height: var(--widget-row-min); }
 }
 @media (max-width: 800px) { .widget-grid { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 500px) { .widget-grid { grid-template-columns: 1fr; } }
@@ -887,7 +915,7 @@ body.has-wx .section-header::before { content: ""; position: absolute; inset: 2p
   padding: 20px; position: relative; transition: transform 0.15s, box-shadow 0.2s, border-color 0.2s; }
 .widget-card:hover { transform: translateY(-2px); border-color: var(--border); box-shadow: 0 8px 24px rgba(0,0,0,0.3); }
 .widget-sm { grid-column: span 1; }
-.widget-md { grid-column: span 2; min-height: 300px; }
+.widget-md { grid-column: span 2; min-height: var(--widget-row-min); }
 .widget-lg { grid-column: span 4; min-height: 200px; }
 @media (max-width: 500px) { .widget-md, .widget-lg { grid-column: span 1; } }
 
@@ -4135,7 +4163,17 @@ function liveHasHappening(a) {
    Enrollments, which is why it shares the enrollments test rather than
    carrying one of its own. */
 const LIVE_CARDS = [
+  /* HAPPENING TODAY IS THE ONE THAT IS ALREADY DOUBLE, so its height tick ships
+     TICKED — unticking it is the "half height" Dan asked to keep after seeing
+     it by accident: "Honestly I like that option also, don't remove it, but
+     move that 'half height' option to the happening today card." One concept
+     (this card is double height) with a per-card default, rather than a "2x"
+     switch on one card and an inverted "half" switch on the other — two
+     controls with opposite polarity under one heading is how a reader ends up
+     unsure which way is bigger. */
   { id: 'happening', label: 'Happening Today', icon: '\uD83D\uDCC5', defaultOn: true,
+    canTall: true, tallByDefault: true,
+    tallDesc: 'on today \u2014 untick for a half-height card level with the others',
     desc: 'Every program running today, green while it runs', has: liveHasHappening },
   { id: 'enrollments', label: 'Live Enrollments', icon: '\uD83D\uDCDD', defaultOn: true,
     desc: 'Registrations as they happen, today', has: liveHasEnrollments },
@@ -4146,7 +4184,8 @@ const LIVE_CARDS = [
      dead space under it — not for a height control on all five. A second card
      opts in by adding this flag; nothing else has to change. */
   { id: 'checkins', label: 'Membership Check-Ins', icon: '\uD83D\uDD04', defaultOn: true,
-    canTall: true,
+    canTall: true, tallByDefault: false,
+    tallDesc: 'doubles the card, and prints the product and check-in location under each face',
     desc: 'Members and passes as they scan in, today', has: liveHasCheckins },
   { id: 'facility', label: 'Facility Bookings', icon: '\uD83C\uDFDF', defaultOn: false,
     desc: 'Courts, fields and rooms as they book, today', has: liveHasFacility },
@@ -4202,8 +4241,17 @@ function liveCardsResolved(saved, available) {
 function liveCardTall(id, saved) {
   const def = LIVE_CARDS.find(c => c.id === id);
   if (!def || !def.canTall) return false;
-  if (!saved || typeof saved !== 'object') return false;
-  return saved[id] === true;
+  const dflt = !!def.tallByDefault;
+  if (!saved || typeof saved !== 'object') return dflt;
+  const v = saved[id];
+  /* ABSENT MEANS THE CARD'S OWN DEFAULT, exactly as liveCardOn does for the
+     on/off switch — and it matters more here, because the two cards disagree:
+     Happening Today is double today and must stay double for every org that
+     has never opened this panel, while Check-Ins must stay the height it has.
+     A single hardcoded default either halves one or doubles the other on
+     deploy. An explicit `true`/`false` wins; anything else is the default, so a
+     stale `1` or `'on'` cannot re-lay-out the section. */
+  return v === true ? true : v === false ? false : dflt;
 }
 
 /* Resolved once and handed down, the same shape as liveCardsResolved — so the
@@ -5869,7 +5917,7 @@ function useLiveHappening(onAvailable, enabled) {
   return { rows, err, at, paused, setPaused, loading, refresh: load };
 }
 
-function HappeningToday({ feed, recOrgId }) {
+function HappeningToday({ feed, recOrgId, tall }) {
   const { rows, err } = feed;
 
   /* ABSENT, NEVER THE CHEERFUL EMPTY STATE. A feed that could not answer is
@@ -5878,7 +5926,8 @@ function HappeningToday({ feed, recOrgId }) {
   if (err) return null;
   if (!rows) {
     return (
-      <div className="widget-card widget-md widget-tall live-card" data-live-happening="loading">
+      <div className={'widget-card widget-md live-card' + (tall ? ' widget-tall' : '')}
+           data-live-happening="loading" data-live-ht-tall={tall ? '1' : '0'}>
         <LiveCardHeader icon={'\u{1F4C5}'} title="Happening Today" feed={feed} card="happening"
                         sub={'Every program running today'} />
         <div className="live-empty">{'Loading…'}</div>
@@ -5894,7 +5943,8 @@ function HappeningToday({ feed, recOrgId }) {
   const orgTz = (rows.find(r => r && r['Org Timezone']) || {})['Org Timezone'] || '';
 
   return (
-    <div className="widget-card widget-md widget-tall live-card"
+    <div className={'widget-card widget-md live-card' + (tall ? ' widget-tall' : '')}
+         data-live-ht-tall={tall ? '1' : '0'}
          data-live-happening={String(rows.length)} data-ht-orgtz={orgTz}>
       <LiveCardHeader icon={'\u{1F4C5}'} title="Happening Today" feed={feed} card="happening"
                       sub={'Every program running today'} />
@@ -6064,7 +6114,7 @@ function LiveSection({ reportingBaseUrl, recOrgId, hasCheckins, hasFacility, has
           So this list is not cosmetic and the two right-hand cards must stay in
           this order. */}
       <div className="widget-grid live-grid">
-        {showHt ? <HappeningToday feed={htFeed} recOrgId={recOrgId} /> : null}
+        {showHt ? <HappeningToday feed={htFeed} recOrgId={recOrgId} tall={!!tall.happening} /> : null}
         {showCi ? <MembershipCheckins feed={ciFeed} recOrgId={recOrgId} tall={!!tall.checkins} /> : null}
         {showEnroll ? <LiveRegistrations feed={feed} recOrgId={recOrgId} /> : null}
         {showProg ? <ProgramsLive feed={feed} recOrgId={recOrgId} /> : null}
@@ -6564,7 +6614,7 @@ function EditModal({ sections, onSave, onClose, availableReports, toggles, focus
                                  data-edit-live-tall-toggle={c.id}
                                  onChange={e => setLiveTall(prev => ({ ...prev, [c.id]: e.target.checked }))} />
                           <span>{'2\u00d7 height'}</span>
-                          <em>{'matches Happening Today, and prints the product and check-in location under each face'}</em>
+                          <em>{c.tallDesc}</em>
                         </label>
                       ) : null}
                     </React.Fragment>

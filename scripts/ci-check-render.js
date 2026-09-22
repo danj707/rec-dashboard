@@ -935,6 +935,30 @@ async function loadCi(page) {
 }
 async function loadCi2(page) { await loadCi(page); }
 
+/* BOTH CARD HEIGHTS, STAMPED. The only way to tell a card that spans two grid
+   rows from one that merely says it does is to measure the box — and the
+   numbers go onto the body so a failure can be read off the DOM rather than
+   guessed at. */
+async function loadLiveSizes(page) {
+  await page.reload({ waitUntil: 'networkidle2', timeout: 60000 });
+  await page.waitForSelector('[data-live-section]', { timeout: 25000 });
+  await page.evaluate(() => {
+    const ht = document.querySelector('[data-live-happening]');
+    const ci = document.querySelector('[data-live-checkins]');
+    const h = e => e ? Math.round(e.getBoundingClientRect().height) : 0;
+    const a = h(ht), b = h(ci);
+    document.body.dataset.liveHeights = a + '/' + b;
+    document.body.dataset.liveCards =
+      String(document.querySelectorAll('[data-live-section] .widget-card').length);
+    /* "DOUBLE" IS A COMPARISON AGAINST THE ORDINARY CARD FLOOR (300px), not a
+       pinned pixel count — the floor is a variable and the card can be taller
+       than it when a neighbour's content sizes the row. 500 sits clear of a
+       single row and clear of nothing. */
+    document.body.dataset.htDouble = a > 500 ? '1' : '0';
+    document.body.dataset.ciDouble = b > 500 ? '1' : '0';
+  });
+}
+
 const CASES = [
   { name: 'dashboard renders', needs: '.widget-card' },
   /* A LAYOUT SAVED BEFORE CUSTOMER SUPPORT WAS REMOVED. Org layouts live on the
@@ -2630,6 +2654,34 @@ const CASES = [
      for the day the cap is raised or the tiles widen. So this asserts the two
      things that are actually true and load-bearing: the list is bounded by the
      card it sits in, and it is set up to scroll rather than to push. */
+  /* ── TWO CARDS ON THE GRID, WHICH IS WHERE THE SPAN STOPPED WORKING ──
+     Dan, on Torrance with only Happening Today and Check-Ins on: "lol all it
+     did was make the happening today HALF the height of the other card."
+     Measured before the fix: `cards=2 ht=300 ci=300` — once BOTH cards spanned
+     two rows there was no single-row card left to size a row, the rows
+     collapsed to the cards' own min-height, and Happening Today dropped from
+     614 to 300. The all-cards fixture could never show it, because a
+     single-row card was always there to size the row.
+
+     THESE ARE THE FOUR SHAPES, and each is a different answer. */
+  { name: 'live · two cards, both tall: both are genuinely double',
+    ciTwoCard: true, ciTwoCardTall: true, act: loadLiveSizes,
+    needs: 'body[data-live-cards="2"][data-ht-double="1"][data-ci-double="1"]',
+    absent: 'body[data-live-heights="300/300"]' },
+  /* THE DEFAULT IS UNCHANGED for every org that has never opened the panel:
+     Happening Today double, Check-Ins the height it has today. */
+  { name: 'live · ...and by default only Happening Today is',
+    ciTwoCard: true, act: loadLiveSizes,
+    needs: 'body[data-ht-double="1"][data-ci-double="0"]' },
+  /* THE HALF-HEIGHT OPTION Dan asked to keep, on the card he asked for it on. */
+  { name: 'live · Happening Today can be halved, and Check-Ins doubled',
+    ciTwoCard: true, ciTwoCardTall: true, ciHtHalf: true, act: loadLiveSizes,
+    needs: 'body[data-ht-double="0"][data-ci-double="1"]' },
+  { name: 'live · ...and the half-height card drops the span, not just the size',
+    ciTwoCard: true, ciTwoCardTall: true, ciHtHalf: true,
+    needs: '[data-live-happening][data-live-ht-tall="0"]',
+    absent: '[data-live-happening].widget-tall' },
+
   { name: 'live · ...with the faces bounded by the card rather than pushing it',
     ciTall: true, denseLane: true, needs: 'body[data-ci-bounded="1"]',
     act: async page => {
@@ -2705,6 +2757,23 @@ const CASES = [
            test is that the check-ins card ends up the SAME HEIGHT as Happening
            Today — which needs Happening Today on the page, and the default
            availability map does not carry it. */
+        /* DAN'S OWN SHAPE, and the one the all-cards fixture could not express.
+           Torrance runs TWO live cards. With five on the grid there is always a
+           single-row card sizing a row, so `grid-row: span 2` produces a double
+           card whether or not it has a floor of its own — the bug is invisible.
+           With two cards that both span two rows, nothing sizes a row. */
+        if (currentCase.ciTwoCard) {
+          const lt = {};
+          if (currentCase.ciTwoCardTall) lt.checkins = true;
+          if (currentCase.ciHtHalf) lt.happening = false;
+          return json({ ...CONFIG,
+            config: { ...CONFIG.config,
+              liveCards: { enrollments: false, programs: false, checkins: true, facility: false },
+              liveTall: Object.keys(lt).length ? lt : undefined },
+            availableReports: { memberships: true,
+              'enrollments-today': true, 'enrollments-rollup': true, 'checkins-today': true,
+              'facility-today': true, 'happening-today': true } });
+        }
         if (currentCase.ciTall) {
           return json({ ...CONFIG,
             config: { ...CONFIG.config, liveTall: { checkins: true } },

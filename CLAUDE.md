@@ -73,19 +73,66 @@ every tall card would halve the faces per row at those eight one-desk orgs,
 where the place is hoisted and there is nothing under the name at all. So
 `92px` rides on `.ci-where`, which is on only when the per-face line renders.
 
+### THE SPAN ALONE COLLAPSED, AND IT SHIPPED THAT WAY FOR AN HOUR
+
+Dan, on Torrance with the tick on: *"lol all it did was make the happening
+today HALF the height of the other card."*
+
+**`grid-row: span 2` ONLY PRODUCES A DOUBLE CARD WHILE SOME OTHER CARD IN THE
+GRID OCCUPIES A SINGLE ROW AND THEREFORE SIZES IT.** Torrance runs two live
+cards. The moment both spanned two rows there was nothing left to size a row,
+the rows collapsed to the cards' own `min-height` split between them, and both
+came out at 300px — so Happening Today dropped from 614 to 300 and the tick
+appeared to *halve* the card beside it rather than double anything.
+
+Measured in a browser, all four shapes, before and after:
+
+| grid | before | after |
+|---|---|---|
+| two cards, both tall | **ht=300 ci=300** | **ht=614 ci=614** |
+| two cards, default | ht=614 ci=300 | ht=614 ci=300 |
+| two cards, HT halved | — | ht=300 ci=614 |
+| five cards, check-ins tall | ht=864 ci=864 | ht=864 ci=864 |
+
+So a tall card carries **its own floor** — two ordinary rows plus the gap —
+with both numbers read from the variables the grid itself uses.
+
+**AND THE FIRST FIX STILL MEASURED 300, because the selector lost.**
+`.widget-md` sets its own `min-height` and is declared AFTER the tall rule, so
+a bare `.widget-tall` (0,1,0) loses on equal specificity and the floor silently
+does nothing. `.widget-card.widget-tall` (0,2,0) is what wins — the same shape
+as `.widget-card.live-card` further up the same file. *A rule that is present
+in the source and losing the cascade reads exactly like a rule that works.*
+
+**WHY NO GUARD CAUGHT IT: the fixture had all five cards on.** With five on the
+grid there is always a single-row card sizing a row, so the span produces a
+double card whether or not it has a floor of its own and the bug is
+*unreachable*. Dan's org has two. The four shapes above are cases now, and both
+mutations — the floor dropped, and the floor on a losing selector — fail
+**exactly** the two-card case in a real browser while the other 199 keep
+passing. *A fixture where a wrong implementation cannot look wrong is not a
+guard*, recorded again.
+
 ### OFF UNLESS EXPLICITLY SWITCHED ON — the one line to get right
 
-`liveCardTall` reads **`=== true`**. Every other toggle in this file reads
-`!== false`, because absent there means an org that has never opened Edit
-Dashboard and the answer is yes. Here absent means the same thing and the
-answer is **no**: a `!== false` test would double this card on every dashboard
-on the platform the moment it shipped, which is a layout change nobody asked
-for. A truthy `1` or `'on'` is not a yes either.
+**THE TWO CARDS DISAGREE ON THEIR DEFAULT, and that is the whole design.**
+Happening Today is double TODAY and must stay double for every org that has
+never opened this panel; Check-Ins must stay the height it has. A single
+hardcoded default either halves one or doubles the other on deploy, so the
+default lives on the card (`tallByDefault`) and `liveCardTall` reads it.
 
-**A CARD WITHOUT `canTall` IS NEVER TALL, whatever is saved**, so a stale entry
-cannot re-lay-out the section. Only `checkins` carries the flag — Dan asked for
-a height on the card with dead space under it, not a height control on all
-five. A second card opts in by adding one flag.
+An explicit `true` or `false` wins; **anything else is the card's own default**,
+so a stale `1` or `'on'` cannot re-lay-out the section in either direction.
+**A CARD WITHOUT `canTall` IS NEVER TALL, whatever is saved.**
+
+**ONE CONCEPT, NOT TWO CONTROLS WITH OPPOSITE POLARITY.** Dan: *"Honestly I
+like that option also, don't remove it, but move that 'half height' option to
+the happening today card."* Both cards get the same `2× height` tick —
+Happening Today's ships **ticked**, so unticking it is the half-height card he
+liked. A `2×` switch on one card and an inverted `half` switch on the other,
+under one heading, is how a reader ends up unsure which way is bigger. The
+sentence under each tick comes from the registry (`tallDesc`), so the two say
+different things without the control being two different controls.
 
 ### THE CAP RISES WITH THE HEIGHT, 12 → 48
 
