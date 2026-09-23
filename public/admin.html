@@ -205,6 +205,24 @@ function toggleSection(id) {
   document.getElementById(id).classList.toggle('open');
 }
 
+// Inline confirmation rather than confirm(): the admin page can sit in an
+// iframe where confirm() is blocked and returns false silently.
+async function deleteOrg(slug) {
+  const btn = document.getElementById('delb-' + slug);
+  const out = document.getElementById('delr-' + slug);
+  btn.disabled = true; btn.textContent = 'Deleting\u2026';
+  try {
+    const r = await fetch('/admin/api/orgs/' + slug + '/delete', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirm: document.getElementById('delc-' + slug).value })
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { out.textContent = 'Not deleted: ' + (d.error || ('HTTP ' + r.status)); btn.disabled = false; btn.textContent = 'Delete'; return; }
+    out.textContent = 'Deleted. Snapshot: ' + d.snapshot;
+    setTimeout(() => location.reload(), 900);
+  } catch (e) { out.textContent = 'Not deleted: ' + e.message; btn.disabled = false; btn.textContent = 'Delete'; }
+}
+
 async function toggleOrg(slug, key, value) {
   const body = {}; body[key] = value;
   await fetch('/admin/api/orgs/' + slug + '/toggles', {
@@ -358,6 +376,12 @@ async function saveDefaultEmail(slug) {
                 <div style="font-size:10px;color:#666;margin-top:4px">Prefills the digest and summary email boxes in this org's Dashboard Settings. Leave blank for none \u2014 the boxes then show their placeholder rather than a wrong address.</div>
               </div>
               ${o.updatedAt ? '<div class="org-updated">Last updated: ' + new Date(o.updatedAt).toLocaleString() + '</div>' : ''}
+              ${o.dynamic ? '<div class="org-del" style="margin-top:8px"><button type="button" onclick="document.getElementById(\'del-' + o.slug + '\').style.display=\'block\';this.style.display=\'none\'" style="background:none;border:none;color:#dc2626;font-size:12px;cursor:pointer;padding:0">\uD83D\uDDD1 Delete org\u2026</button>'
+                + '<div id="del-' + o.slug + '" style="display:none;margin-top:6px;padding:10px;border:1px solid #fecaca;background:#fef2f2;border-radius:8px;font-size:12px;color:#991b1b">'
+                + 'Removes this org from the dashboard and archives its layout, emails and settings to <code>data/deleted-orgs/</code>. The reporting project is not touched. Type <b>' + o.slug + '</b> to confirm:'
+                + '<div style="display:flex;gap:6px;margin-top:6px"><input id="delc-' + o.slug + '" oninput="document.getElementById(\'delb-' + o.slug + '\').disabled=(this.value!==\'' + o.slug + '\')" style="flex:1;padding:5px 8px;border:1px solid #fca5a5;border-radius:6px;font-size:12px">'
+                + '<button id="delb-' + o.slug + '" disabled onclick="deleteOrg(\'' + o.slug + '\')" style="background:#dc2626;color:#fff;border:none;border-radius:6px;padding:5px 12px;font-size:12px;cursor:pointer">Delete</button></div>'
+                + '<div id="delr-' + o.slug + '" style="margin-top:6px"></div></div></div>' : ''}
             </div>
           `).join('')}
         </div>
