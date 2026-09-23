@@ -1312,6 +1312,7 @@ app.get('/admin/api/orgs', adminAuth, (req, res) => {
       defaultEmail: orgDefaultEmail(org, slug),
       smsThresholds: orgSmsThresholds(org, slug),
       perOrgReports: Object.keys(org.reports || {}),
+      dynamic: !!org._dynamic,
       configured: !!config,
       template: config?.template || null,
       sectionCount: config?.sections?.length || 0,
@@ -1582,6 +1583,73 @@ app.post('/admin/api/orgs/:slug/toggles', adminAuth, (req, res) => {
   dashboardConfigs[slug].updatedAt = new Date().toISOString();
   saveAllConfigs(dashboardConfigs);
   res.json({ ok: true, toggles: dashboardConfigs[slug].toggles });
+});
+
+/* ── DELETE AN ORG (Dan, 2026-09-23) ─────────────────────────────────────────
+   The reporting project has had a delete tool for months; this dashboard had
+   none, so removing an org meant hand-editing the volume. Four rules:
+
+   1. FAILS CLOSED. `adminAuth` falls OPEN when ADMIN_PASSWORD is unset — right
+      for a dev root page, wrong for a destructive route — so this one refuses.
+   2. TYPING THE SLUG IS THE CONFIRMATION, checked on the SERVER, so a stale tab
+      or a script has to be as deliberate as somebody clicking.
+   3. DYNAMIC ORGS ONLY. An org written in the ORGS literal would come straight
+      back on the next boot, so "deleted" would be a lie; it is refused and the
+      reply says to remove it from server.js instead.
+   4. SNAPSHOT FIRST. Everything held for the org is written to
+      data/deleted-orgs/ before anything is purged, so nothing is unrecoverable.
+      events.jsonl is NOT touched — it is the audit log.
+
+   It does not reach into the reporting project; that has its own delete. */
+const DELETED_ORGS_DIR = path.join(DATA_DIR, 'deleted-orgs');
+function purgeOrgFromDashboard(slug) {
+  const removed = {};
+  const snap = { slug, deletedAt: new Date().toISOString(), org: ORGS[slug] || null };
+  if (dashboardConfigs[slug]) { snap.dashboard = dashboardConfigs[slug]; delete dashboardConfigs[slug]; saveAllConfigs(dashboardConfigs); removed.dashboard = 1; }
+  if (smsThresholdStore[slug]) { snap.smsThresholds = smsThresholdStore[slug]; delete smsThresholdStore[slug]; saveSmsThresholdStore(smsThresholdStore); removed.smsThresholds = 1; }
+  if (slug in orgEmailStore) { snap.defaultEmail = orgEmailStore[slug]; delete orgEmailStore[slug]; saveOrgEmailStore(orgEmailStore); removed.defaultEmail = 1; }
+  if (emailSubs[slug]) { snap.emailSubs = emailSubs[slug]; removed.emailSubs = (emailSubs[slug] || []).length; delete emailSubs[slug]; saveEmailSubs(emailSubs); }
+  if (smsAlerts[slug]) { snap.smsAlerts = smsAlerts[slug]; delete smsAlerts[slug]; saveSmsAlerts(smsAlerts); removed.smsAlerts = 1; }
+  const shareKeys = Object.keys(shares).filter(k => shares[k] && shares[k].orgSlug === slug);
+  if (shareKeys.length) {
+    snap.shares = {};
+    for (const k of shareKeys) { snap.shares[k] = shares[k]; delete shares[k]; }
+    saveShares(shares); removed.shares = shareKeys.length;
+  }
+  ensureDataDir();
+  if (!fs.existsSync(DELETED_ORGS_DIR)) fs.mkdirSync(DELETED_ORGS_DIR, { recursive: true });
+  const snapshotFile = path.join(DELETED_ORGS_DIR, `${slug}-${Date.now()}.json`);
+  fs.writeFileSync(snapshotFile, JSON.stringify(snap, null, 2));
+  return { removed, snapshotFile };
+}
+
+app.post('/admin/api/orgs/:slug/delete', adminAuth, express.json(), (req, res) => {
+  if (!ADMIN_PASSWORD) {
+    return res.status(503).json({ error: 'Set ADMIN_PASSWORD in Railway before an org can be deleted' });
+  }
+  const { slug } = req.params;
+  const org = ORGS[slug];
+  if (!org) return res.status(404).json({ error: `Unknown org: "${slug}"` });
+  if ((req.body || {}).confirm !== slug) {
+    return res.status(400).json({ error: `Confirmation did not match — type "${slug}" exactly to delete it` });
+  }
+  if (!org._dynamic) {
+    return res.status(409).json({ error: `"${slug}" is written into server.js, so it would come back on the next deploy — remove it there instead` });
+  }
+  let result;
+  try { result = purgeOrgFromDashboard(slug); }
+  catch (e) {
+    console.error(`[delete-org] snapshot/purge failed for ${slug}: ${e.message}`);
+    return res.status(500).json({ error: 'Could not snapshot the org, so nothing was deleted: ' + e.message });
+  }
+  delete ORGS[slug];
+  delete REPORTING_IDENTITY[slug];
+  saveDynamicOrgs();
+  track_server(slug, 'org_deleted', { name: org.name || slug, orgId: org.orgId || null });
+  console.log(`[delete-org] ${slug} deleted (snapshot: ${result.snapshotFile})`);
+  sendOpsAlert(`Org deleted from the dashboard: ${org.name || slug}`,
+    `\`${slug}\` (${org.orgId || 'no orgId'}) was removed. Snapshot: ${path.basename(result.snapshotFile)}`).catch(() => {});
+  res.json({ ok: true, slug, removed: result.removed, snapshot: path.basename(result.snapshotFile) });
 });
 
 /* The org's default email, editable after creation. Add Org sets it; this is

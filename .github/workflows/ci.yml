@@ -107,6 +107,9 @@ jobs:
       - name: Org sync (no token unauthenticated; no duplicate under another slug)
         run: node scripts/org-sync.spec.js
 
+      - name: Org delete (fails closed, typed confirm, snapshot then purge)
+        run: node scripts/org-delete.spec.js
+
       # /health IS RAILWAY'S HEALTHCHECK as of 2026-09-21, so it is load-bearing
       # for every deploy: break it and the symptom is "deploys stopped working",
       # with nothing connecting that to whoever moved a route. It sits ~270 lines
