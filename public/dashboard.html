@@ -1090,6 +1090,7 @@ body.has-wx .section-header::before { content: ""; position: absolute; inset: 2p
 /* Map widget */
 .map-container { height: 280px; border-radius: 8px; overflow: hidden; z-index: 1; position: relative; }
 .map-container .leaflet-control-attribution { font-size: 9px; }
+.map-tiles-dark { filter: invert(1) hue-rotate(180deg) brightness(0.95) contrast(0.9); }
 
 /* Heatmap widget */
 .heatmap-grid { display: grid; gap: 2px; font-size: 10px; }
@@ -2898,12 +2899,16 @@ function MapWidget({ data }) {
     setReady(false);
 
     const isDark = document.documentElement.getAttribute('data-theme') !== 'light';
-    const tiles = isDark
-      ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-      : 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
-
+    // OpenStreetMap tiles: free, no key, and what every rental-report map
+    // uses. CARTO's basemaps started demanding an API key (2026-09) and serve
+    // an "API KEY REQUIRED" watermark without one. OSM has no dark style, so
+    // dark mode inverts the light tiles in CSS (.map-tiles-dark) — the
+    // circles sit in a different pane and keep their real colours.
     const map = L.map(mapRef.current, { scrollWheelZoom: false }).setView([39.5, -98.5], 4);
-    L.tileLayer(tiles, { attribution: '\u00A9 OSM \u00A9 CARTO', maxZoom: 18 }).addTo(map);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '\u00A9 OpenStreetMap', maxZoom: 18,
+      className: isDark ? 'map-tiles-dark' : '',
+    }).addTo(map);
     mapInst.current = map;
 
     (async () => {
