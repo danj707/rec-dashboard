@@ -147,6 +147,28 @@ code { font-family: 'JetBrains Mono', monospace; font-size: 0.85em; background: 
     #add-update-modal .modal-cancel { background: #eee; color: #333; }
     #add-update-modal .modal-cancel:hover { background: #ddd; }
     #add-update-modal .loading { color: #666; padding: 30px; }
+/* ── Usage (views, click-throughs, adoption) ── */
+.usage-panel { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px 18px; margin-bottom: 18px; }
+.usage-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 12px; }
+.usage-title { font-size: 14px; font-weight: 600; color: #111827; }
+.usage-window { font-size: 11px; color: #6b7280; }
+.usage-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 14px; }
+.usage-kpi { background: #f3f4f6; border-radius: 8px; padding: 10px 12px; }
+.usage-kpi .l { font-size: 10px; text-transform: uppercase; letter-spacing: .04em; color: #6b7280; }
+.usage-kpi .v { font-size: 20px; font-weight: 600; color: #111827; }
+.usage-kpi .s { font-size: 11px; color: #6b7280; margin-top: 2px; }
+.usage-cols { display: grid; grid-template-columns: 3fr 2fr; gap: 16px; align-items: start; }
+.usage-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.usage-table th { text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: .04em; color: #6b7280; font-weight: 500; padding: 4px 6px; border-bottom: 1px solid #e5e7eb; }
+.usage-table td { padding: 5px 6px; border-bottom: 1px solid #f3f4f6; color: #374151; white-space: nowrap; }
+.usage-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.usage-table tr.quiet td { color: #9ca3af; }
+.delta-up { color: #15803d; } .delta-down { color: #b91c1c; } .delta-flat { color: #9ca3af; }
+.spark { display: block; }
+.org-usage { display: flex; align-items: center; gap: 12px; margin: -4px 0 12px; padding: 8px 10px; background: #f9fafb; border-radius: 8px; font-size: 11px; color: #4b5563; }
+.org-usage b { color: #111827; font-weight: 600; }
+.org-usage .quiet { color: #b91c1c; }
+@media (max-width: 900px) { .usage-cols { grid-template-columns: 1fr; } .usage-kpis { grid-template-columns: repeat(2, 1fr); } }
 </style>
 </head>
 <body>
@@ -267,6 +289,73 @@ async function saveDefaultEmail(slug) {
   setTimeout(() => { btn.textContent = 'Save'; btn.style.background = '#0ea5e9'; }, 2500);
 }
 
+
+// ═══ Usage rendering (data from /admin/api/usage, arithmetic in lib/usage.js) ═══
+function esc(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+// Bars, not a line: a day with no visits is a real zero, and a line through it
+// reads as a trend between two points that were never measured apart.
+function sparkSvg(arr, color, w, h) {
+  w = w || 120; h = h || 26;
+  const max = Math.max(1, ...arr), bw = w / arr.length;
+  const bars = arr.map((v, i) => {
+    const bh = v ? Math.max(2, Math.round(v / max * (h - 2))) : 1;
+    return '<rect x="' + (i * bw + 0.5).toFixed(1) + '" y="' + (h - bh) + '" width="' + Math.max(1, bw - 1).toFixed(1) + '" height="' + bh + '" fill="' + (v ? color : '#e5e7eb') + '" rx="1"/>';
+  }).join('');
+  return '<svg class="spark" width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '" aria-hidden="true">' + bars + '</svg>';
+}
+function agoLabel(iso) {
+  if (!iso) return 'never';
+  const d = Math.floor((Date.now() - Date.parse(iso)) / 86400000);
+  return d <= 0 ? 'today' : d === 1 ? 'yesterday' : d + ' days ago';
+}
+// No arrow under 5 views in the prior window: 1 → 3 is not "+200%".
+function deltaHTML(cur, prior) {
+  if (prior < 5) return '<span class="delta-flat">' + (cur && !prior ? 'new' : '\u2014') + '</span>';
+  const pct = Math.round((cur - prior) / prior * 100);
+  const cls = pct > 5 ? 'delta-up' : pct < -5 ? 'delta-down' : 'delta-flat';
+  return '<span class="' + cls + '">' + (pct > 0 ? '\u2191' : pct < 0 ? '\u2193' : '') + Math.abs(pct) + '%</span>';
+}
+function windowLabel(u) {
+  return u.coverageDays < u.days && u.logStartsAt
+    ? 'since ' + new Date(u.logStartsAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' (the log starts there)'
+    : 'last ' + u.days + ' days';
+}
+function usagePanelHTML(u, orgs) {
+  if (!u) return '<div class="usage-panel" data-usage="unavailable"><div class="usage-title">Usage</div><div class="usage-window">Could not load usage right now.</div></div>';
+  const p = u.platform, total = orgs.length;
+  const rows = orgs.map(o => ({ o, x: u.orgs[o.slug] || { daily: new Array(u.days).fill(0), views: 0, viewsPrior: 0, activeDays: 0, lastSeen: null, clicks: 0, topTargets: [] } }))
+    .sort((a, b) => b.x.views - a.x.views || b.x.activeDays - a.x.activeDays || (a.o.name < b.o.name ? -1 : 1));
+  const orgRows = rows.map(({ o, x }) => '<tr class="' + (x.views ? '' : 'quiet') + '" data-usage-org="' + esc(o.slug) + '" data-usage-views="' + x.views + '">' +
+    '<td>' + esc(o.name) + '</td><td>' + sparkSvg(x.daily, '#f59e0b', 90, 20) + '</td>' +
+    '<td class="num">' + x.views + '</td><td class="num">' + deltaHTML(x.views, x.viewsPrior) + '</td>' +
+    '<td class="num">' + x.activeDays + '</td><td class="num">' + x.clicks + '</td><td>' + agoLabel(x.lastSeen) + '</td></tr>').join('');
+  const adoption = u.adoption.map(a => '<tr data-adopt="' + esc(a.event) + '"><td>' + esc(a.label) + '</td><td class="num">' + a.orgs + ' / ' + total + '</td><td class="num">' + a.count + '</td></tr>').join('');
+  const quiet = rows.filter(r => !r.x.views).length;
+  return '<div class="usage-panel" data-usage="ok">' +
+    '<div class="usage-head"><div class="usage-title">Usage</div><div class="usage-window">' + windowLabel(u) + ' \u00b7 our own visits from this page excluded (' + p.adminEvents + ')</div></div>' +
+    '<div class="usage-kpis">' +
+      '<div class="usage-kpi"><div class="l">Active orgs \u00b7 7d</div><div class="v" data-usage-active7="' + p.active7 + '">' + p.active7 + ' / ' + total + '</div><div class="s">' + p.active30 + ' in the window</div></div>' +
+      '<div class="usage-kpi"><div class="l">Dashboard views</div><div class="v">' + p.views + '</div>' + sparkSvg(p.daily, '#f59e0b', 140, 22) + '</div>' +
+      '<div class="usage-kpi"><div class="l">Click-throughs</div><div class="v">' + p.clicks + '</div><div class="s">to a report or to Rec</div></div>' +
+      '<div class="usage-kpi"><div class="l">No views</div><div class="v" style="color:' + (quiet ? '#b91c1c' : '#111827') + '">' + quiet + '</div><div class="s">orgs quiet all window</div></div>' +
+    '</div>' +
+    '<div class="usage-cols">' +
+      '<table class="usage-table"><thead><tr><th>Org</th><th>Views / day</th><th style="text-align:right">Views</th><th style="text-align:right">vs prior</th><th style="text-align:right">Active days</th><th style="text-align:right">Clicks</th><th>Last seen</th></tr></thead><tbody>' + orgRows + '</tbody></table>' +
+      '<table class="usage-table"><thead><tr><th>Feature</th><th style="text-align:right">Orgs using</th><th style="text-align:right">Uses</th></tr></thead><tbody>' + adoption + '</tbody></table>' +
+    '</div>' +
+    '<div class="usage-window" style="margin-top:10px">Click-throughs are recorded from Sep 24, 2026 on; an org at zero before then was not being measured.</div>' +
+  '</div>';
+}
+function orgUsageHTML(u, slug) {
+  if (!u) return '';
+  const x = u.orgs[slug];
+  if (!x) return '<div class="org-usage"><span class="quiet">No activity recorded</span></div>';
+  const top = x.topTargets && x.topTargets[0] ? ' \u00b7 top: ' + esc(x.topTargets[0].target) : '';
+  return '<div class="org-usage" data-org-usage="' + esc(slug) + '">' + sparkSvg(x.daily, '#f59e0b', 110, 24) +
+    '<div><b>' + x.views + '</b> views ' + deltaHTML(x.views, x.viewsPrior) + ' \u00b7 active ' + x.activeDays + 'd<br>' +
+    '<span' + (x.lastSeen ? '' : ' class="quiet"') + '>last seen ' + agoLabel(x.lastSeen) + '</span> \u00b7 ' + x.clicks + ' clicks' + top + '</div></div>';
+}
+
 (async function() {
   const resp = await fetch('/admin/api/orgs');
   const data = await resp.json();
@@ -274,6 +363,10 @@ async function saveDefaultEmail(slug) {
 
   let evtData = { total: 0, byOrg: {}, byType: {}, last7Days: {} };
   try { const er = await fetch('/admin/api/events/summary'); evtData = await er.json(); } catch(e) {}
+  // Usage (views per day, click-throughs, adoption). Null when the route could
+  // not answer, which the panel says rather than drawing zeros.
+  let usage = null;
+  try { const ur = await fetch('/admin/api/usage?days=30'); if (ur.ok) usage = await ur.json(); } catch(e) {}
 
   document.getElementById('header-meta').textContent =
     orgs.length + ' org' + (orgs.length !== 1 ? 's' : '') + ' \u00B7 ' + sharedReports.length + ' shared reports \u00B7 ' + evtData.total + ' events \u00B7 ' + (evtData.byType['insight_generated'] || 0) + ' AI insights';
@@ -292,6 +385,7 @@ async function saveDefaultEmail(slug) {
         <span class="chevron">\u25BC</span>
       </div>
       <div class="collapsible-body"><div class="collapsible-inner">
+        ${usagePanelHTML(usage, orgs)}
         <div class="org-grid">
           ${orgs.map(o => `
             <div class="org-card">
@@ -307,9 +401,10 @@ async function saveDefaultEmail(slug) {
                 <div class="org-stat"><div class="org-stat-label">Widgets</div><div class="org-stat-value">${o.widgetCount}</div></div>
                 <div class="org-stat"><div class="org-stat-label">Events</div><div class="org-stat-value">${evtData.byOrg[o.slug] || 0}</div></div>
                 <div class="org-stat"><div class="org-stat-label">AI Insights</div><div class="org-stat-value">${(evtData.byOrgType?.[o.slug]?.['insight_generated'] || 0)}</div></div>
-                <div class="org-stat"><div class="org-stat-label">Dash Views</div><div class="org-stat-value">${(evtData.byOrgType?.[o.slug]?.['dashboard_view'] || 0)}</div></div>
+                <div class="org-stat"><div class="org-stat-label">Dash Views · all time</div><div class="org-stat-value">${(evtData.byOrgType?.[o.slug]?.['dashboard_view'] || 0)}</div></div>
                 <div class="org-stat"><div class="org-stat-label">Layout Saves</div><div class="org-stat-value">${(evtData.byOrgType?.[o.slug]?.['layout_saved'] || 0)}</div></div>
               </div>
+              ${orgUsageHTML(usage, o.slug)}
               <div class="org-badges">
                 <span class="badge ${o.configured ? 'badge-green' : 'badge-gray'}">${o.configured ? 'Configured' : 'Not configured'}</span>
                 ${o.template ? '<span class="badge badge-amber">' + o.template + '</span>' : ''}
@@ -319,7 +414,7 @@ async function saveDefaultEmail(slug) {
                 <span class="badge" style="background:rgba(124,58,237,0.15);color:#7c3aed">\u2728 AI Insights</span>
                 ${o.perOrgReports.length ? '<span class="badge badge-amber">custom: ' + o.perOrgReports.join(', ') + '</span>' : ''}
               </div>
-              <a href="${BASE}/${o.slug}?token=${o.token}" class="org-link" target="_blank">\u2192 Open Dashboard</a>
+              <a href="${BASE}/${o.slug}?token=${o.token}&via=admin" class="org-link" target="_blank" title="Visits from here are tagged as ours and left out of the usage numbers">\u2192 Open Dashboard</a>
               <div style="display:flex;gap:16px;margin-top:12px;padding-top:10px;border-top:1px solid #e5e7eb">
                 <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:#4b5563;cursor:pointer">
                   <input type="checkbox" ${o.toggles.ai ? 'checked' : ''} onchange="toggleOrg('${o.slug}','ai',this.checked)" style="accent-color:#7c3aed;width:16px;height:16px">
