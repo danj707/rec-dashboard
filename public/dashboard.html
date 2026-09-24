@@ -1090,6 +1090,7 @@ body.has-wx .section-header::before { content: ""; position: absolute; inset: 2p
 /* Map widget */
 .map-container { height: 280px; border-radius: 8px; overflow: hidden; z-index: 1; position: relative; }
 .map-container .leaflet-control-attribution { font-size: 9px; }
+.map-tiles-dark { filter: invert(1) hue-rotate(180deg) brightness(0.95) contrast(0.9); }
 
 /* Heatmap widget */
 .heatmap-grid { display: grid; gap: 2px; font-size: 10px; }
@@ -2614,8 +2615,19 @@ function clearDataStore() {
 const eventQueue = [];
 let flushTimer = null;
 
+// A visit opened from the admin page's "Open Dashboard" link is US, not the
+// org — that link carries ?via=admin, and every event from this tab says so,
+// so the admin usage metrics can count it apart instead of as adoption.
+// Remembered for the tab, because the dashboard rewrites its own URL.
+var TRACK_VIA = (function () {
+  try {
+    if (new URLSearchParams(location.search).get('via') === 'admin') sessionStorage.setItem('rd-via', 'admin');
+    return sessionStorage.getItem('rd-via') || null;
+  } catch (e) { return null; }
+})();
+
 function track(event, props = {}) {
-  eventQueue.push({ event, ...props, clientTs: new Date().toISOString() });
+  eventQueue.push({ event, ...props, ...(TRACK_VIA ? { via: TRACK_VIA } : {}), clientTs: new Date().toISOString() });
   if (!flushTimer) {
     flushTimer = setTimeout(flushEvents, 2000); // batch every 2s
   }
@@ -2633,6 +2645,33 @@ function flushEvents() {
 
 // Flush on page unload
 window.addEventListener('beforeunload', flushEvents);
+
+// ── Click-throughs: which cards send people OUT to a report or to Rec ──
+// Records WHERE they went (the report type, or the Rec admin page) and never
+// the URL itself: a report link carries the org's access token.
+var UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function outboundTarget(href) {
+  var u; try { u = new URL(href, location.href); } catch (e) { return null; }
+  var segs = u.pathname.split('/').filter(Boolean);
+  var base = (window._orgMeta && window._orgMeta.reportingBaseUrl) || '';
+  var rptHost = ''; try { rptHost = base ? new URL(base).host : ''; } catch (e) {}
+  if (rptHost && u.host === rptHost) return { event: 'report_link_clicked', target: segs[1] || '(org landing)' };
+  if (/(^|\.)rec\.us$/.test(u.hostname)) {
+    return { event: 'rec_link_clicked', target: segs.filter(function (x) { return !UUID_RE.test(x) && x !== 'admin' && x !== 'o'; }).slice(0, 2).join('/') || '(home)' };
+  }
+  return null;
+}
+function trackOutbound(href, el) {
+  var t = outboundTarget(href); if (!t) return;
+  var sec = el && el.closest ? el.closest('[data-section]') : null;
+  track(t.event, { target: t.target, section: sec ? sec.getAttribute('data-section') : null });
+  flushEvents(); // they are leaving for another tab; do not wait out the 2s batch
+}
+function openTracked(href, el) { trackOutbound(href, el); window.open(href, '_blank'); }
+document.addEventListener('click', function (e) {
+  var a = e.target && e.target.closest ? e.target.closest('a[href]') : null;
+  if (a) trackOutbound(a.getAttribute('href'), a);
+}, true);
 
 // ═══════════════════════════════════════════════════════
 //  CHART DEFAULTS
@@ -2898,12 +2937,16 @@ function MapWidget({ data }) {
     setReady(false);
 
     const isDark = document.documentElement.getAttribute('data-theme') !== 'light';
-    const tiles = isDark
-      ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-      : 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
-
+    // OpenStreetMap tiles: free, no key, and what every rental-report map
+    // uses. CARTO's basemaps started demanding an API key (2026-09) and serve
+    // an "API KEY REQUIRED" watermark without one. OSM has no dark style, so
+    // dark mode inverts the light tiles in CSS (.map-tiles-dark) — the
+    // circles sit in a different pane and keep their real colours.
     const map = L.map(mapRef.current, { scrollWheelZoom: false }).setView([39.5, -98.5], 4);
-    L.tileLayer(tiles, { attribution: '\u00A9 OSM \u00A9 CARTO', maxZoom: 18 }).addTo(map);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '\u00A9 OpenStreetMap', maxZoom: 18,
+      className: isDark ? 'map-tiles-dark' : '',
+    }).addTo(map);
     mapInst.current = map;
 
     (async () => {
@@ -2973,7 +3016,7 @@ function StreamsChart({ data }) {
         var barW = maxAmt > 0 ? Math.round(s.amount / maxAmt * 100) : 0;
         var href = hasLinks ? baseUrl + '/' + ORG_SLUG + '/' + s.report + '?token=' + TOKEN : null;
         return (
-          <div key={i} className="streams-row" onClick={href ? function(){ window.open(href, '_blank'); } : undefined} title={href ? 'View full ' + s.type + ' report' : s.type}>
+          <div key={i} className="streams-row" onClick={href ? function(e){ openTracked(href, e.currentTarget); } : undefined} title={href ? 'View full ' + s.type + ' report' : s.type}>
             <div className="streams-name">
               <div className="streams-swatch" style={{background:s.color}} />
               {s.type}
@@ -2986,7 +3029,7 @@ function StreamsChart({ data }) {
             </div>
             <div style={{display:'flex',alignItems:'center',gap:6}}>
               <div className="streams-amt">{'$' + Math.round(s.amount).toLocaleString()}</div>
-              {href && <a onClick={function(e){ e.stopPropagation(); window.open(href, '_blank'); }} style={{fontSize:10,fontWeight:600,color:s.color,cursor:'pointer',whiteSpace:'nowrap',display:'flex',alignItems:'center',gap:3,textDecoration:'none',opacity:0.85,padding:'2px 6px',borderRadius:4,border:'1px solid ' + s.color + '33',background:s.color + '0d'}}>View →</a>}
+              {href && <a onClick={function(e){ e.stopPropagation(); openTracked(href, e.currentTarget); }} style={{fontSize:10,fontWeight:600,color:s.color,cursor:'pointer',whiteSpace:'nowrap',display:'flex',alignItems:'center',gap:3,textDecoration:'none',opacity:0.85,padding:'2px 6px',borderRadius:4,border:'1px solid ' + s.color + '33',background:s.color + '0d'}}>View →</a>}
             </div>
           </div>
         );
@@ -3148,7 +3191,7 @@ function WidgetCard({ widgetId, reportData, loading, freshRts, target, onTargetC
       {loading && !data ? <div className={isMetric?'skeleton skeleton-metric':'skeleton skeleton-chart'} />
         : isMetric ? <MetricCard data={data} target={target} prior={prior} /> : <Comp data={data} onBarClick={
           (effComponent === 'bar' || def.component === 'table') && def.reportType === 'programs' && reportingBaseUrl
-            ? (label) => { var u = reportingBaseUrl + '/' + RPT_SLUG() + '/programs?token=' + RPT_TOKEN() + '&tab=revenue&program=' + encodeURIComponent(label); if (dateRange) { u += '&start_date=' + dateRange.start + '&end_date=' + dateRange.end; } window.open(u, '_blank'); }
+            ? (label) => { var u = reportingBaseUrl + '/' + RPT_SLUG() + '/programs?token=' + RPT_TOKEN() + '&tab=revenue&program=' + encodeURIComponent(label); if (dateRange) { u += '&start_date=' + dateRange.start + '&end_date=' + dateRange.end; } openTracked(u, null); }
             : undefined
         } />}
     </div>
@@ -6319,7 +6362,7 @@ function SectionBlock({ sectionId, widgetIds, reportData, loading, freshRts, tar
   }
 
   return (
-    <div className="dashboard-section">
+    <div className="dashboard-section" data-section={sectionId}>
       <div className="section-header">
         <span className="section-icon">{sec.icon}</span>
         <span className="section-label">{sec.label}</span>

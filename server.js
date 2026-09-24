@@ -1537,6 +1537,24 @@ app.get('/admin/api/events/summary', adminAuth, (req, res) => {
   } catch (e) { res.json({ total: 0, error: e.message }); }
 });
 
+// Usage for the admin page: views per day per org (the sparklines), last
+// seen, click-throughs and feature adoption. The arithmetic is lib/usage.js;
+// this only reads the log. Cached a minute because the log is read whole.
+const { buildUsage } = require('./lib/usage');
+let _usageCache = null;
+app.get('/admin/api/usage', adminAuth, (req, res) => {
+  try {
+    const days = Math.max(7, Math.min(90, parseInt(req.query.days, 10) || 30));
+    if (_usageCache && _usageCache.days === days && Date.now() - _usageCache.at < 60000) return res.json(_usageCache.body);
+    const events = fs.existsSync(EVENTS_FILE)
+      ? fs.readFileSync(EVENTS_FILE, 'utf8').split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean)
+      : [];
+    const body = buildUsage(events, { days, orgs: Object.keys(ORGS) });
+    _usageCache = { days, at: Date.now(), body };
+    res.json(body);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ═══════════════════════════════════════════
 //  GEOCODING PROXY (server-side, cached)
 // ═══════════════════════════════════════════
